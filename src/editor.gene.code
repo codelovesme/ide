@@ -11,6 +11,13 @@
 | ending in `=>`, or an `if` / `loop` with no `,` (one with a comma has its
 | body on the same line).
 
+| The `strings` organelle, handed over when the ide links it.
+texts = null
+
+EditorUses { texts as given } =>
+    texts = given
+    return Using
+
 indent_unit = 4
 
 | Characters a word stops at, for ctrl+left / ctrl+right.
@@ -40,13 +47,13 @@ Indent { line } =>
     loop
         if line[n] ≠ " ", break
         n += 1
-    emit Trim { value = line } to strings get trimmed
+    emit Trim { value = line } to texts get trimmed
     body = trimmed.value
     emit Length { value = body } to core get { value as size }
     opens = false
     if size ≥ 2 and body[size - 2, size) = "=>", opens = true
     if body[0, 3) = "if " or body = "loop" or body[0, 5) = "loop "
-        emit Split { value = body, separator = "," } to strings get parts
+        emit Split { value = body, separator = "," } to texts get parts
         emit Length { value = parts.value } to core get { value as pieces }
         if pieces = 1, opens = true
     return Indented { spaces = line[0, n), width = n, opens = opens }
@@ -94,7 +101,7 @@ Edit { buffer, name, text, page } =>
         pad = indent.spaces
         if indent.opens, pad = pad + "    "
         emit Length { value = pad } to core get { value as padded }
-        emit Trim { value = line[col, length) } to strings get rest_trim
+        emit Trim { value = line[col, length) } to texts get rest_trim
         rest = line[col, length)
         if rest_trim.value = "", rest = ""
         lines = lines[0, row) + [line[0, col), pad + rest] + lines(row, length)
@@ -124,7 +131,7 @@ Edit { buffer, name, text, page } =>
     if name = "backspace"
         if col > 0
             take = 1
-            emit Trim { value = line[0, col) } to strings get before
+            emit Trim { value = line[0, col) } to texts get before
             if before.value = ""
                 stop = 0
                 loop

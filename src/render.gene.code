@@ -5,11 +5,20 @@
 | Row 0 is the menu bar, the last row the status bar; between them the
 | body, laid out by `Layout`. Every pane has a title row, then its content.
 
+| The `strings` and `syntax` organelles, handed over when the ide links them.
+texts = null
+colours = null
+
+RenderUses { texts as given_texts, colours as given_colours } =>
+    texts = given_texts
+    colours = given_colours
+    return Using
+
 gutter = 5
 
 | The last part of a path: `a/b/c.code` → `c.code`.
 BaseName { path } =>
-    emit Split { value = path, separator = "/" } to strings get parts
+    emit Split { value = path, separator = "/" } to texts get parts
     return Name { name = parts.value[length - 1] }
 
 | One line's spans, coloured by `spans` (`{ col, len, kind }` from
@@ -43,7 +52,7 @@ ExplorerView { pane, nodes, sel, top, focused, title } =>
     if t < 0, t = 0
     title_style = "pane_title"
     if focused, title_style = "pane_title_focus"
-    emit Upper { value = title } to strings get upper
+    emit Upper { value = title } to texts get upper
     out = [{ row = 1 + pane.y, col = pane.x, spans = [{ text = " EXPLORER: " + upper.value, width = pane.width, style = title_style }] }]
     i = 0
     loop
@@ -85,8 +94,8 @@ EditorView { pane, buffer, focused } =>
 
     coloured = null
     if buffer.path[length - 5, length) = ".code"
-        emit Join { value = buffer.lines, separator = "\n" } to strings get source
-        emit Highlight { source = source.value, from = t, until = t + h } to syntax get lit
+        emit Join { value = buffer.lines, separator = "\n" } to texts get source
+        emit Highlight { source = source.value, from = t, until = t + h } to colours get lit
         if lit ∈ Highlighted, coloured = lit.lines
 
     i = 0

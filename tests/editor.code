@@ -1,8 +1,14 @@
 | What keys do to a buffer: typing, enter and its indentation, tab,
 | backspace through indentation, joining lines, and the cursor moves.
 
-link "strings.so" as strings
 link "../src/editor.gene.code"
+
+| The strings organelle, linked the way the ide links it.
+Open { path } =>
+    link path as at
+    return Opened { at = at }
+emit Open { path = "organelles/strings.so" } to this get strings_lib
+emit EditorUses { texts = strings_lib.at } to this
 
 b = { lines = ["Hello { who } =>", ""], row = 0, col = 16, want = 16, path = "x.code" }
 

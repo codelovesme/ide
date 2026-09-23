@@ -6,7 +6,7 @@ coloured by the language's own lexer. v1 is deliberately small; it grows
 step by step.
 
 ```sh
-cdlvsm install ide          # also installs `code` if it is not there
+cdlvsm install ide
 cdlvsm ide ~/some/project   # or `cdlvsm-ide`; `--link` adds a bare `ide`
 ```
 
@@ -88,6 +88,7 @@ Needs only what anyone can install:
 curl -sSf https://raw.githubusercontent.com/codelovesme/cdlvsm/main/install.sh | sh
 cdlvsm install euglena      # brings code too
 cdlvsm euglena install      # the organelles pinned in .code/lock.json
+tools/organelles.sh         # …laid out where the ide links them from
 cdlvsm euglena test
 IDE_FOLDER=~/some/project cdlvsm euglena run
 ```
@@ -95,12 +96,18 @@ IDE_FOLDER=~/some/project cdlvsm euglena run
 ## Releasing
 
 A `v*` tag runs [the release workflow](.github/workflows/release.yml), which
-does exactly the above on a clean machine, then
-[tools/package.sh](tools/package.sh) lays out `ide-<tag>-x86_64-linux.tar.gz`
-— [the launcher](bin/ide), `main.code`, the genes, and the organelles beside
-`main.code` (the first place `code` looks), so the bundle needs nothing but
-a `code` interpreter. The smoke test then runs the bundle in a terminal on
-its own organelles before it is published.
+does exactly the above on a clean machine. Then
+[tools/package.sh](tools/package.sh) builds the ide as a program (`code
+build`) and lays out `ide-<tag>-x86_64-linux.tar.gz`: the program, [its
+launcher](bin/ide), and the five organelles beside it. It needs no `code`
+interpreter to run. The smoke test proves that — it runs the bundle with no
+`code` on the machine and no module cache — before it is published.
+
+The organelles are linked while the ide runs (`Organelles` in
+[src/ide.gene.code](src/ide.gene.code)), not when it is built: a top-level
+`link` would build in the full path each one has on the building machine.
+The launcher starts the program in its own folder, where they are, and
+tells it which folder to open.
 
 ## Tests
 

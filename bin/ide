@@ -1,23 +1,20 @@
 #!/bin/sh
-# ide — the codelovesme IDE. Runs this bundle's main.code with `code`; the
-# modules sit beside it, which is the first place `code` looks for them.
+# ide — the codelovesme IDE.
 #
 #   ide [folder]      open a folder (default: the one you are in)
+#
+# Starts the ide program from its own folder, where its organelles sit —
+# it links them from there while it runs — and tells it which folder to
+# open.
 set -e
 here=$(dirname "$(readlink -f "$0")")
-case "$1" in
+case "${1:-}" in
   --version|-V) echo "ide $(cat "$here/VERSION" 2>/dev/null || echo dev)"; exit 0 ;;
-  --help|-h) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  --help|-h) sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
-if [ -n "$1" ]; then
-  [ -d "$1" ] || { echo "ide: not a folder: $1" >&2; exit 1; }
-  IDE_FOLDER=$(cd "$1" && pwd)
-  export IDE_FOLDER
-fi
-code=${IDE_CODE:-$(command -v cdlvsm-code || true)}
-[ -n "$code" ] || code="${PREFIX:-$HOME/.local}/bin/cdlvsm-code"
-if [ ! -x "$code" ]; then
-  echo "ide: needs the code interpreter — run: cdlvsm install code" >&2
-  exit 1
-fi
-exec "$code" run "$here/main.code"
+folder=${1:-.}
+[ -d "$folder" ] || { echo "ide: not a folder: $folder" >&2; exit 1; }
+IDE_FOLDER=$(cd "$folder" && pwd)
+export IDE_FOLDER
+cd "$here"
+exec ./ide-bin

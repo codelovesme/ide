@@ -38,17 +38,52 @@ explorer_slot = "l"
 
 max_undo = 200
 
+| The organelles. They are linked while the program runs, not when it is
+| built — a built program would otherwise carry the full path each one had
+| on the machine that built it. See `Organelles`.
+term = null
+files = null
+texts = null
+vars = null
+
+| Links the five organelles from the folder `from`, relative to where the program
+| was started: `.` in a release bundle (bin/ide starts it there), and
+| `organelles` in a checkout (tools/organelles.sh puts them there).
+Organelles { from } =>
+    link from + "/env.so" as env_at
+    link from + "/fs.so" as fs_at
+    link from + "/strings.so" as strings_at
+    link from + "/syntax.so" as syntax_at
+    link from + "/tty.so" as tty_at
+    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at }
+
+| Links them, and hands each gene the ones it uses.
+UseOrganelles { from } =>
+    emit Organelles { from = from } to this get linked
+    if linked ∈ Exception, return linked
+    vars = linked.env
+    files = linked.fs
+    texts = linked.strings
+    term = linked.tty
+    emit EditorUses { texts = linked.strings } to this
+    emit RenderUses { texts = linked.strings, colours = linked.syntax } to this
+    return linked
+
 EuglenaHasBeenBorn { cell_name } =>
-    emit Get { name = "IDE_FOLDER", default = "" } to env get chosen
+    emit UseOrganelles { from = "." } to this get bundled
+    if bundled ∈ Exception
+        emit UseOrganelles { from = "organelles" } to this get checkout
+        if checkout ∈ Exception, return Failed { reason = "the organelles could not be linked: " + checkout.message }
+    emit Get { name = "IDE_FOLDER", default = "" } to vars get chosen
     start_in = chosen.value
     | Otherwise the folder it was started in — as fs resolves `.`, since
     | `PWD` is only what a shell says.
     if start_in = ""
-        emit Config { base_path = "." } to fs get here
+        emit Config { base_path = "." } to files get here
         start_in = here.base_path
     emit OpenFolder { path = start_in } to this get opened
     if opened ∈ Failed, return opened
-    emit Start {} to tty get started
+    emit Start {} to term get started
     if started ∈ Exception, return Failed { reason = started.message }
     cols = started.cols
     rows = started.rows
@@ -158,22 +193,22 @@ PromptKey { name, text } =>
 | `path` absolute, or relative to the folder open now, or under `~`.
 OpenFolder { path } =>
     target = path
-    emit Get { name = "HOME", default = "/" } to env get home
+    emit Get { name = "HOME", default = "/" } to vars get home
     if target = "~" or target[0, 2) = "~/", target = home.value + target[1, length)
     if target[0] ≠ "/", target = folder + "/" + target
     | fs only sees inside its base, so the check is made from the root —
     | Config would create a folder that is not there.
-    emit Config { base_path = "/" } to fs
-    emit Exists { path = target } to fs get there
+    emit Config { base_path = "/" } to files
+    emit Exists { path = target } to files get there
     if not there.is_dir
-        if folder ≠ "", emit Config { base_path = folder } to fs
+        if folder ≠ "", emit Config { base_path = folder } to files
         message = "Error: not a folder: " + path
         return Failed { reason = message }
-    emit Config { base_path = target } to fs get configured
+    emit Config { base_path = target } to files get configured
     if configured ∈ Exception
         message = "Error: " + configured.message
         return Failed { reason = message }
-    emit ListDir { path = "." } to fs get listing
+    emit ListDir { path = "." } to files get listing
     if listing ∈ Exception
         message = "Error: " + listing.message
         return Failed { reason = message }
@@ -204,7 +239,7 @@ TreeKey { name } =>
     node = tree[tree_sel]
     wants_open = name = "enter" or name = "right" or name = "space"
     if node.is_dir and wants_open and not node.open
-        emit ListDir { path = node.path } to fs get listing
+        emit ListDir { path = node.path } to files get listing
         if listing ∈ Exception
             message = "Error: " + listing.message
             return Handled
@@ -226,11 +261,11 @@ TreeKey { name } =>
     return Handled
 
 OpenFile { path } =>
-    emit ReadFile { path = path } to fs get read
+    emit ReadFile { path = path } to files get read
     if read ∈ Exception
         message = "Error: " + read.message
         return Failed
-    emit Split { value = read.content, separator = "\n" } to strings get split
+    emit Split { value = read.content, separator = "\n" } to texts get split
     file = { path = path, lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false }
     undo = []
     redo = []
@@ -292,8 +327,8 @@ Redo =>
 SaveFile =>
     if file = null, return Nothing
     if file.readonly, return Nothing
-    emit Join { value = file.lines, separator = "\n" } to strings get joined
-    emit WriteFile { path = file.path, content = joined.value } to fs get written
+    emit Join { value = file.lines, separator = "\n" } to texts get joined
+    emit WriteFile { path = file.path, content = joined.value } to files get written
     if written ∈ Exception
         message = "Error: " + written.message
         return Failed
@@ -326,7 +361,7 @@ RequestQuit =>
 
 Quit =>
     running = false
-    emit Stop {} to tty
+    emit Stop {} to term
     return Quitting
 
 | Everything the screen is drawn from, in one particle.
@@ -352,11 +387,11 @@ Render =>
     emit State to this get state
     emit Frame { state = state } to this get screen
     if screen ∈ Exception
-        emit Draw { rows = [[{ text = " Error: the screen could not be drawn: " + screen.message, style = "status_warn" }]] } to tty
+        emit Draw { rows = [[{ text = " Error: the screen could not be drawn: " + screen.message, style = "status_warn" }]] } to term
         return Failed
     tree_top = screen.tree_top
     tree_page = screen.tree_page
     editor_page = screen.page
     if file ≠ null, file = file + { top = screen.top, left = screen.left }
-    emit Draw { overlays = screen.overlays, cursor_row = screen.cursor_row, cursor_col = screen.cursor_col } to tty
+    emit Draw { overlays = screen.overlays, cursor_row = screen.cursor_row, cursor_col = screen.cursor_col } to term
     return Rendered

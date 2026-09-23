@@ -2,12 +2,6 @@
 | opened, the tree walked, a file opened, edited, undone, saved; the menu
 | and a prompt; and a frame drawn from all of it.
 
-link "env.so" as env
-link "fs.so" as fs
-link "strings.so" as strings
-link "syntax.so" as syntax
-link "tty.so" as tty
-
 link "../src/editor.gene.code"
 link "../src/ide.gene.code"
 link "../src/keys.gene.code"
@@ -16,14 +10,20 @@ link "../src/menu.gene.code"
 link "../src/render.gene.code"
 link "../src/tree.gene.code"
 
+| The organelles, linked the way the ide links them (tools/organelles.sh
+| lays them out first).
+emit UseOrganelles { from = "organelles" } to this get lib
+assert lib ∈ Linked
+files = lib.fs
+
 | A folder to open: a code file, a folder with a file in it, and .git.
 | Made where the tests run; fs answers where that is, absolutely.
-emit Config { base_path = ".test-folder" } to fs get made
+emit Config { base_path = ".test-folder" } to files get made
 root = made.base_path
-emit RemoveDir { path = "src" } to fs
-emit WriteFile { path = "hello.code", content = "| hi\nGreet { who } =>\n    return Hi\n" } to fs
-emit WriteFile { path = "src/notes.md", content = "notes" } to fs
-emit WriteFile { path = ".git/HEAD", content = "ref" } to fs
+emit RemoveDir { path = "src" } to files
+emit WriteFile { path = "hello.code", content = "| hi\nGreet { who } =>\n    return Hi\n" } to files
+emit WriteFile { path = "src/notes.md", content = "notes" } to files
+emit WriteFile { path = ".git/HEAD", content = "ref" } to files
 
 emit OpenFolder { path = root } to this get opened
 assert opened ∈ Opened
@@ -74,7 +74,7 @@ assert redone.file.lines[0] = "xy| hi"
 
 | Save writes it; the file is clean again.
 emit HandleKey { name = "ctrl+s", text = "" } to this
-emit ReadFile { path = "hello.code" } to fs get on_disk
+emit ReadFile { path = "hello.code" } to files get on_disk
 assert on_disk.content = "xy| hi\nGreet { who } =>\n    return Hi\n"
 emit State to this get saved
 assert not saved.file.dirty
@@ -146,7 +146,7 @@ assert asked.prompt.kind = "close"
 emit HandleKey { name = "n", text = "n" } to this
 emit State to this get unsaved
 assert unsaved.file = null
-emit ReadFile { path = "hello.code" } to fs get untouched
+emit ReadFile { path = "hello.code" } to files get untouched
 assert untouched.content = on_disk.content
 
 | The shortcuts open read-only; typing is refused.
@@ -160,4 +160,4 @@ emit State to this get refused
 assert refused.file.lines[0] = "Keyboard Shortcuts"
 assert refused.message = "This file is read-only."
 
-emit RemoveDir { path = "." } to fs
+emit RemoveDir { path = "." } to files

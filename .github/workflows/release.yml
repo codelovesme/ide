@@ -1,8 +1,8 @@
 name: Release
 
 # A `v*` tag builds the bundle `cdlvsm install ide` fetches:
-# ide-<tag>-x86_64-linux.tar.gz — the launcher, main.code, the genes, and
-# the organelles beside them. Everything comes from public releases, the way
+# ide-<tag>-x86_64-linux.tar.gz — the ide built as a program, its launcher,
+# and the organelles beside it; it needs no code interpreter to run. Everything comes from public releases, the way
 # anyone would get it: cdlvsm installs euglena (and code), euglena installs
 # the organelles pinned in .code/lock.json. A manual run does everything but
 # publish.
@@ -34,7 +34,9 @@ jobs:
           "$HOME/.local/bin/cdlvsm" install euglena
 
       - name: Install the organelles
-        run: cdlvsm euglena install
+        run: |
+          cdlvsm euglena install
+          tools/organelles.sh
 
       - name: Test (and generate main.code)
         run: cdlvsm euglena test
@@ -48,11 +50,13 @@ jobs:
       - name: Package
         run: tools/package.sh "${{ steps.version.outputs.version }}" dist
 
-      - name: Smoke test the bundle in a real terminal, on its own organelles
+      - name: Smoke test the bundle in a real terminal — its own organelles, no code
         run: |
           set -euo pipefail
-          rm -rf .code/modules "$HOME/.code/modules"
-          python3 tools/smoke.py "dist/ide-${{ steps.version.outputs.version }}-x86_64-linux/ide"
+          rm -rf .code/modules organelles "$HOME/.code/modules"
+          mkdir -p "$RUNNER_TEMP/bare-home"
+          HOME="$RUNNER_TEMP/bare-home" PATH=/usr/bin:/bin \
+            python3 tools/smoke.py "dist/ide-${{ steps.version.outputs.version }}-x86_64-linux/ide"
 
       - uses: actions/upload-artifact@v4
         with:
