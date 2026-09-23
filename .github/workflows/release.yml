@@ -1,0 +1,81 @@
+name: Release
+
+# A `v*` tag builds the bundle `cdlvsm install ide` fetches:
+# ide-<tag>-x86_64-linux.tar.gz — the launcher, main.code, the genes, and
+# the five modules beside them. A manual run does everything but publish.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  CODE_VERSION: v2.8.1
+  EUGLENA_VERSION: v0.4.3
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Which code the modules are built from
+        id: ref
+        run: echo "code=$(cat CODE_REF)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: codelovesme/code
+          ref: ${{ steps.ref.outputs.code }}
+          path: code-src
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build the modules
+        run: tools/modules.sh code-src modules
+
+      - name: Install code and euglena
+        run: |
+          set -euo pipefail
+          mkdir -p tools-bin ~/.code/modules
+          curl -fsSL "https://github.com/codelovesme/code/releases/download/$CODE_VERSION/code-$CODE_VERSION-x86_64-linux.tar.gz" | tar xz -C tools-bin
+          curl -fsSL "https://github.com/codelovesme/euglena-cli/releases/download/$EUGLENA_VERSION/euglena-$EUGLENA_VERSION-x86_64-linux.tar.gz" | tar xz -C tools-bin
+          echo "CODE=$PWD/tools-bin/code-$CODE_VERSION-x86_64-linux/code" >> "$GITHUB_ENV"
+          echo "EUGLENA=$PWD/tools-bin/euglena-$EUGLENA_VERSION-x86_64-linux/euglena" >> "$GITHUB_ENV"
+          # euglena test resolves modules the way code does; the global
+          # cache is where the freshly built ones are found.
+          cp modules/*.so ~/.code/modules/
+
+      - name: Test (and generate main.code)
+        run: |
+          set -euo pipefail
+          "$EUGLENA" code set "$CODE"
+          "$EUGLENA" test
+
+      - name: Version
+        id: version
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then v="${{ github.ref_name }}"; else v="dev"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Package
+        run: tools/package.sh "${{ steps.version.outputs.version }}" modules dist
+
+      - name: Smoke test the bundle in a real terminal, on its own modules
+        run: |
+          set -euo pipefail
+          rm -rf ~/.code/modules
+          IDE_CODE="$CODE" python3 tools/smoke.py "dist/ide-${{ steps.version.outputs.version }}-x86_64-linux/ide"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ide-bundle
+          path: dist/*.tar.gz
+
+      - name: Publish
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/*.tar.gz --title "ide ${{ github.ref_name }}" --notes "Install with \`cdlvsm install ide\`, then run \`cdlvsm ide [folder]\`."

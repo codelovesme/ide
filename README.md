@@ -6,12 +6,13 @@ coloured by the language's own lexer. v1 is deliberately small; it grows
 step by step.
 
 ```sh
-euglena build                       # -> build/ide
-cd ~/some/project && ~/git/codelovesme/my-euglena-apps/ide/build/ide
-IDE_FOLDER=~/some/project euglena run   # or, from here, interpreted
+cdlvsm install ide          # also installs `code` if it is not there
+cdlvsm ide ~/some/project   # or `cdlvsm-ide`; `--link` adds a bare `ide`
 ```
 
-It opens the folder it was started in (`IDE_FOLDER` overrides). Ctrl+Q
+From a checkout: `IDE_FOLDER=~/some/project euglena run`.
+
+It opens the folder it is given, or the one it was started in. Ctrl+Q
 quits; the terminal is given back as it was, even if the program dies.
 
 ## The screen
@@ -80,6 +81,16 @@ that fails puts `Error: …` in the status bar instead of stalling.
 Organelles: `tty` (keys in, a screen out — only changed rows are written),
 `syntax` (spans from code's lexer, still coloured while a file does not
 lex), `fs`, `strings`, `env`.
+
+## Releasing
+
+A `v*` tag runs [the release workflow](.github/workflows/release.yml): the
+five modules are built from `codelovesme/code` at [CODE_REF](CODE_REF), the
+tests run, and [tools/package.sh](tools/package.sh) lays out
+`ide-<tag>-x86_64-linux.tar.gz` — [the launcher](bin/ide), `main.code`, the
+genes, and the modules beside `main.code` (the first place `code` looks), so
+the bundle needs nothing but a `code` interpreter. The smoke test then runs
+the bundle in a terminal on its own modules before it is published.
 
 ## Tests
 

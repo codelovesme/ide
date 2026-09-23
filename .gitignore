@@ -9,3 +9,6 @@ main.code
 
 # Where `euglena build` puts artifacts.
 build/
+
+# Python bytecode from tools/
+__pycache__/
