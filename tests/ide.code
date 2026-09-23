@@ -1,0 +1,162 @@
+| The ide gene driven the way keys drive it, without a terminal: a folder
+| opened, the tree walked, a file opened, edited, undone, saved; the menu
+| and a prompt; and a frame drawn from all of it.
+
+link "env.so" as env
+link "fs.so" as fs
+link "strings.so" as strings
+link "syntax.so" as syntax
+link "tty.so" as tty
+
+link "../src/editor.gene.code"
+link "../src/ide.gene.code"
+link "../src/keys.gene.code"
+link "../src/layout.gene.code"
+link "../src/menu.gene.code"
+link "../src/render.gene.code"
+link "../src/tree.gene.code"
+
+| A folder to open: a code file, a folder with a file in it, and .git.
+root = "/tmp/ide-fixture-folder"
+emit Config { base_path = root } to fs
+emit RemoveDir { path = "src" } to fs
+emit WriteFile { path = "hello.code", content = "| hi\nGreet { who } =>\n    return Hi\n" } to fs
+emit WriteFile { path = "src/notes.md", content = "notes" } to fs
+emit WriteFile { path = ".git/HEAD", content = "ref" } to fs
+
+emit OpenFolder { path = root } to this get opened
+assert opened ∈ Opened
+emit State to this get s
+assert s.folder = root
+assert s.tree = [
+    { path = "src", name = "src", depth = 0, is_dir = true, open = false }
+    { path = "hello.code", name = "hello.code", depth = 0, is_dir = false, open = false }
+]
+assert s.focus = "tree"
+
+| A folder that is not there is refused, and the one open stays open.
+emit OpenFolder { path = "/tmp/ide-fixture-folder/nope" } to this get missing
+assert missing ∈ Failed
+emit State to this get still
+assert still.folder = root
+
+| Enter on a folder opens it; left closes it again.
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get expanded
+assert expanded.tree[0].open
+assert expanded.tree[1] = { path = "src/notes.md", name = "notes.md", depth = 1, is_dir = false, open = false }
+emit HandleKey { name = "left", text = "" } to this
+emit State to this get collapsed
+emit Length { value = collapsed.tree } to core get { value as rows_left }
+assert rows_left = 2
+
+| Down to the code file, enter: it opens, and the editor has the focus.
+emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get editing
+assert editing.focus = "editor"
+assert editing.file.path = "hello.code"
+assert editing.file.lines = ["| hi", "Greet { who } =>", "    return Hi", ""]
+
+| Typing, then undo takes the whole word back; redo puts it back.
+emit HandleKey { name = "x", text = "x" } to this
+emit HandleKey { name = "y", text = "y" } to this
+emit State to this get typed
+assert typed.file.lines[0] = "xy| hi"
+assert typed.file.dirty
+emit HandleKey { name = "ctrl+z", text = "" } to this
+emit State to this get undone
+assert undone.file.lines[0] = "| hi"
+emit HandleKey { name = "ctrl+y", text = "" } to this
+emit State to this get redone
+assert redone.file.lines[0] = "xy| hi"
+
+| Save writes it; the file is clean again.
+emit HandleKey { name = "ctrl+s", text = "" } to this
+emit ReadFile { path = "hello.code" } to fs get on_disk
+assert on_disk.content = "xy| hi\nGreet { who } =>\n    return Hi\n"
+emit State to this get saved
+assert not saved.file.dirty
+assert saved.message = "Saved hello.code"
+
+| The frame at the default 80 columns: menu bar, the explorer 20 wide on
+| the left, the file in the center.
+emit State to this get now
+emit Frame { state = now } to this get screen
+assert screen ∈ Screen
+assert screen.overlays[1].spans[1].text = " File "
+assert screen.cursor_row = 2
+assert screen.cursor_col = 20 + 5 + 2
+| The explorer's title row, and the editor's first line, coloured.
+titles = []
+loop o over screen.overlays
+    if o.row = 1, titles += o.spans[0].text
+assert titles = [" EXPLORER: IDE-FIXTURE-FOLDER", " hello.code"]
+kinds = []
+loop o over screen.overlays
+    if o.row = 3 and o.col = 20
+        loop span over o.spans
+            kinds += span.style
+assert kinds = ["line_number", "plain", "class", "plain", "variable", "plain", "operator", "plain"]
+
+| Alt+F opens File; down, down, enter runs Close File.
+emit HandleKey { name = "alt+f", text = "" } to this
+emit State to this get menu_open
+assert menu_open.menu = { index = 0, item = 0 }
+emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get closed
+assert closed.menu = null
+assert closed.file = null
+assert closed.focus = "tree"
+
+| Ctrl+B hides the explorer; with no file, the welcome pane shows.
+emit HandleKey { name = "ctrl+b", text = "" } to this
+emit State to this get bare
+assert not bare.explorer
+emit Frame { state = bare } to this get welcome
+found = false
+loop o over welcome.overlays
+    if o.spans[0].text = "  codelovesme ide", found = true
+assert found
+emit HandleKey { name = "ctrl+b", text = "" } to this
+
+| Ctrl+K Ctrl+O asks for a folder in the status bar; Escape drops it.
+emit HandleKey { name = "ctrl+k", text = "" } to this
+emit HandleKey { name = "ctrl+o", text = "" } to this
+emit State to this get asking
+assert asking.prompt.kind = "open_folder"
+assert asking.prompt.text = root + "/"
+emit HandleKey { name = "s", text = "s" } to this
+emit State to this get typing
+assert typing.prompt.text = root + "/s"
+emit HandleKey { name = "escape", text = "" } to this
+emit State to this get dropped
+assert dropped.prompt = null
+
+| An edited file asks before closing; n closes it unsaved.
+emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit HandleKey { name = "z", text = "z" } to this
+emit HandleKey { name = "ctrl+w", text = "" } to this
+emit State to this get asked
+assert asked.prompt.kind = "close"
+emit HandleKey { name = "n", text = "n" } to this
+emit State to this get unsaved
+assert unsaved.file = null
+emit ReadFile { path = "hello.code" } to fs get untouched
+assert untouched.content = on_disk.content
+
+| The shortcuts open read-only; typing is refused.
+emit HandleKey { name = "ctrl+k", text = "" } to this
+emit HandleKey { name = "ctrl+s", text = "" } to this
+emit State to this get help
+assert help.file.readonly
+assert help.file.lines[0] = "Keyboard Shortcuts"
+emit HandleKey { name = "q", text = "q" } to this
+emit State to this get refused
+assert refused.file.lines[0] = "Keyboard Shortcuts"
+assert refused.message = "This file is read-only."
+
+emit RemoveDir { path = "." } to fs

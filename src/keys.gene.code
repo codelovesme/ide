@@ -1,0 +1,72 @@
+| Keys — which command a key runs, VS Code's bindings. Pure.
+|
+| A key that is not bound here goes to whatever has the focus (the tree
+| or the editor). `ctrl+k` starts a chord: the next key finishes it.
+
+bindings = {
+    "ctrl+s" = "file.save"
+    "ctrl+w" = "file.close"
+    "ctrl+q" = "app.quit"
+    "ctrl+b" = "view.explorer"
+    "ctrl+shift+e" = "focus.explorer"
+    "ctrl+0" = "focus.explorer"
+    "ctrl+1" = "focus.editor"
+    "f6" = "focus.next"
+    "shift+f6" = "focus.next"
+    "f10" = "menu.file"
+    "alt+f" = "menu.file"
+    "alt+v" = "menu.view"
+    "alt+h" = "menu.help"
+    "ctrl+z" = "edit.undo"
+    "ctrl+y" = "edit.redo"
+    "ctrl+shift+z" = "edit.redo"
+}
+
+chords = {
+    "ctrl+k ctrl+o" = "file.openFolder"
+    "ctrl+k ctrl+s" = "help.keys"
+}
+
+| `pending` is the first key of a chord, or `""`. Answers the command to
+| run (or null) and what is pending after this key.
+Keymap { name, pending } =>
+    if pending ≠ "", return Command { command = chords[pending + " " + name], pending = "", chord = pending + " " + name }
+    if name = "ctrl+k", return Command { command = null, pending = name, chord = "" }
+    return Command { command = bindings[name], pending = "", chord = "" }
+
+shortcuts = [
+    "Keyboard Shortcuts"
+    ""
+    "  File"
+    "    Ctrl+K Ctrl+O   Open Folder…"
+    "    Ctrl+S          Save"
+    "    Ctrl+W          Close File"
+    "    Ctrl+Q          Exit"
+    ""
+    "  View"
+    "    Ctrl+B          Show / hide the Explorer"
+    "    Ctrl+Shift+E    Focus the Explorer (also Ctrl+0)"
+    "    Ctrl+1          Focus the Editor"
+    "    F6              Move focus to the other pane"
+    ""
+    "  Menus"
+    "    Alt+F  Alt+V  Alt+H, or F10, then arrows, Enter, Escape"
+    ""
+    "  Explorer"
+    "    Up / Down       Move"
+    "    Enter / Right   Open a folder or a file"
+    "    Left            Close a folder, or go to its parent"
+    ""
+    "  Editor"
+    "    Arrows, Home, End, PageUp, PageDown, Ctrl+Home, Ctrl+End"
+    "    Ctrl+Left / Ctrl+Right   Move a word"
+    "    Tab / Shift+Tab          Indent / outdent (4 spaces)"
+    "    Ctrl+Z / Ctrl+Y          Undo / redo"
+    ""
+    "  Ctrl+Shift+E and Ctrl+1 need a terminal that sends them apart from"
+    "  Ctrl+E and 1 (kitty, foot, WezTerm, xterm, tmux with extended-keys)."
+    "  F6 always works."
+]
+
+Shortcuts =>
+    return ShortcutLines { lines = shortcuts }

@@ -1,0 +1,13 @@
+{
+  "description": "The codelovesme IDE: a terminal editor for code, built on euglena. Open a folder, browse it, edit files, with the language's own highlighting.",
+  "name": "ide",
+  "organelles": {
+    "env": "env",
+    "fs": "fs",
+    "strings": "strings",
+    "syntax": "syntax",
+    "tty": "tty"
+  },
+  "runtime": "native",
+  "title": "ide"
+}

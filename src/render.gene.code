@@ -1,0 +1,211 @@
+| Render — the whole screen from the state. Pure: the state in, what to
+| draw out, as `tty` overlays (`{ row, col, spans }`), plus where the
+| cursor goes and how far each pane had to scroll to keep it in sight.
+|
+| Row 0 is the menu bar, the last row the status bar; between them the
+| body, laid out by `Layout`. Every pane has a title row, then its content.
+
+gutter = 5
+
+| The last part of a path: `a/b/c.code` → `c.code`.
+BaseName { path } =>
+    emit Split { value = path, separator = "/" } to strings get parts
+    return Name { name = parts.value[length - 1] }
+
+| One line's spans, coloured by `spans` (`{ col, len, kind }` from
+| `syntax`), cut to the columns `left` … `left + width`.
+LineSpans { line, spans, left, width } =>
+    at = left
+    stop = left + width
+    out = []
+    loop s over spans
+        from_col = s.col
+        to_col = s.col + s.len
+        if to_col ≤ at, continue
+        if from_col ≥ stop, break
+        if from_col > at
+            out += { text = line[at, from_col), style = "plain" }
+            at = from_col
+        upto = to_col
+        if upto > stop, upto = stop
+        out += { text = line[at, upto), style = s.kind }
+        at = upto
+    if at < stop, out += { text = line[at, stop), style = "plain" }
+    return Spans { spans = out }
+
+| The explorer: the folder's name, then the tree, scrolled to keep the
+| selection in sight.
+ExplorerView { pane, nodes, sel, top, focused, title } =>
+    h = pane.height - 1
+    t = top
+    if sel < t, t = sel
+    if sel ≥ t + h, t = sel - h + 1
+    if t < 0, t = 0
+    title_style = "pane_title"
+    if focused, title_style = "pane_title_focus"
+    emit Upper { value = title } to strings get upper
+    out = [{ row = 1 + pane.y, col = pane.x, spans = [{ text = " EXPLORER: " + upper.value, width = pane.width, style = title_style }] }]
+    i = 0
+    loop
+        if i ≥ h, break
+        node = nodes[t + i]
+        style = "sidebar"
+        text = ""
+        if node ≠ null
+            emit Label { node = node } to this get label
+            text = label.text
+            if node.is_dir, style = "folder"
+            if t + i = sel and focused, style = "selected_focus"
+            if t + i = sel and not focused, style = "selected"
+        out += { row = 2 + pane.y + i, col = pane.x, spans = [{ text = text, width = pane.width, style = style }] }
+        i += 1
+    return PaneView { overlays = out, top = t, page = h }
+
+| The editor: the file's name, then its lines with numbers, scrolled to
+| keep the cursor in sight, coloured when the file is code.
+EditorView { pane, buffer, focused } =>
+    h = pane.height - 1
+    tw = pane.width - gutter
+    t = buffer.top
+    if buffer.row < t, t = buffer.row
+    if buffer.row ≥ t + h, t = buffer.row - h + 1
+    if t < 0, t = 0
+    l = buffer.left
+    if buffer.col < l, l = buffer.col
+    if buffer.col ≥ l + tw, l = buffer.col - tw + 1
+    if l < 0, l = 0
+
+    emit BaseName { path = buffer.path } to this get file_name
+    title = " " + file_name.name
+    if buffer.dirty, title = title + " ●"
+    if buffer.readonly, title = title + "  (read-only)"
+    title_style = "pane_title"
+    if focused, title_style = "pane_title_focus"
+    out = [{ row = 1 + pane.y, col = pane.x, spans = [{ text = title, width = pane.width, style = title_style }] }]
+
+    coloured = null
+    if buffer.path[length - 5, length) = ".code"
+        emit Join { value = buffer.lines, separator = "\n" } to strings get source
+        emit Highlight { source = source.value, from = t, until = t + h } to syntax get lit
+        if lit ∈ Highlighted, coloured = lit.lines
+
+    i = 0
+    loop
+        if i ≥ h, break
+        r = t + i
+        line = buffer.lines[r]
+        if line = null, break
+        number_style = "line_number"
+        if r = buffer.row, number_style = "line_number_active"
+        segments = [{ text = line[l, l + tw), style = "plain" }]
+        if coloured ≠ null
+            emit LineSpans { line = line, spans = coloured[i], left = l, width = tw } to this get cut
+            segments = cut.spans
+        numbers = [{ text = "" + (r + 1), width = gutter - 1, align = "right", style = number_style }, { text = " ", style = "plain" }]
+        out += { row = 2 + pane.y + i, col = pane.x, spans = numbers + segments }
+        i += 1
+    return PaneView {
+        overlays = out
+        top = t
+        left = l
+        page = h
+        cursor_row = 2 + pane.y + buffer.row - t
+        cursor_col = pane.x + gutter + buffer.col - l
+    }
+
+welcome = [
+    ""
+    "  codelovesme ide"
+    ""
+    "  Ctrl+B          Show the Explorer"
+    "  Ctrl+K Ctrl+O   Open a Folder"
+    "  Alt+F           File menu"
+    "  Ctrl+Q          Exit"
+]
+
+WelcomeView { pane } =>
+    out = []
+    loop i, text over welcome
+        if i < pane.height, out += { row = 1 + pane.y + i, col = pane.x + 2, spans = [{ text = text, style = "dim" }] }
+    return PaneView { overlays = out }
+
+| The status bar: a prompt being answered, or the last message on the
+| left; where the cursor is and the language on the right.
+StatusBar { width, row, message, prompt, buffer } =>
+    if prompt ≠ null
+        emit Length { value = prompt.label + prompt.text } to core get { value as typed }
+        return Status {
+            overlays = [{ row = row, col = 0, spans = [{ text = " " + prompt.label + prompt.text, width = width, style = "prompt" }] }]
+            cursor_col = 1 + typed
+        }
+    right = ""
+    if buffer ≠ null
+        language = "Plain Text"
+        if buffer.path[length - 5, length) = ".code", language = "code"
+        right = "Ln " + (buffer.row + 1) + ", Col " + (buffer.col + 1) + "    " + language + "  "
+    style = "status"
+    if message[0, 6) = "Error:", style = "status_warn"
+    return Status { overlays = [{ row = row, col = 0, spans = [
+        { text = " " + message, width = width - 34, style = style }
+        { text = right, width = 34, align = "right", style = style }
+    ] }] }
+
+| Everything. `state` is the ide gene's state, whole.
+Frame { state } =>
+    body = state.rows - 2
+    panes = []
+    if state.explorer, panes += { id = "explorer", slot = state.explorer_slot }
+    if state.file ≠ null, panes += { id = "editor", slot = "c" }
+    if state.file = null and not state.explorer, panes += { id = "welcome", slot = "c" }
+    emit Layout { width = state.cols, height = body, panes = panes } to this get placed
+
+    emit BaseName { path = state.folder } to this get folder_name
+    title = "ide — " + folder_name.name
+    if state.file ≠ null
+        title = title + " — " + state.file.path
+        if state.file.dirty, title = title + " ●"
+    emit MenuBar { width = state.cols, open = state.menu, title = title } to this get bar
+    overlays = bar.overlays
+
+    tree_top = state.tree_top
+    tree_page = 10
+    top = 0, left = 0, page = 10
+    cursor_row = null, cursor_col = null
+    loop pane over placed.panes
+        if pane.id = "explorer"
+            emit ExplorerView { pane = pane, nodes = state.tree, sel = state.tree_sel, top = state.tree_top, focused = state.focus = "tree", title = folder_name.name } to this get view
+            overlays = overlays + view.overlays
+            tree_top = view.top
+            tree_page = view.page
+        if pane.id = "editor"
+            emit EditorView { pane = pane, buffer = state.file, focused = state.focus = "editor" } to this get view
+            overlays = overlays + view.overlays
+            top = view.top, left = view.left, page = view.page
+            if state.focus = "editor"
+                cursor_row = view.cursor_row
+                cursor_col = view.cursor_col
+        if pane.id = "welcome"
+            emit WelcomeView { pane = pane } to this get view
+            overlays = overlays + view.overlays
+
+    emit StatusBar { width = state.cols, row = state.rows - 1, message = state.message, prompt = state.prompt, buffer = state.file } to this get status
+    overlays = overlays + status.overlays
+    if state.prompt ≠ null
+        cursor_row = state.rows - 1
+        cursor_col = status.cursor_col
+
+    if state.menu ≠ null
+        emit Dropdown { open = state.menu } to this get dropdown
+        overlays = overlays + dropdown.overlays
+        cursor_row = null
+
+    return Screen {
+        overlays = overlays
+        cursor_row = cursor_row
+        cursor_col = cursor_col
+        tree_top = tree_top
+        tree_page = tree_page
+        top = top
+        left = left
+        page = page
+    }

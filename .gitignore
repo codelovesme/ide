@@ -1,0 +1,11 @@
+# Installed organelle binaries, and installed genes. .code/lock.json
+# (committed) pins what they are, so a checkout can reproduce both with
+# `euglena install`.
+.code/modules/
+.code/genes/
+
+# Generated from manifest.json + src/*.gene.code on every run/build/test.
+main.code
+
+# Where `euglena build` puts artifacts.
+build/

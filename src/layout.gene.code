@@ -1,0 +1,145 @@
+| Layout — where each pane goes. Pure: a list of panes in, rectangles out.
+|
+| The body of the screen (between the menu bar and the status bar) is a
+| 3×3 grid of slots:
+|
+|     tl  t  tr
+|     l   c  r
+|     bl  b  br
+|
+| Two rules, in order:
+|
+| 1. A column or row with nothing in any of its three slots takes no room.
+|    The side columns are `side_width` wide and the top/bottom rows
+|    `edge_height` high; the middle takes the rest. With nothing in the
+|    middle, the sides share it.
+| 2. Every slot left empty is taken by a neighbour growing into it — as
+|    long as the neighbour stays a rectangle. Who grows first is
+|    `grow_from`: an empty side goes to its corner, then to the center; an
+|    empty top or bottom goes to the center, then to its corners; an empty
+|    corner goes to its side, then to its top or bottom; an empty center to
+|    the bottom, top, left, right.
+|
+| So a file tree alone fills the screen; a tree and a file are left and
+| center, the center covering the right as well; a corner with its side
+| empty takes the whole side.
+
+slot_names = ["tl", "t", "tr", "l", "c", "r", "bl", "b", "br"]
+cell_of = { tl = 0, t = 1, tr = 2, l = 3, c = 4, r = 5, bl = 6, b = 7, br = 8 }
+col_of = [0, 1, 2, 0, 1, 2, 0, 1, 2]
+row_of = [0, 0, 0, 1, 1, 1, 2, 2, 2]
+
+grow_from = {
+    tl = ["l", "t"]
+    t = ["c", "tl", "tr"]
+    tr = ["r", "t"]
+    l = ["tl", "bl", "c"]
+    c = ["b", "t", "l", "r"]
+    r = ["tr", "br", "c"]
+    bl = ["l", "b"]
+    b = ["c", "bl", "br"]
+    br = ["r", "b"]
+}
+
+| Edges first, then the center, then corners — an edge decides which way a
+| corner can still grow.
+fill_order = [1, 3, 5, 7, 4, 0, 2, 6, 8]
+
+side_width = 30
+edge_height = 10
+
+| May pane `who` grow into `cell` and stay a rectangle? Only if every live
+| cell in the grown box is already its own, or is `cell`.
+CanGrow { owner, live, who, cell } =>
+    lo_c = col_of[cell], hi_c = col_of[cell]
+    lo_r = row_of[cell], hi_r = row_of[cell]
+    loop i, o over owner
+        if o = who and live[i]
+            if col_of[i] < lo_c, lo_c = col_of[i]
+            if col_of[i] > hi_c, hi_c = col_of[i]
+            if row_of[i] < lo_r, lo_r = row_of[i]
+            if row_of[i] > hi_r, hi_r = row_of[i]
+    ok = true
+    loop i, o over owner
+        inside = col_of[i] ≥ lo_c and col_of[i] ≤ hi_c and row_of[i] ≥ lo_r and row_of[i] ≤ hi_r
+        if inside and live[i] and o ≠ who and i ≠ cell, ok = false
+    return Grow { ok = ok }
+
+| The sizes of three tracks (columns or rows) of `total`, given which are
+| used and how big a side one is.
+Tracks { total, used, side } =>
+    a = 0, b = 0, c = 0
+    if used[0], a = side
+    if used[2], c = side
+    if used[1], b = total - a - c
+    if not used[1] and used[0] and used[2], c = total - a
+    if not used[1] and used[0] and not used[2], a = total
+    if not used[1] and used[2] and not used[0], c = total
+    return Sizes { sizes = [a, b, c], starts = [0, a, a + b] }
+
+| `panes` is a list of `{ id, slot }`. Answers `Placed { panes }`, each
+| pane with `x`, `y`, `width`, `height` inside a `width` × `height` body. A
+| pane whose slot is taken by an earlier one is not placed.
+Layout { width, height, panes } =>
+    owner = [-1, -1, -1, -1, -1, -1, -1, -1, -1]
+    loop k, pane over panes
+        i = cell_of[pane.slot]
+        if i ≠ null and owner[i] < 0, owner = owner[0, i) + [k] + owner(i, length)
+
+    col_used = [false, false, false]
+    row_used = [false, false, false]
+    loop i, o over owner
+        if o ≥ 0
+            ci = col_of[i], ri = row_of[i]
+            col_used = col_used[0, ci) + [true] + col_used(ci, length)
+            row_used = row_used[0, ri) + [true] + row_used(ri, length)
+    live = []
+    loop i, o over owner
+        live += col_used[col_of[i]] and row_used[row_of[i]]
+
+    loop
+        changed = false
+        loop cell over fill_order
+            if live[cell] and owner[cell] < 0
+                loop neighbour over grow_from[slot_names[cell]]
+                    who = owner[cell_of[neighbour]]
+                    if who ≥ 0
+                        emit CanGrow { owner = owner, live = live, who = who, cell = cell } to this get g
+                        if g.ok
+                            owner = owner[0, cell) + [who] + owner(cell, length)
+                            changed = true
+                            break
+        if not changed, break
+
+    side = side_width
+    if side * 3 > width, side = 20
+    if side * 3 > width, side = 10
+    edge = edge_height
+    if edge * 3 > height, edge = 6
+    if edge * 3 > height, edge = 3
+    emit Tracks { total = width, used = col_used, side = side } to this get xs
+    emit Tracks { total = height, used = row_used, side = edge } to this get ys
+
+    placed = []
+    loop k, pane over panes
+        found = false
+        lo_c = 3, hi_c = -1, lo_r = 3, hi_r = -1
+        loop i, o over owner
+            if o = k and live[i]
+                found = true
+                if col_of[i] < lo_c, lo_c = col_of[i]
+                if col_of[i] > hi_c, hi_c = col_of[i]
+                if row_of[i] < lo_r, lo_r = row_of[i]
+                if row_of[i] > hi_r, hi_r = row_of[i]
+        if found
+            x = xs.starts[lo_c]
+            y = ys.starts[lo_r]
+            placed += {
+                id = pane.id
+                slot = pane.slot
+                x = x
+                y = y
+                width = xs.starts[hi_c] + xs.sizes[hi_c] - x
+                height = ys.starts[hi_r] + ys.sizes[hi_r] - y
+            }
+    return Placed { panes = placed }

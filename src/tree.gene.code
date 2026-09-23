@@ -1,0 +1,65 @@
+| Tree — the folder as rows. Pure.
+|
+| The tree is kept flat: the rows that are showing, in order, each knowing
+| its depth. Opening a folder puts its children in after it; closing it
+| takes out the rows below it that are deeper. (A handler cannot call
+| itself, so a tree that nests would have no way to be walked.)
+|
+| A node is `{ path, name, depth, is_dir, open }`; `path` is relative to
+| the folder that is open.
+
+hidden = { ".git" = true }
+
+| Enough levels for any tree a person opens by hand.
+levels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+
+| The entries of one `ListDir`, as nodes one level under `parent`:
+| folders first, then files, each in name order (`ListDir`'s own).
+Children { entries, parent, depth } =>
+    dirs = []
+    files = []
+    loop entry over entries
+        if hidden[entry.name] = true, continue
+        path = entry.name
+        if parent ≠ "", path = parent + "/" + entry.name
+        node = { path = path, name = entry.name, depth = depth, is_dir = entry.is_dir, open = false }
+        if entry.is_dir, dirs += node
+        if not entry.is_dir, files += node
+    return TreeNodes { nodes = dirs + files }
+
+| `nodes` with the children of the node at `index` put in after it, and
+| that node marked open.
+Expand { nodes, index, children } =>
+    node = nodes[index] + { open = true }
+    return TreeNodes { nodes = nodes[0, index) + [node] + children + nodes(index, length) }
+
+| `nodes` with everything under the node at `index` taken out.
+Collapse { nodes, index } =>
+    node = nodes[index]
+    after = index + 1
+    loop
+        below = nodes[after]
+        if below = null, break
+        if below.depth ≤ node.depth, break
+        after += 1
+    return TreeNodes { nodes = nodes[0, index) + [node + { open = false }] + nodes[after, length) }
+
+| Where the parent of the node at `index` is, or `index` itself at the top.
+Parent { nodes, index } =>
+    node = nodes[index]
+    at = index
+    loop
+        if at = 0, break
+        at = at - 1
+        if nodes[at].depth < node.depth, return Found { index = at }
+    return Found { index = index }
+
+| One row's text: indentation, an arrow for a folder, the name.
+Label { node } =>
+    text = " "
+    loop i over levels[0, node.depth)
+        text = text + "  "
+    if node.is_dir and node.open, text = text + "▾ "
+    if node.is_dir and not node.open, text = text + "▸ "
+    if not node.is_dir, text = text + "  "
+    return Labelled { text = text + node.name }

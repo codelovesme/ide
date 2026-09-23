@@ -1,0 +1,97 @@
+| What keys do to a buffer: typing, enter and its indentation, tab,
+| backspace through indentation, joining lines, and the cursor moves.
+
+link "strings.so" as strings
+link "../src/editor.gene.code"
+
+b = { lines = ["Hello { who } =>", ""], row = 0, col = 16, want = 16, path = "x.code" }
+
+| Enter after a handler header indents the next line one level.
+emit Edit { buffer = b, name = "enter", text = "", page = 10 } to this get e
+assert e.changed
+assert e.buffer.lines = ["Hello { who } =>", "    ", ""]
+assert e.buffer.row = 1
+assert e.buffer.col = 4
+assert e.buffer.path = "x.code"
+
+| Typing goes in at the cursor.
+emit Edit { buffer = e.buffer, name = "e", text = "emit", page = 10 } to this get typed
+assert typed.buffer.lines[1] = "    emit"
+assert typed.buffer.col = 8
+
+| Enter inside a block keeps its indentation; after `if` with no comma it
+| goes one deeper; after `if x, …` it does not.
+emit Edit { buffer = { lines = ["    if x"], row = 0, col = 8, want = 8 }, name = "enter", text = "", page = 10 } to this get deeper
+assert deeper.buffer.lines = ["    if x", "        "]
+emit Edit { buffer = { lines = ["    if x, return Y"], row = 0, col = 18, want = 18 }, name = "enter", text = "", page = 10 } to this get same
+assert same.buffer.lines = ["    if x, return Y", "    "]
+
+| Enter in the middle of a line splits it.
+emit Edit { buffer = { lines = ["ab cd"], row = 0, col = 2, want = 2 }, name = "enter", text = "", page = 10 } to this get split
+assert split.buffer.lines = ["ab", " cd"]
+
+| Tab goes to the next stop of four; shift+tab takes a level back.
+emit Edit { buffer = { lines = ["x"], row = 0, col = 0, want = 0 }, name = "tab", text = "", page = 10 } to this get tabbed
+assert tabbed.buffer.lines = ["    x"]
+assert tabbed.buffer.col = 4
+emit Edit { buffer = { lines = ["  x"], row = 0, col = 2, want = 2 }, name = "tab", text = "", page = 10 } to this get to_stop
+assert to_stop.buffer.lines = ["    x"]
+emit Edit { buffer = { lines = ["      x"], row = 0, col = 7, want = 7 }, name = "shift+tab", text = "", page = 10 } to this get back
+assert back.buffer.lines = ["  x"]
+assert back.buffer.col = 3
+
+| Backspace inside indentation goes back to the previous stop; elsewhere
+| one character; at the start of a line it joins the line above.
+emit Edit { buffer = { lines = ["        "], row = 0, col = 8, want = 8 }, name = "backspace", text = "", page = 10 } to this get unindent
+assert unindent.buffer.lines = ["    "]
+emit Edit { buffer = { lines = ["      "], row = 0, col = 6, want = 6 }, name = "backspace", text = "", page = 10 } to this get odd
+assert odd.buffer.lines = ["    "]
+emit Edit { buffer = { lines = ["abc"], row = 0, col = 2, want = 2 }, name = "backspace", text = "", page = 10 } to this get one
+assert one.buffer.lines = ["ac"]
+emit Edit { buffer = { lines = ["ab", "cd"], row = 1, col = 0, want = 0 }, name = "backspace", text = "", page = 10 } to this get joined
+assert joined.buffer.lines = ["abcd"]
+assert joined.buffer.col = 2
+emit Edit { buffer = { lines = ["ab"], row = 0, col = 0, want = 0 }, name = "backspace", text = "", page = 10 } to this get nothing
+assert not nothing.changed
+
+| Delete: the character under the cursor, or the next line joined on.
+emit Edit { buffer = { lines = ["abc"], row = 0, col = 1, want = 1 }, name = "delete", text = "", page = 10 } to this get del
+assert del.buffer.lines = ["ac"]
+emit Edit { buffer = { lines = ["ab", "cd"], row = 0, col = 2, want = 2 }, name = "delete", text = "", page = 10 } to this get pulled
+assert pulled.buffer.lines = ["abcd"]
+
+| Moves: right wraps to the next line, up and down keep the wanted column.
+m = { lines = ["long line here", "ab", "another long one"], row = 0, col = 10, want = 10 }
+emit Edit { buffer = m, name = "down", text = "", page = 10 } to this get d1
+assert d1.buffer.row = 1
+assert d1.buffer.col = 2
+emit Edit { buffer = d1.buffer, name = "down", text = "", page = 10 } to this get d2
+assert d2.buffer.col = 10
+assert not d2.changed
+emit Edit { buffer = { lines = ["ab", "cd"], row = 0, col = 2, want = 2 }, name = "right", text = "", page = 10 } to this get wrap
+assert wrap.buffer.row = 1
+assert wrap.buffer.col = 0
+emit Edit { buffer = { lines = ["ab", "cd"], row = 1, col = 0, want = 0 }, name = "left", text = "", page = 10 } to this get unwrap
+assert unwrap.buffer.row = 0
+assert unwrap.buffer.col = 2
+emit Edit { buffer = m, name = "pagedown", text = "", page = 10 } to this get paged
+assert paged.buffer.row = 2
+emit Edit { buffer = m, name = "up", text = "", page = 10 } to this get top
+assert top.buffer.row = 0
+assert top.buffer.col = 0
+
+| Home goes to the first non-space, then to column 0.
+emit Edit { buffer = { lines = ["    x = 1"], row = 0, col = 8, want = 8 }, name = "home", text = "", page = 10 } to this get h1
+assert h1.buffer.col = 4
+emit Edit { buffer = h1.buffer, name = "home", text = "", page = 10 } to this get h2
+assert h2.buffer.col = 0
+emit Edit { buffer = h2.buffer, name = "end", text = "", page = 10 } to this get h3
+assert h3.buffer.col = 9
+
+| ctrl+left / ctrl+right move a word at a time.
+emit Edit { buffer = { lines = ["emit Print to con"], row = 0, col = 0, want = 0 }, name = "ctrl+right", text = "", page = 10 } to this get w1
+assert w1.buffer.col = 4
+emit Edit { buffer = w1.buffer, name = "ctrl+right", text = "", page = 10 } to this get w2
+assert w2.buffer.col = 10
+emit Edit { buffer = w2.buffer, name = "ctrl+left", text = "", page = 10 } to this get w3
+assert w3.buffer.col = 5

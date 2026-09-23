@@ -1,0 +1,214 @@
+| Editor — what a key does to a buffer. Pure: a buffer and a key in, the
+| buffer after it out, and whether its text changed (so the caller knows
+| to mark it dirty and remember it for undo).
+|
+| A buffer is `{ lines, row, col, want, … }`: the text as a list of lines,
+| the cursor, and `want` — the column the cursor would like to be in, kept
+| across short lines while moving up and down. Other fields ride along.
+|
+| Indentation is spaces, four to a level (code refuses tabs). Enter keeps
+| the line's indentation and adds a level after a block header: a line
+| ending in `=>`, or an `if` / `loop` with no `,` (one with a comma has its
+| body on the same line).
+
+indent_unit = 4
+
+| Characters a word stops at, for ctrl+left / ctrl+right.
+separators = {
+    " " = true
+    "." = true
+    "," = true
+    "(" = true
+    ")" = true
+    "[" = true
+    "]" = true
+    "{" = true
+    "}" = true
+    "=" = true
+    "+" = true
+    "-" = true
+    "*" = true
+    "/" = true
+    "\"" = true
+    "|" = true
+    ":" = true
+}
+
+| The indentation of `line` (as spaces), and whether it opens a block.
+Indent { line } =>
+    n = 0
+    loop
+        if line[n] ≠ " ", break
+        n += 1
+    emit Trim { value = line } to strings get trimmed
+    body = trimmed.value
+    emit Length { value = body } to core get { value as size }
+    opens = false
+    if size ≥ 2 and body[size - 2, size) = "=>", opens = true
+    if body[0, 3) = "if " or body = "loop" or body[0, 5) = "loop "
+        emit Split { value = body, separator = "," } to strings get parts
+        emit Length { value = parts.value } to core get { value as pieces }
+        if pieces = 1, opens = true
+    return Indented { spaces = line[0, n), width = n, opens = opens }
+
+| The column a word move lands on, going `step` (1 or -1) from `col`.
+WordMove { line, col, step } =>
+    emit Length { value = line } to core get { value as size }
+    at = col
+    if step < 0
+        loop
+            if at = 0 or separators[line[at - 1]] ≠ true, break
+            at = at - 1
+        loop
+            if at = 0 or separators[line[at - 1]] = true, break
+            at = at - 1
+    if step > 0
+        loop
+            if at ≥ size or separators[line[at]] ≠ true, break
+            at += 1
+        loop
+            if at ≥ size or separators[line[at]] = true, break
+            at += 1
+    return Moved { col = at }
+
+| One key applied to `buffer`. `page` is how many lines pageup/pagedown
+| move. Answers `Edited { buffer, changed }`.
+Edit { buffer, name, text, page } =>
+    lines = buffer.lines
+    row = buffer.row
+    col = buffer.col
+    want = buffer.want
+    line = lines[row]
+    emit Length { value = line } to core get { value as size }
+    emit Length { value = lines } to core get { value as count }
+
+    | Typing.
+    if text ≠ ""
+        emit Length { value = text } to core get { value as typed }
+        line = line[0, col) + text + line[col, length)
+        lines = lines[0, row) + [line] + lines(row, length)
+        return Edited { buffer = buffer + { lines = lines, col = col + typed, want = col + typed }, changed = true }
+
+    if name = "enter"
+        emit Indent { line = line[0, col) } to this get indent
+        pad = indent.spaces
+        if indent.opens, pad = pad + "    "
+        emit Length { value = pad } to core get { value as padded }
+        emit Trim { value = line[col, length) } to strings get rest_trim
+        rest = line[col, length)
+        if rest_trim.value = "", rest = ""
+        lines = lines[0, row) + [line[0, col), pad + rest] + lines(row, length)
+        return Edited { buffer = buffer + { lines = lines, row = row + 1, col = padded, want = padded }, changed = true }
+
+    if name = "tab"
+        stop = 0
+        loop
+            stop += indent_unit
+            if stop > col, break
+        added = stop - col
+        spaces = "        "[0, added)
+        line = line[0, col) + spaces + line[col, length)
+        lines = lines[0, row) + [line] + lines(row, length)
+        return Edited { buffer = buffer + { lines = lines, col = col + added, want = col + added }, changed = true }
+
+    if name = "shift+tab"
+        emit Indent { line = line } to this get indent
+        take = indent.width
+        if take > indent_unit, take = indent_unit
+        if take = 0, return Edited { buffer = buffer, changed = false }
+        at = col - take
+        if at < 0, at = 0
+        lines = lines[0, row) + [line[take, length)] + lines(row, length)
+        return Edited { buffer = buffer + { lines = lines, col = at, want = at }, changed = true }
+
+    if name = "backspace"
+        if col > 0
+            take = 1
+            emit Trim { value = line[0, col) } to strings get before
+            if before.value = ""
+                stop = 0
+                loop
+                    if stop + indent_unit ≥ col, break
+                    stop += indent_unit
+                take = col - stop
+            line = line[0, col - take) + line[col, length)
+            lines = lines[0, row) + [line] + lines(row, length)
+            return Edited { buffer = buffer + { lines = lines, col = col - take, want = col - take }, changed = true }
+        if row > 0
+            above = lines[row - 1]
+            emit Length { value = above } to core get { value as joined_at }
+            lines = lines[0, row - 1) + [above + line] + lines(row, length)
+            return Edited { buffer = buffer + { lines = lines, row = row - 1, col = joined_at, want = joined_at }, changed = true }
+        return Edited { buffer = buffer, changed = false }
+
+    if name = "delete"
+        if col < size
+            line = line[0, col) + line(col, length)
+            lines = lines[0, row) + [line] + lines(row, length)
+            return Edited { buffer = buffer + { lines = lines }, changed = true }
+        if row < count - 1
+            lines = lines[0, row) + [line + lines[row + 1]] + lines(row + 1, length)
+            return Edited { buffer = buffer + { lines = lines }, changed = true }
+        return Edited { buffer = buffer, changed = false }
+
+    | Moving: the text stays, the cursor goes.
+    if name = "left"
+        if col > 0, col = col - 1
+        if col = buffer.col and row > 0
+            row = row - 1
+            emit Length { value = lines[row] } to core get { value as above }
+            col = above
+        return Edited { buffer = buffer + { row = row, col = col, want = col }, changed = false }
+
+    if name = "right"
+        if col < size, col += 1
+        if col = buffer.col and row < count - 1
+            row += 1
+            col = 0
+        return Edited { buffer = buffer + { row = row, col = col, want = col }, changed = false }
+
+    if name = "home"
+        emit Indent { line = line } to this get indent
+        col = indent.width
+        if buffer.col = indent.width, col = 0
+        return Edited { buffer = buffer + { col = col, want = col }, changed = false }
+
+    if name = "end"
+        return Edited { buffer = buffer + { col = size, want = size }, changed = false }
+
+    if name = "ctrl+home"
+        return Edited { buffer = buffer + { row = 0, col = 0, want = 0 }, changed = false }
+
+    if name = "ctrl+end"
+        emit Length { value = lines[count - 1] } to core get { value as last }
+        return Edited { buffer = buffer + { row = count - 1, col = last, want = last }, changed = false }
+
+    if name = "ctrl+left" or name = "ctrl+right"
+        step = 1
+        if name = "ctrl+left", step = -1
+        if name = "ctrl+left" and col = 0 and row > 0
+            emit Length { value = lines[row - 1] } to core get { value as above }
+            return Edited { buffer = buffer + { row = row - 1, col = above, want = above }, changed = false }
+        if name = "ctrl+right" and col = size and row < count - 1
+            return Edited { buffer = buffer + { row = row + 1, col = 0, want = 0 }, changed = false }
+        emit WordMove { line = line, col = col, step = step } to this get moved
+        return Edited { buffer = buffer + { col = moved.col, want = moved.col }, changed = false }
+
+    | Up and down keep `want`, the column the cursor would like to be in.
+    target = row
+    if name = "up", target = row - 1
+    if name = "down", target = row + 1
+    if name = "pageup", target = row - page
+    if name = "pagedown", target = row + page
+    if target ≠ row
+        if target < 0
+            return Edited { buffer = buffer + { row = 0, col = 0 }, changed = false }
+        if target > count - 1
+            emit Length { value = lines[count - 1] } to core get { value as last }
+            return Edited { buffer = buffer + { row = count - 1, col = last }, changed = false }
+        emit Length { value = lines[target] } to core get { value as there }
+        col = want
+        if col > there, col = there
+        return Edited { buffer = buffer + { row = target, col = col }, changed = false }
+
+    return Edited { buffer = buffer, changed = false }

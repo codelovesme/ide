@@ -1,0 +1,97 @@
+| Menu — the menu bar and its dropdowns: File, View, Help. Pure.
+|
+| An open menu is `{ index, item }`: which menu, which item in it.
+
+menus = [
+    {
+        title = "File"
+        col = 0
+        items = [
+            { label = "Open Folder…", keys = "Ctrl+K Ctrl+O", command = "file.openFolder" }
+            { label = "Save", keys = "Ctrl+S", command = "file.save" }
+            { label = "Close File", keys = "Ctrl+W", command = "file.close" }
+            { label = "Exit", keys = "Ctrl+Q", command = "app.quit" }
+        ]
+    }
+    {
+        title = "View"
+        col = 6
+        items = [
+            { label = "Explorer", keys = "Ctrl+B", command = "view.explorer" }
+            { label = "Explorer on the Left", keys = "", command = "view.explorerLeft" }
+            { label = "Explorer on the Right", keys = "", command = "view.explorerRight" }
+            { label = "Focus Explorer", keys = "Ctrl+Shift+E", command = "focus.explorer" }
+            { label = "Focus Editor", keys = "Ctrl+1", command = "focus.editor" }
+        ]
+    }
+    {
+        title = "Help"
+        col = 12
+        items = [
+            { label = "Keyboard Shortcuts", keys = "Ctrl+K Ctrl+S", command = "help.keys" }
+            { label = "About", keys = "", command = "help.about" }
+        ]
+    }
+]
+
+dropdown_label = 24
+dropdown_keys = 16
+
+| A key while a menu is open. Answers the menu after it (null: closed)
+| and the command it chose (null: none).
+MenuKey { open, name } =>
+    index = open.index
+    item = open.item
+    emit Length { value = menus[index].items } to core get { value as count }
+    if name = "escape" or name = "f10", return MenuResult { open = null, command = null }
+    if name = "alt+f", return MenuResult { open = { index = 0, item = 0 }, command = null }
+    if name = "alt+v", return MenuResult { open = { index = 1, item = 0 }, command = null }
+    if name = "alt+h", return MenuResult { open = { index = 2, item = 0 }, command = null }
+    if name = "left"
+        index = index - 1
+        if index < 0, index = 2
+        return MenuResult { open = { index = index, item = 0 }, command = null }
+    if name = "right"
+        index += 1
+        if index > 2, index = 0
+        return MenuResult { open = { index = index, item = 0 }, command = null }
+    if name = "up"
+        item = item - 1
+        if item < 0, item = count - 1
+        return MenuResult { open = { index = index, item = item }, command = null }
+    if name = "down"
+        item += 1
+        if item ≥ count, item = 0
+        return MenuResult { open = { index = index, item = item }, command = null }
+    if name = "enter" or name = "space"
+        return MenuResult { open = null, command = menus[index].items[item].command }
+    return MenuResult { open = open, command = null }
+
+| Row 0: the menus on the left, `title` on the right of the same bar.
+MenuBar { width, open, title } =>
+    spans = [{ text = " ", style = "menu" }]
+    loop i, m over menus
+        style = "menu"
+        if open ≠ null and open.index = i, style = "menu_active"
+        spans += { text = " " + m.title + " ", style = style }
+    spans += { text = title + " ", width = width - 19, align = "right", style = "title" }
+    return Overlays { overlays = [
+        { row = 0, col = 0, spans = [{ text = "", width = width, style = "menu" }] }
+        { row = 0, col = 0, spans = spans }
+    ] }
+
+| The open menu's items, dropped down under its title.
+Dropdown { open } =>
+    m = menus[open.index]
+    out = []
+    loop i, entry over m.items
+        style = "menu_item"
+        key_style = "menu_key"
+        if i = open.item
+            style = "menu_item_active"
+            key_style = "menu_key_active"
+        out += { row = 1 + i, col = m.col, spans = [
+            { text = "  " + entry.label, width = dropdown_label, style = style }
+            { text = entry.keys + "  ", width = dropdown_keys, align = "right", style = key_style }
+        ] }
+    return Overlays { overlays = out }

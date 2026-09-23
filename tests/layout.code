@@ -1,0 +1,58 @@
+| The 9-slot layout: the examples it was specified with, and every slot on
+| its own filling the whole body.
+
+link "../src/layout.gene.code"
+
+| A pane on its own fills the body, whichever slot it is in.
+loop slot over ["tl", "t", "tr", "l", "c", "r", "bl", "b", "br"]
+    emit Layout { width = 120, height = 40, panes = [{ id = "p", slot = slot }] } to this get alone
+    assert alone.panes = [{ id = "p", slot = slot, x = 0, y = 0, width = 120, height = 40 }]
+
+| A folder open: the tree is the whole screen.
+emit Layout { width = 120, height = 40, panes = [{ id = "tree", slot = "l" }] } to this get tree_only
+assert tree_only.panes[0].width = 120
+
+| A file open too: the tree keeps the left, the file takes center and right.
+emit Layout { width = 120, height = 40, panes = [{ id = "tree", slot = "l" }, { id = "file", slot = "c" }] } to this get two
+assert two.panes[0] = { id = "tree", slot = "l", x = 0, y = 0, width = 30, height = 40 }
+assert two.panes[1] = { id = "file", slot = "c", x = 30, y = 0, width = 90, height = 40 }
+
+| The tree on the right instead.
+emit Layout { width = 120, height = 40, panes = [{ id = "tree", slot = "r" }, { id = "file", slot = "c" }] } to this get right
+assert right.panes[0] = { id = "tree", slot = "r", x = 90, y = 0, width = 30, height = 40 }
+assert right.panes[1] = { id = "file", slot = "c", x = 0, y = 0, width = 90, height = 40 }
+
+| A corner with its side empty takes the whole side.
+emit Layout { width = 120, height = 40, panes = [{ id = "tree", slot = "l" }, { id = "file", slot = "c" }, { id = "corner", slot = "br" }] } to this get corner
+assert corner.panes[2] = { id = "corner", slot = "br", x = 90, y = 0, width = 30, height = 40 }
+assert corner.panes[1].width = 60
+assert corner.panes[1].height = 40
+
+| Top-left and center, left and top empty: the corner takes the left
+| column, the center takes the top.
+emit Layout { width = 120, height = 40, panes = [{ id = "a", slot = "tl" }, { id = "b", slot = "c" }] } to this get tlc
+assert tlc.panes[0] = { id = "a", slot = "tl", x = 0, y = 0, width = 30, height = 40 }
+assert tlc.panes[1] = { id = "b", slot = "c", x = 30, y = 0, width = 90, height = 40 }
+
+| VS Code's own shape: tree left, editor center, panel bottom. The tree runs
+| the full height; the panel sits under the editor only.
+emit Layout { width = 120, height = 40, panes = [{ id = "tree", slot = "l" }, { id = "file", slot = "c" }, { id = "panel", slot = "b" }] } to this get vs
+assert vs.panes[0] = { id = "tree", slot = "l", x = 0, y = 0, width = 30, height = 40 }
+assert vs.panes[1] = { id = "file", slot = "c", x = 30, y = 0, width = 90, height = 30 }
+assert vs.panes[2] = { id = "panel", slot = "b", x = 30, y = 30, width = 90, height = 10 }
+
+| Two sides and nothing between: the left keeps its width, the right the rest.
+emit Layout { width = 120, height = 40, panes = [{ id = "a", slot = "l" }, { id = "b", slot = "r" }] } to this get sides
+assert sides.panes[0].width = 30
+assert sides.panes[1] = { id = "b", slot = "r", x = 30, y = 0, width = 90, height = 40 }
+
+| A narrow screen keeps the sides smaller.
+emit Layout { width = 80, height = 24, panes = [{ id = "tree", slot = "l" }, { id = "file", slot = "c" }] } to this get narrow
+assert narrow.panes[0].width = 20
+assert narrow.panes[1].width = 60
+
+| Two panes asking for one slot: the first has it.
+emit Layout { width = 120, height = 40, panes = [{ id = "a", slot = "c" }, { id = "b", slot = "c" }] } to this get clash
+emit Length { value = clash.panes } to core get { value as placed }
+assert placed = 1
+assert clash.panes[0].id = "a"

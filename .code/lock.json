@@ -1,0 +1,77 @@
+{
+  "modules": {
+    "env": {
+      "name": "env",
+      "version": "2.8.1",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.1",
+      "asset": "env-linux-x86_64.so",
+      "sha256": "bf014a9b1f638b818f33fc6c187e63e8f70c2a515df1474b803e0f4a64648182",
+      "handlers": [
+        "Get",
+        "Require"
+      ],
+      "global": false
+    },
+    "fs": {
+      "name": "fs",
+      "version": "2.8.1",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.1",
+      "asset": "fs-linux-x86_64.so",
+      "sha256": "54d993b3f8fbf9e01d8ec620b65685b8111ff8332c68d6a976e36af5dc9ca95f",
+      "handlers": [
+        "Config",
+        "ReadFile",
+        "WriteFile",
+        "DeleteFile",
+        "CreateDir",
+        "RemoveDir",
+        "ListDir",
+        "Exists"
+      ],
+      "setup": "Config",
+      "global": false
+    },
+    "strings": {
+      "name": "strings",
+      "version": "2.8.1",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.1",
+      "asset": "strings-linux-x86_64.so",
+      "sha256": "f990776add4e3733dfba2d5f81b824a82556cc9b1567ab34700957b1b60fc1f3",
+      "handlers": [
+        "Shout",
+        "Echo",
+        "Split",
+        "Join",
+        "Trim",
+        "Upper",
+        "Lower"
+      ],
+      "global": false
+    },
+    "tty": {
+      "name": "tty",
+      "version": "2.8.1",
+      "source": "local",
+      "asset": "tty-linux-x86_64.so",
+      "sha256": "6c7a08adf11f3c7b6b4d8fa7cbc3bff4f31880984f939074470ca016d295d8d9",
+      "handlers": [
+        "Start",
+        "Stop",
+        "Draw",
+        "Size"
+      ],
+      "global": false
+    },
+    "syntax": {
+      "name": "syntax",
+      "version": "2.8.1",
+      "source": "local",
+      "asset": "syntax-linux-x86_64.so",
+      "sha256": "fb6b885739f44b1c3d1258cfd15128b5b502b3cc09eae370f2b388164f4bf440",
+      "handlers": [
+        "Highlight"
+      ],
+      "global": false
+    }
+  }
+}

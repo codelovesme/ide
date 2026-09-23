@@ -1,0 +1,362 @@
+| ide — the state, and what each key does to it.
+|
+| This is the one gene that holds state: a gene's top level is its
+| handlers' whole world, so everything that changes lives here and every
+| other gene answers particles (layout, editor, tree, keys, menu, render).
+|
+| A key arrives from `tty` as `Key { name, text }`. It goes, first match:
+| to the prompt if one is open, to the menu if one is open, to a command if
+| it is bound (keys.gene.code), else to the focused pane. Then the screen
+| is drawn again. Anything that fails lands in the status bar, not silence.
+
+folder = ""
+cols = 80
+rows = 24
+running = false
+
+| The explorer: the visible rows (see tree.gene.code), the selected one,
+| and the first one showing.
+tree = []
+tree_sel = 0
+tree_top = 0
+tree_page = 20
+
+| The open file: `{ path, lines, row, col, want, top, left, dirty, readonly }`.
+file = null
+editor_page = 20
+undo = []
+redo = []
+last_edit = ""
+
+focus = "tree"
+menu = null
+prompt = null
+message = ""
+chord = ""
+explorer = true
+explorer_slot = "l"
+
+max_undo = 200
+
+EuglenaHasBeenBorn { cell_name } =>
+    emit Get { name = "IDE_FOLDER", default = "" } to env get chosen
+    start_in = chosen.value
+    | Otherwise the folder it was started in — as fs resolves `.`, since
+    | `PWD` is only what a shell says.
+    if start_in = ""
+        emit Config { base_path = "." } to fs get here
+        start_in = here.base_path
+    emit OpenFolder { path = start_in } to this get opened
+    if opened ∈ Failed, return opened
+    emit Start {} to tty get started
+    if started ∈ Exception, return Failed { reason = started.message }
+    cols = started.cols
+    rows = started.rows
+    running = true
+    emit Render to this
+    return Alive { cell_name = cell_name }
+
+Resize { cols as width, rows as height } =>
+    cols = width
+    rows = height
+    emit Render to this
+    return Resized
+
+Key { name, text } =>
+    if not running, return Ignored
+    message = ""
+    emit HandleKey { name = name, text = text } to this get handled
+    if handled ∈ Exception, message = "Error: " + handled.message
+    emit Render to this
+    return handled
+
+HandleKey { name, text } =>
+    if prompt ≠ null
+        emit PromptKey { name = name, text = text } to this
+        return Handled
+    if menu ≠ null
+        emit MenuKey { open = menu, name = name } to this get chosen
+        menu = chosen.open
+        if chosen.command ≠ null, emit Run { command = chosen.command } to this
+        return Handled
+    emit Keymap { name = name, pending = chord } to this get bound
+    chord = bound.pending
+    if chord ≠ ""
+        message = "(Ctrl+K) was pressed. Waiting for the second key of the chord…"
+        return Handled
+    if bound.command ≠ null
+        emit Run { command = bound.command } to this
+        return Handled
+    if bound.chord ≠ ""
+        message = "The key combination (" + bound.chord + ") is not a command."
+        return Handled
+    if focus = "tree" and not explorer and file ≠ null, focus = "editor"
+    if focus = "tree"
+        emit TreeKey { name = name } to this
+        return Handled
+    if focus = "editor" and file ≠ null
+        emit EditorKey { name = name, text = text } to this
+    return Handled
+
+| A command, from a key or a menu item.
+Run { command } =>
+    if command = "file.save", emit SaveFile to this
+    if command = "file.close", emit RequestClose to this
+    if command = "app.quit", emit RequestQuit to this
+    if command = "file.openFolder"
+        prompt = { kind = "open_folder", label = "Open folder: ", text = folder + "/" }
+    if command = "view.explorer"
+        explorer = not explorer
+        if not explorer and focus = "tree" and file ≠ null, focus = "editor"
+        if explorer and file = null, focus = "tree"
+    if command = "view.explorerLeft", explorer_slot = "l"
+    if command = "view.explorerRight", explorer_slot = "r"
+    if command = "focus.explorer"
+        explorer = true
+        focus = "tree"
+    if command = "focus.editor" and file ≠ null, focus = "editor"
+    if command = "focus.next"
+        if focus = "editor" and explorer
+            focus = "tree"
+            return Ran
+        if focus = "tree" and file ≠ null, focus = "editor"
+    if command = "menu.file", menu = { index = 0, item = 0 }
+    if command = "menu.view", menu = { index = 1, item = 0 }
+    if command = "menu.help", menu = { index = 2, item = 0 }
+    if command = "edit.undo" and focus = "editor", emit Undo to this
+    if command = "edit.redo" and focus = "editor", emit Redo to this
+    if command = "help.keys", emit ShowShortcuts to this
+    if command = "help.about", message = "codelovesme ide 0.1 — a terminal IDE for code, built on euglena"
+    return Ran
+
+| A key while the status bar is asking something.
+PromptKey { name, text } =>
+    asked = prompt
+    if name = "escape"
+        prompt = null
+        return Cancelled
+    if asked.kind = "open_folder"
+        if name = "enter"
+            prompt = null
+            emit OpenFolder { path = asked.text } to this
+            return Answered
+        if name = "backspace"
+            prompt = asked + { text = asked.text[0, length - 1) }
+            return Typed
+        if text ≠ "", prompt = asked + { text = asked.text + text }
+        return Typed
+    | The rest are "save first?" — y, n, or escape.
+    if name ≠ "y" and name ≠ "n", return Typed
+    prompt = null
+    if name = "y"
+        emit SaveFile to this get saved
+        if saved ∉ Saved, return Cancelled
+    if asked.kind = "close", emit CloseFile to this
+    if asked.kind = "quit", emit Quit to this
+    return Answered
+
+| `path` absolute, or relative to the folder open now, or under `~`.
+OpenFolder { path } =>
+    target = path
+    emit Get { name = "HOME", default = "/" } to env get home
+    if target = "~" or target[0, 2) = "~/", target = home.value + target[1, length)
+    if target[0] ≠ "/", target = folder + "/" + target
+    | fs only sees inside its base, so the check is made from the root —
+    | Config would create a folder that is not there.
+    emit Config { base_path = "/" } to fs
+    emit Exists { path = target } to fs get there
+    if not there.is_dir
+        if folder ≠ "", emit Config { base_path = folder } to fs
+        message = "Error: not a folder: " + path
+        return Failed { reason = message }
+    emit Config { base_path = target } to fs get configured
+    if configured ∈ Exception
+        message = "Error: " + configured.message
+        return Failed { reason = message }
+    emit ListDir { path = "." } to fs get listing
+    if listing ∈ Exception
+        message = "Error: " + listing.message
+        return Failed { reason = message }
+    emit Children { entries = listing.entries, parent = "", depth = 0 } to this get kids
+    folder = configured.base_path
+    tree = kids.nodes
+    tree_sel = 0
+    tree_top = 0
+    file = null
+    undo = []
+    redo = []
+    focus = "tree"
+    return Opened { folder = folder }
+
+TreeKey { name } =>
+    emit Length { value = tree } to core get { value as count }
+    if count = 0, return Handled
+    if name = "down" and tree_sel < count - 1, tree_sel += 1
+    if name = "up" and tree_sel > 0, tree_sel = tree_sel - 1
+    if name = "home", tree_sel = 0
+    if name = "end", tree_sel = count - 1
+    if name = "pagedown"
+        tree_sel = tree_sel + tree_page
+        if tree_sel > count - 1, tree_sel = count - 1
+    if name = "pageup"
+        tree_sel = tree_sel - tree_page
+        if tree_sel < 0, tree_sel = 0
+    node = tree[tree_sel]
+    wants_open = name = "enter" or name = "right" or name = "space"
+    if node.is_dir and wants_open and not node.open
+        emit ListDir { path = node.path } to fs get listing
+        if listing ∈ Exception
+            message = "Error: " + listing.message
+            return Handled
+        emit Children { entries = listing.entries, parent = node.path, depth = node.depth + 1 } to this get kids
+        emit Expand { nodes = tree, index = tree_sel, children = kids.nodes } to this get grown
+        tree = grown.nodes
+        return Handled
+    if node.is_dir and node.open and (name = "enter" or name = "left")
+        emit Collapse { nodes = tree, index = tree_sel } to this get shrunk
+        tree = shrunk.nodes
+        return Handled
+    if name = "left"
+        emit Parent { nodes = tree, index = tree_sel } to this get up
+        tree_sel = up.index
+        return Handled
+    if not node.is_dir and (name = "enter" or name = "space")
+        emit OpenFile { path = node.path } to this get opened
+        if opened ∈ Opened and name = "enter", focus = "editor"
+    return Handled
+
+OpenFile { path } =>
+    emit ReadFile { path = path } to fs get read
+    if read ∈ Exception
+        message = "Error: " + read.message
+        return Failed
+    emit Split { value = read.content, separator = "\n" } to strings get split
+    file = { path = path, lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false }
+    undo = []
+    redo = []
+    last_edit = ""
+    return Opened
+
+ShowShortcuts =>
+    emit Shortcuts to this get help
+    file = { path = "Keyboard Shortcuts", lines = help.lines, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = true }
+    undo = []
+    redo = []
+    focus = "editor"
+    return Shown
+
+EditorKey { name, text } =>
+    emit Edit { buffer = file, name = name, text = text, page = editor_page } to this get edited
+    if edited ∈ Exception
+        message = "Error: " + edited.message
+        return Failed
+    if not edited.changed
+        last_edit = ""
+        file = edited.buffer
+        return Moved
+    if file.readonly
+        message = "This file is read-only."
+        return Refused
+    | Typing runs together into one undo step; every other edit is its own.
+    kind = name
+    if text ≠ "" and text ≠ " ", kind = "type"
+    if not (kind = "type" and last_edit = "type")
+        undo += { lines = file.lines, row = file.row, col = file.col }
+        emit Length { value = undo } to core get { value as kept }
+        if kept > max_undo, undo = undo[1, length)
+    redo = []
+    last_edit = kind
+    file = edited.buffer + { dirty = true }
+    return Changed
+
+Undo =>
+    emit Length { value = undo } to core get { value as count }
+    if file = null or count = 0, return Nothing
+    redo += { lines = file.lines, row = file.row, col = file.col }
+    file = file + undo[count - 1] + { dirty = true }
+    file = file + { want = file.col }
+    undo = undo[0, count - 1)
+    last_edit = ""
+    return Undone
+
+Redo =>
+    emit Length { value = redo } to core get { value as count }
+    if file = null or count = 0, return Nothing
+    undo += { lines = file.lines, row = file.row, col = file.col }
+    file = file + redo[count - 1] + { dirty = true }
+    file = file + { want = file.col }
+    redo = redo[0, count - 1)
+    last_edit = ""
+    return Redone
+
+SaveFile =>
+    if file = null, return Nothing
+    if file.readonly, return Nothing
+    emit Join { value = file.lines, separator = "\n" } to strings get joined
+    emit WriteFile { path = file.path, content = joined.value } to fs get written
+    if written ∈ Exception
+        message = "Error: " + written.message
+        return Failed
+    file = file + { dirty = false }
+    message = "Saved " + file.path
+    return Saved
+
+RequestClose =>
+    if file = null, return Nothing
+    if file.dirty
+        prompt = { kind = "close", label = "Save changes to " + file.path + "? (y / n / Escape) ", text = "" }
+        return Asked
+    emit CloseFile to this
+    return Closed
+
+CloseFile =>
+    file = null
+    undo = []
+    redo = []
+    focus = "tree"
+    explorer = true
+    return Closed
+
+RequestQuit =>
+    if file ≠ null and file.dirty
+        prompt = { kind = "quit", label = "Save changes to " + file.path + " before exit? (y / n / Escape) ", text = "" }
+        return Asked
+    emit Quit to this
+    return Quitting
+
+Quit =>
+    running = false
+    emit Stop {} to tty
+    return Quitting
+
+| Everything the screen is drawn from, in one particle.
+State =>
+    return IdeState {
+        cols = cols
+        rows = rows
+        folder = folder
+        tree = tree
+        tree_sel = tree_sel
+        tree_top = tree_top
+        file = file
+        focus = focus
+        menu = menu
+        prompt = prompt
+        message = message
+        explorer = explorer
+        explorer_slot = explorer_slot
+    }
+
+Render =>
+    if not running, return Skipped
+    emit State to this get state
+    emit Frame { state = state } to this get screen
+    if screen ∈ Exception
+        emit Draw { rows = [[{ text = " Error: the screen could not be drawn: " + screen.message, style = "status_warn" }]] } to tty
+        return Failed
+    tree_top = screen.tree_top
+    tree_page = screen.tree_page
+    editor_page = screen.page
+    if file ≠ null, file = file + { top = screen.top, left = screen.left }
+    emit Draw { overlays = screen.overlays, cursor_row = screen.cursor_row, cursor_col = screen.cursor_col } to tty
+    return Rendered
