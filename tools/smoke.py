@@ -25,6 +25,8 @@ else:
         sys.exit("needs cdlvsm on PATH (with euglena installed), or a path to the ide to run")
     argv, cwd = [cdlvsm, "euglena", "run"], app
 config = tempfile.mkdtemp(prefix="ide-smoke-config-")
+os.makedirs(config + "/codelovesme-ide")
+open(config + "/codelovesme-ide/keybindings.json", "w").write('[ { "key": "ctrl+g", "command": "view.explorer" } ]\n')
 s = Session(argv, cwd, {"IDE_FOLDER": folder, "TERM": "xterm-256color", "XDG_CONFIG_HOME": config})
 failures = []
 def check(ok, what):
@@ -35,6 +37,9 @@ def check(ok, what):
 check(s.wait_for("EXPLORER", 30), "starts, with the explorer")
 check(s.screen.row(0).startswith("  File  View  Help"), "menu bar on row 0")
 check(s.screen.row(2).rstrip() == " ▸ src", "tree fills the screen: " + s.screen.row(2).rstrip())
+s.keys(b"\x07", 0.6)
+check("EXPLORER" not in s.screen.text(), "a key from keybindings.json runs its command (ctrl+g hides the explorer)")
+s.keys(b"\x07", 0.6)
 s.keys(b"\r")
 s.keys(b"\x1b[B\r", 1.0)
 check("hello.code" in s.screen.row(1), "file opens beside the tree")
@@ -53,7 +58,7 @@ check(s.screen.row(1).count("notes.md") == 2 and "│" in s.screen.row(2), "ctrl
 s.keys(b"\x17", 0.8)
 check(s.screen.row(1).count("notes.md") == 1, "ctrl+w closes it again")
 s.keys(b"\x1bf", 0.6)
-check("Open Folder" in s.screen.row(1), "alt+f opens the File menu")
+check("Open Folder" in s.screen.row(1) and "Ctrl+K Ctrl+O" in s.screen.row(1), "alt+f opens the File menu, with each item's key")
 s.keys(b"\x1b", 0.6)
 s.keys(b"\x02", 0.6)
 check("EXPLORER" not in s.screen.row(1), "ctrl+b hides the explorer")

@@ -60,6 +60,8 @@ settings = null
 settings_dir = ""
 side_width = 30
 panel_height = 10
+| The key table (see keys.gene.code): the defaults and keybindings.json.
+keytable = null
 
 | Links the six organelles from the folder `from`, relative to where the program
 | was started: `.` in a release bundle (bin/ide starts it there), and
@@ -84,6 +86,7 @@ UseOrganelles { from } =>
     term = linked.tty
     prefs = linked.prefs
     emit SettingsUses { json = linked.json } to this
+    emit KeysUses { json = linked.json, strings = linked.strings } to this
     emit EditorUses { texts = linked.strings } to this
     emit RenderUses { texts = linked.strings, colours = linked.syntax } to this
     return linked
@@ -139,10 +142,11 @@ HandleKey { name, text } =>
         menu = chosen.open
         if chosen.command ≠ null, emit Run { command = chosen.command } to this
         return Handled
-    emit Keymap { name = name, pending = chord } to this get bound
+    emit Keymap { name = name, pending = chord, table = keytable } to this get bound
     chord = bound.pending
     if chord ≠ ""
-        message = "(Ctrl+K) was pressed. Waiting for the second key of the chord…"
+        emit KeyLabel { key = chord } to this get pressed
+        message = "(" + pressed.text + ") was pressed. Waiting for the second key of the chord…"
         return Handled
     if bound.command ≠ null
         emit Run { command = bound.command } to this
@@ -189,7 +193,8 @@ Run { command } =>
     if command = "view.explorerRight", emit StoreSetting { key = "workbench.sideBar.location", value = "right" } to this
     if command = "view.wider", emit StoreSetting { key = "workbench.sideBar.width", value = side_width + 2 } to this
     if command = "view.narrower" and side_width > 10, emit StoreSetting { key = "workbench.sideBar.width", value = side_width - 2 } to this
-    if command = "settings.open", emit OpenSettings to this
+    if command = "settings.open", emit OpenPrefsFile { name = "settings.json" } to this
+    if command = "keybindings.open", emit OpenPrefsFile { name = "keybindings.json" } to this
     if command = "focus.explorer"
         explorer = true
         focus = "tree"
@@ -371,7 +376,7 @@ FocusGroup { index } =>
     return Focused
 
 ShowShortcuts =>
-    emit Shortcuts to this get help
+    emit Shortcuts { table = keytable } to this get help
     emit Show { buffer = { path = "Keyboard Shortcuts", store = "help", lines = help.lines, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = true } } to this
     focus = "editor"
     return Shown
@@ -448,9 +453,12 @@ SaveFile =>
     file = file + { dirty = false }
     message = "Saved " + file.path
     | Saving settings.json is how an edit to it takes effect.
-    if file.store = "prefs"
+    if file.store = "prefs" and file.path = "settings.json"
         emit LoadSettings to this get loaded
         if loaded.problem = "", message = "Settings saved and applied"
+    if file.store = "prefs" and file.path = "keybindings.json"
+        emit LoadKeybindings to this get bindings
+        if bindings.problem = "", message = "Keyboard shortcuts saved and applied"
     return Saved
 
 | Every file with unsaved changes written — before exit, when asked.
@@ -509,8 +517,22 @@ SettingsAt { dir } =>
         message = "Error: settings: " + configured.message
         return Failed
     settings_dir = configured.base_path
+    emit LoadKeybindings to this
     emit LoadSettings to this get loaded
     return loaded
+
+| keybindings.json read and turned into the key table. A missing file is
+| the defaults; a bad entry is left out, and the status bar says why.
+LoadKeybindings =>
+    emit Exists { path = "keybindings.json" } to prefs get there
+    text = null
+    if there.is_file
+        emit ReadFile { path = "keybindings.json" } to prefs get read
+        if read ∉ Exception, text = read.content
+    emit ReadBindings { text = text } to this get table
+    keytable = table
+    if table.problem ≠ "", message = "Error: " + table.problem
+    return table
 
 | settings.json read, checked and applied. A missing file is the defaults.
 LoadSettings =>
@@ -540,23 +562,27 @@ StoreSetting { key, value } =>
     if written ∈ Exception
         message = "Error: settings could not be saved: " + written.message
     emit LoadSettings to this
-    if file ≠ null and file.store = "prefs" and not file.dirty
+    if file ≠ null and file.store = "prefs" and file.path = "settings.json" and not file.dirty
         emit Split { value = written_text.text, separator = "\n" } to texts get fresh
         file = file + { lines = fresh.value }
     return Stored
 
-| Ctrl+, — settings.json in the editor, made first if there is none yet.
-OpenSettings =>
-    emit Exists { path = "settings.json" } to prefs get there
+| settings.json (Ctrl+,) or keybindings.json in the editor, made first if
+| there is none yet.
+OpenPrefsFile { name } =>
+    emit Exists { path = name } to prefs get there
     if not there.is_file
-        emit WriteSettings { values = settings } to this get first_text
-        emit WriteFile { path = "settings.json", content = first_text.text } to prefs
-    emit ReadFile { path = "settings.json" } to prefs get read
+        first_text = "[\n]\n"
+        if name = "settings.json"
+            emit WriteSettings { values = settings } to this get written_settings
+            first_text = written_settings.text
+        emit WriteFile { path = name, content = first_text } to prefs
+    emit ReadFile { path = name } to prefs get read
     if read ∈ Exception
         message = "Error: " + read.message
         return Failed
     emit Split { value = read.content, separator = "\n" } to texts get split
-    emit Show { buffer = { path = "settings.json", store = "prefs", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false } } to this
+    emit Show { buffer = { path = name, store = "prefs", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false } } to this
     focus = "editor"
     return Opened
 
@@ -581,6 +607,7 @@ State =>
         explorer_slot = explorer_slot
         side_width = side_width
         panel_height = panel_height
+        keytable = keytable
     }
 
 Render =>

@@ -23,6 +23,7 @@ json_lib = lib.json
 | Settings kept where the tests run, starting from none.
 emit Config { base_path = ".test-config" } to prefs_fs
 emit DeleteFile { path = "settings.json" } to prefs_fs
+emit DeleteFile { path = "keybindings.json" } to prefs_fs
 emit SettingsAt { dir = ".test-config" } to this get first_settings
 assert first_settings.values = {
     "workbench.sideBar.visible" = true
@@ -304,6 +305,27 @@ emit HandleKey { name = "ctrl+s", text = "" } to this
 emit State to this get broken
 assert broken.message = "Error: settings.json is not valid JSON — using the defaults"
 assert broken.explorer_slot = "l"
+
+| keybindings.json: opened from the File menu, made empty the first time;
+| saving an entry makes its key run the command.
+emit Run { command = "keybindings.open" } to this
+emit State to this get bindings_open
+assert bindings_open.file.path = "keybindings.json"
+assert bindings_open.file.lines = ["[", "]", ""]
+emit SetLines { lines = ["[", "  { \"key\": \"ctrl+j\", \"command\": \"view.explorer\" }", "]"] } to this
+emit HandleKey { name = "ctrl+s", text = "" } to this
+emit State to this get bindings_saved
+assert bindings_saved.message = "Keyboard shortcuts saved and applied"
+assert bindings_saved.keytable.labels["view.explorer"] = "Ctrl+B"
+was_visible = bindings_saved.explorer
+emit HandleKey { name = "ctrl+j", text = "" } to this
+emit State to this get toggled
+assert toggled.explorer ≠ was_visible
+emit HandleKey { name = "ctrl+j", text = "" } to this
+emit SetLines { lines = ["[{ \"key\": \"ctrl+g\", \"command\": \"no.such\" }]"] } to this
+emit HandleKey { name = "ctrl+s", text = "" } to this
+emit State to this get bindings_bad
+assert bindings_bad.message = "Error: keybindings.json: entry 1: no command \"no.such\""
 
 emit RemoveDir { path = "." } to prefs_fs
 emit RemoveDir { path = "." } to files

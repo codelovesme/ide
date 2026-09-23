@@ -256,7 +256,7 @@ Frame { state } =>
         cursor_col = status.cursor_col
 
     if state.menu ≠ null
-        emit Dropdown { open = state.menu } to this get dropdown
+        emit Dropdown { open = state.menu, labels = state.keytable.labels } to this get dropdown
         overlays = overlays + dropdown.overlays
         cursor_row = null
 

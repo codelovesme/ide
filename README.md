@@ -94,12 +94,32 @@ explorer writes it for you.
 A value that is missing or wrong falls back to its default, and the status
 bar says which. Only pane settings exist so far.
 
+## Keyboard shortcuts
+
+Like VS Code, `keybindings.json` beside `settings.json`, on top of the
+defaults. File > Keyboard Shortcuts (JSON) opens it; saving it applies it.
+
+```json
+[
+  { "key": "ctrl+shift+b", "command": "view.explorer" },
+  { "key": "ctrl+b", "command": "-view.explorer" },
+  { "key": "ctrl+j ctrl+q", "command": "app.quit" }
+]
+```
+
+A later entry wins; `-command` takes that key's default away; a key with a
+space is a chord. Keys can be written in any case, modifiers in any order.
+Ctrl+K Ctrl+S lists every command with its id and the keys that run it, and
+the menus show the keys in use. A bad entry is left out and the status bar
+says which. (Some keys cannot be told apart by a terminal — Ctrl+J is
+Enter, Ctrl+I is Tab, Ctrl+M is Enter.)
+
 ## How it is built
 
 | gene | what it is |
 |---|---|
 | `ide` | **all the state**, and what a key does to it — prompt, menu, command, then the focused pane |
-| `keys` | which command a key runs; `ctrl+k` chords |
+| `keys` | the key table: defaults + keybindings.json, chords, how keys are shown |
 | `menu` | the menus, their keys, the bar and the dropdown |
 | `layout` | the 9-slot layout |
 | `tree` | the folder as flat rows (a handler cannot recurse, so opening a folder splices its children in) |

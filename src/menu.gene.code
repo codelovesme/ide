@@ -7,40 +7,41 @@ menus = [
         title = "File"
         col = 0
         items = [
-            { label = "Open Folder…", keys = "Ctrl+K Ctrl+O", command = "file.openFolder" }
-            { label = "Save", keys = "Ctrl+S", command = "file.save" }
-            { label = "Close Editor", keys = "Ctrl+W", command = "file.close" }
-            { label = "Settings", keys = "Ctrl+,", command = "settings.open" }
-            { label = "Exit", keys = "Ctrl+Q", command = "app.quit" }
+            { label = "Open Folder…", command = "file.openFolder" }
+            { label = "Save", command = "file.save" }
+            { label = "Close Editor", command = "file.close" }
+            { label = "Settings", command = "settings.open" }
+            { label = "Keyboard Shortcuts (JSON)", command = "keybindings.open" }
+            { label = "Exit", command = "app.quit" }
         ]
     }
     {
         title = "View"
         col = 6
         items = [
-            { label = "Explorer", keys = "Ctrl+B", command = "view.explorer" }
-            { label = "Explorer on the Left", keys = "", command = "view.explorerLeft" }
-            { label = "Explorer on the Right", keys = "", command = "view.explorerRight" }
-            { label = "Wider Explorer", keys = "Ctrl+K →", command = "view.wider" }
-            { label = "Narrower Explorer", keys = "Ctrl+K ←", command = "view.narrower" }
-            { label = "Focus Explorer", keys = "Ctrl+Shift+E", command = "focus.explorer" }
-            { label = "Focus Editor", keys = "Ctrl+1", command = "focus.editor" }
-            { label = "Split Editor", keys = "Ctrl+\\", command = "editor.split" }
-            { label = "Next Tab", keys = "Ctrl+PgDn", command = "tab.next" }
-            { label = "Previous Tab", keys = "Ctrl+PgUp", command = "tab.previous" }
+            { label = "Explorer", command = "view.explorer" }
+            { label = "Explorer on the Left", command = "view.explorerLeft" }
+            { label = "Explorer on the Right", command = "view.explorerRight" }
+            { label = "Wider Explorer", command = "view.wider" }
+            { label = "Narrower Explorer", command = "view.narrower" }
+            { label = "Focus Explorer", command = "focus.explorer" }
+            { label = "Focus Editor", command = "focus.editor" }
+            { label = "Split Editor", command = "editor.split" }
+            { label = "Next Tab", command = "tab.next" }
+            { label = "Previous Tab", command = "tab.previous" }
         ]
     }
     {
         title = "Help"
         col = 12
         items = [
-            { label = "Keyboard Shortcuts", keys = "Ctrl+K Ctrl+S", command = "help.keys" }
-            { label = "About", keys = "", command = "help.about" }
+            { label = "Keyboard Shortcuts", command = "help.keys" }
+            { label = "About", command = "help.about" }
         ]
     }
 ]
 
-dropdown_label = 24
+dropdown_label = 28
 dropdown_keys = 16
 
 | A key while a menu is open. Answers the menu after it (null: closed)
@@ -86,8 +87,9 @@ MenuBar { width, open, title } =>
         { row = 0, col = 0, spans = spans }
     ] }
 
-| The open menu's items, dropped down under its title.
-Dropdown { open } =>
+| The open menu's items, dropped down under its title, each with the key
+| that runs it (`labels`, from the key table — so keybindings.json shows).
+Dropdown { open, labels } =>
     m = menus[open.index]
     out = []
     loop i, entry over m.items
@@ -96,8 +98,10 @@ Dropdown { open } =>
         if i = open.item
             style = "menu_item_active"
             key_style = "menu_key_active"
+        keys = labels[entry.command]
+        if keys = null, keys = ""
         out += { row = 1 + i, col = m.col, spans = [
             { text = "  " + entry.label, width = dropdown_label, style = style }
-            { text = entry.keys + "  ", width = dropdown_keys, align = "right", style = key_style }
+            { text = keys + "  ", width = dropdown_keys, align = "right", style = key_style }
         ] }
     return Overlays { overlays = out }

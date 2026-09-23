@@ -1,0 +1,60 @@
+| The key table: the defaults, keybindings.json on top of them, how a key
+| is written (any case, modifiers in any order), chords, and how keys are
+| shown.
+
+link "../src/keys.gene.code"
+
+Open { path } =>
+    link path as at
+    return Opened { at = at }
+emit Open { path = "organelles/json.so" } to this get json_lib
+emit Open { path = "organelles/strings.so" } to this get strings_lib
+emit KeysUses { json = json_lib.at, strings = strings_lib.at } to this
+
+| The defaults.
+emit ReadBindings { text = null } to this get table
+assert table.problem = ""
+assert table.keys["ctrl+s"] = "file.save"
+assert table.keys["ctrl+k ctrl+o"] = "file.openFolder"
+assert table.prefixes["ctrl+k"]
+assert table.labels["file.openFolder"] = "Ctrl+K Ctrl+O"
+assert table.labels["view.wider"] = "Ctrl+K →"
+emit Keymap { name = "ctrl+s", pending = "", table = table } to this get save
+assert save.command = "file.save"
+emit Keymap { name = "ctrl+k", pending = "", table = table } to this get waiting
+assert waiting.pending = "ctrl+k"
+emit Keymap { name = "ctrl+o", pending = "ctrl+k", table = table } to this get chord
+assert chord.command = "file.openFolder"
+emit Keymap { name = "x", pending = "", table = table } to this get unbound
+assert unbound.command = null
+
+| The user's own: a new key, a default taken away, written any way.
+user = "[ { \"key\": \"Shift+Ctrl+B\", \"command\": \"view.explorer\" }, { \"key\": \"ctrl+b\", \"command\": \"-view.explorer\" }, { \"key\": \"ctrl+j ctrl+j\", \"command\": \"app.quit\" } ]"
+emit ReadBindings { text = user } to this get mine
+assert mine.problem = ""
+assert mine.keys["ctrl+shift+b"] = "view.explorer"
+assert mine.keys["ctrl+b"] = null
+assert mine.labels["view.explorer"] = "Ctrl+Shift+B"
+assert mine.prefixes["ctrl+j"]
+assert mine.keys["ctrl+j ctrl+j"] = "app.quit"
+| Taking away a key only takes it from the command named.
+emit ReadBindings { text = "[{ \"key\": \"ctrl+s\", \"command\": \"-app.quit\" }]" } to this get kept
+assert kept.keys["ctrl+s"] = "file.save"
+
+| Bad entries are left out, and said.
+emit ReadBindings { text = "[{ \"key\": \"ctrl+s\" }, { \"key\": \"ctrl+g\", \"command\": \"nope\" }]" } to this get bad
+assert bad.problem = "keybindings.json: entry 1 needs a \"key\" and a \"command\"; entry 2: no command \"nope\""
+assert bad.keys["ctrl+s"] = "file.save"
+assert bad.keys["ctrl+g"] = null
+emit ReadBindings { text = "{}" } to this get not_list
+assert not_list.problem = "keybindings.json: keybindings.json should be a list"
+emit ReadBindings { text = "[" } to this get broken
+assert broken.problem = "keybindings.json is not valid JSON — using the defaults"
+assert broken.keys["ctrl+s"] = "file.save"
+
+| The shortcut list follows the table.
+emit Shortcuts { table = mine } to this get list
+found = false
+loop line over list.lines
+    if line = "  Ctrl+Shift+B" + "             " + "Show / hide the Explorer   (view.explorer)", found = true
+assert found

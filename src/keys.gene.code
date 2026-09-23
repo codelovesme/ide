@@ -1,84 +1,246 @@
-| Keys — which command a key runs, VS Code's bindings. Pure.
+| Keys — which command a key runs. Pure.
 |
-| A key that is not bound here goes to whatever has the focus (the tree
-| or the editor). `ctrl+k` starts a chord: the next key finishes it.
+| VS Code's way: a list of default bindings, and the user's own in
+| keybindings.json (beside settings.json) on top of them —
+|
+|     [
+|         { "key": "ctrl+shift+b", "command": "view.explorer" },
+|         { "key": "ctrl+b", "command": "-view.explorer" }
+|     ]
+|
+| A later entry wins; `-command` takes that key's default away. A key with
+| a space in it is a chord (`ctrl+k ctrl+o`): its first key waits for the
+| second. `Bindings` turns the two lists into the table everything else
+| reads — what a key runs, and how each command's key is shown in the menus
+| and the shortcut list. A key that runs no command goes to whatever has
+| the focus (the tree or the editor).
 
-bindings = {
-    "ctrl+s" = "file.save"
-    "ctrl+w" = "file.close"
-    "ctrl+q" = "app.quit"
-    "ctrl+b" = "view.explorer"
-    "ctrl+shift+e" = "focus.explorer"
-    "ctrl+0" = "focus.explorer"
+defaults = [
+    { key = "ctrl+k ctrl+o", command = "file.openFolder" }
+    { key = "ctrl+s", command = "file.save" }
+    { key = "ctrl+w", command = "file.close" }
+    { key = "ctrl+q", command = "app.quit" }
+    { key = "ctrl+,", command = "settings.open" }
+    { key = "ctrl+b", command = "view.explorer" }
+    { key = "ctrl+k right", command = "view.wider" }
+    { key = "ctrl+k left", command = "view.narrower" }
     | Most terminals send ctrl+shift+e as ctrl+e — the same key to the program.
-    "ctrl+e" = "focus.explorer"
-    "ctrl+1" = "focus.editor"
-    "ctrl+2" = "focus.group2"
-    "ctrl+pagedown" = "tab.next"
-    "ctrl+pageup" = "tab.previous"
-    "ctrl+\\" = "editor.split"
-    "f6" = "focus.next"
-    "shift+f6" = "focus.next"
-    "f10" = "menu.file"
-    "alt+f" = "menu.file"
-    "alt+v" = "menu.view"
-    "alt+h" = "menu.help"
-    "ctrl+," = "settings.open"
-    "ctrl+z" = "edit.undo"
-    "ctrl+y" = "edit.redo"
-    "ctrl+shift+z" = "edit.redo"
-}
-
-chords = {
-    "ctrl+k ctrl+o" = "file.openFolder"
-    "ctrl+k ctrl+s" = "help.keys"
-    "ctrl+k right" = "view.wider"
-    "ctrl+k left" = "view.narrower"
-}
-
-| `pending` is the first key of a chord, or `""`. Answers the command to
-| run (or null) and what is pending after this key.
-Keymap { name, pending } =>
-    if pending ≠ "", return Command { command = chords[pending + " " + name], pending = "", chord = pending + " " + name }
-    if name = "ctrl+k", return Command { command = null, pending = name, chord = "" }
-    return Command { command = bindings[name], pending = "", chord = "" }
-
-shortcuts = [
-    "Keyboard Shortcuts"
-    ""
-    "  File"
-    "    Ctrl+K Ctrl+O   Open Folder…"
-    "    Ctrl+S          Save"
-    "    Ctrl+W          Close the tab"
-    "    Ctrl+,          Settings (settings.json — save it to apply)"
-    "    Ctrl+Q          Exit"
-    ""
-    "  View"
-    "    Ctrl+B          Show / hide the Explorer"
-    "    Ctrl+Shift+E    Focus the Explorer (also Ctrl+E, Ctrl+0)"
-    "    Ctrl+1 / Ctrl+2 Focus the first / second editor group"
-    "    Ctrl+\\          Split Editor: this file again, in a group on the right"
-    "    Ctrl+PgDn/PgUp  Next / previous tab"
-    "    F6              Explorer, then each editor group, round again"
-    "    Ctrl+K →/←      Make the Explorer wider / narrower"
-    ""
-    "  Menus"
-    "    Alt+F  Alt+V  Alt+H, or F10, then arrows, Enter, Escape"
-    ""
-    "  Explorer"
-    "    Up / Down       Move"
-    "    Enter / Right   Open a folder or a file"
-    "    Left            Close a folder, or go to its parent"
-    ""
-    "  Editor"
-    "    Arrows, Home, End, PageUp, PageDown, Ctrl+Home, Ctrl+End"
-    "    Ctrl+Left / Ctrl+Right   Move a word"
-    "    Tab / Shift+Tab          Indent / outdent (4 spaces)"
-    "    Ctrl+Z / Ctrl+Y          Undo / redo"
-    ""
-    "  Ctrl+1 needs a terminal that sends it apart from 1 (kitty, foot,"
-    "  WezTerm, xterm, tmux with extended-keys). F6 always works."
+    { key = "ctrl+shift+e", command = "focus.explorer" }
+    { key = "ctrl+e", command = "focus.explorer" }
+    { key = "ctrl+0", command = "focus.explorer" }
+    { key = "ctrl+1", command = "focus.editor" }
+    { key = "ctrl+2", command = "focus.group2" }
+    { key = "f6", command = "focus.next" }
+    { key = "shift+f6", command = "focus.next" }
+    { key = "ctrl+\\", command = "editor.split" }
+    { key = "ctrl+pagedown", command = "tab.next" }
+    { key = "ctrl+pageup", command = "tab.previous" }
+    { key = "ctrl+z", command = "edit.undo" }
+    { key = "ctrl+y", command = "edit.redo" }
+    { key = "ctrl+shift+z", command = "edit.redo" }
+    { key = "alt+f", command = "menu.file" }
+    { key = "f10", command = "menu.file" }
+    { key = "alt+v", command = "menu.view" }
+    { key = "alt+h", command = "menu.help" }
+    { key = "ctrl+k ctrl+s", command = "help.keys" }
 ]
 
-Shortcuts =>
-    return ShortcutLines { lines = shortcuts }
+| Every command a key can run, with what it does — the only names
+| keybindings.json may use.
+commands = [
+    { id = "file.openFolder", title = "Open Folder…" }
+    { id = "file.save", title = "Save" }
+    { id = "file.close", title = "Close the tab" }
+    { id = "app.quit", title = "Exit" }
+    { id = "settings.open", title = "Settings (settings.json)" }
+    { id = "keybindings.open", title = "Keyboard Shortcuts (keybindings.json)" }
+    { id = "view.explorer", title = "Show / hide the Explorer" }
+    { id = "view.explorerLeft", title = "Explorer on the left" }
+    { id = "view.explorerRight", title = "Explorer on the right" }
+    { id = "view.wider", title = "Explorer wider" }
+    { id = "view.narrower", title = "Explorer narrower" }
+    { id = "focus.explorer", title = "Focus the Explorer" }
+    { id = "focus.editor", title = "Focus the first editor group" }
+    { id = "focus.group2", title = "Focus the second editor group" }
+    { id = "focus.next", title = "Explorer, then each editor group, round again" }
+    { id = "editor.split", title = "Split Editor: this file again, on the right" }
+    { id = "tab.next", title = "Next tab" }
+    { id = "tab.previous", title = "Previous tab" }
+    { id = "edit.undo", title = "Undo" }
+    { id = "edit.redo", title = "Redo" }
+    { id = "menu.file", title = "File menu" }
+    { id = "menu.view", title = "View menu" }
+    { id = "menu.help", title = "Help menu" }
+    { id = "help.keys", title = "This list" }
+    { id = "help.about", title = "About" }
+]
+
+| How a key's parts are shown; anything else is shown in capitals.
+shown_as = {
+    ctrl = "Ctrl"
+    shift = "Shift"
+    alt = "Alt"
+    pagedown = "PgDn"
+    pageup = "PgUp"
+    enter = "Enter"
+    escape = "Esc"
+    space = "Space"
+    tab = "Tab"
+    backspace = "Backspace"
+    delete = "Delete"
+    home = "Home"
+    end = "End"
+    insert = "Insert"
+    right = "→"
+    left = "←"
+    up = "↑"
+    down = "↓"
+}
+
+modifier_order = ["ctrl", "shift", "alt"]
+
+| The `json` and `strings` organelles, handed over when the ide links them.
+parser = null
+texts = null
+
+KeysUses { json, strings as given_strings } =>
+    parser = json
+    texts = given_strings
+    return Using
+
+| One key (no chord) as the tty names it: lower case, modifiers in the
+| order ctrl, shift, alt — so `Shift+Ctrl+E` is `ctrl+shift+e`.
+OneKey { key } =>
+    emit Lower { value = key } to texts get lowered
+    emit Split { value = lowered.value, separator = "+" } to texts get parts
+    emit Length { value = parts.value } to core get { value as count }
+    if count < 1, return Normal { key = "" }
+    last_part = parts.value[count - 1]
+    mods = {}
+    loop part over parts.value[0, count - 1)
+        mods = mods + { "$part" = true }
+    name = ""
+    loop mod over modifier_order
+        if mods[mod] = true, name = name + mod + "+"
+    return Normal { key = name + last_part }
+
+| A key or a chord, normalised part by part.
+NormalKey { key } =>
+    emit Trim { value = key } to texts get trimmed
+    emit Split { value = trimmed.value, separator = " " } to texts get steps
+    out = ""
+    loop i, step over steps.value
+        if step ≠ ""
+            emit OneKey { key = step } to this get one
+            if out ≠ "", out = out + " "
+            out = out + one.key
+    return Normal { key = out }
+
+| A key as the menus show it: `ctrl+k ctrl+o` → `Ctrl+K Ctrl+O`.
+KeyLabel { key } =>
+    emit Split { value = key, separator = " " } to texts get steps
+    out = ""
+    loop step over steps.value
+        emit Split { value = step, separator = "+" } to texts get parts
+        shown = ""
+        loop part over parts.value
+            word = shown_as[part]
+            if word = null
+                emit Upper { value = part } to texts get upper
+                word = upper.value
+            if shown ≠ "", shown = shown + "+"
+            shown = shown + word
+        if out ≠ "", out = out + " "
+        out = out + shown
+    return Label { text = out }
+
+| The table keys are looked up in, from the defaults and `user` (the
+| entries of keybindings.json, or null). Answers `Keytable { keys, prefixes,
+| labels, problem }`: what each key runs, the first keys of chords, each
+| command's first key as shown, and what was wrong with the user's entries.
+Bindings { user } =>
+    known = {}
+    loop c over commands
+        known = known + { "$c.id" = true }
+    entries = defaults
+    wrong = []
+    if user ≠ null and user ∉ Array, wrong += "keybindings.json should be a list"
+    if user ∈ Array
+        loop i, entry over user
+            good = entry ∈ Object
+            if good, good = entry.key ∈ String and entry.command ∈ String
+            if not good, wrong += "entry " + (i + 1) + " needs a \"key\" and a \"command\""
+            if good
+                name = entry.command
+                if name[0] = "-", name = name[1, length)
+                if known[name] ≠ true
+                    wrong += "entry " + (i + 1) + ": no command \"" + name + "\""
+                    good = false
+            if good, entries = entries + [entry]
+    keys = {}
+    loop entry over entries
+        emit NormalKey { key = entry.key } to this get normal
+        key = normal.key
+        command = entry.command
+        if command[0] = "-" and keys[key] = command[1, length), keys = keys + { "$key" = null }
+        if command[0] ≠ "-", keys = keys + { "$key" = command }
+    prefixes = {}
+    labels = {}
+    loop key, command over keys
+        if command ≠ null
+            emit Split { value = key, separator = " " } to texts get steps
+            emit Length { value = steps.value } to core get { value as count }
+            first = steps.value[0]
+            if count > 1, prefixes = prefixes + { "$first" = true }
+            if labels[command] = null
+                emit KeyLabel { key = key } to this get label
+                labels = labels + { "$command" = label.text }
+    problem = ""
+    loop i, what over wrong
+        if i = 0, problem = "keybindings.json: " + what
+        if i > 0, problem = problem + "; " + what
+    return Keytable { keys = keys, prefixes = prefixes, labels = labels, problem = problem }
+
+| `user`'s text (keybindings.json, or null when there is none) as a table.
+ReadBindings { text } =>
+    if text = null
+        emit Bindings { user = null } to this get table
+        return table
+    emit Parse { text = text } to parser get parsed
+    if parsed ∈ Exception
+        emit Bindings { user = null } to this get fallback
+        return fallback + { problem = "keybindings.json is not valid JSON — using the defaults" }
+    emit Bindings { user = parsed.value } to this get table
+    return table
+
+| `pending` is the first key of a chord, or `""`. Answers the command to
+| run (or null), what is pending after this key, and the chord it made.
+Keymap { name, pending, table } =>
+    if pending ≠ ""
+        chord = pending + " " + name
+        return Command { command = table.keys[chord], pending = "", chord = chord }
+    if table.prefixes[name] = true, return Command { command = null, pending = name, chord = "" }
+    return Command { command = table.keys[name], pending = "", chord = "" }
+
+| The Keyboard Shortcuts list, from the table in use.
+Shortcuts { table } =>
+    lines = ["Keyboard Shortcuts", "", "  Change them in keybindings.json (File > Keyboard Shortcuts (JSON))", ""]
+    loop c over commands
+        shown = ""
+        loop key, command over table.keys
+            if command = c.id
+                emit KeyLabel { key = key } to this get label
+                if shown ≠ "", shown = shown + ", "
+                shown = shown + label.text
+        emit Length { value = shown } to core get { value as size }
+        pad = "                         "[0, 25 - size)
+        if size ≥ 25, pad = "  "
+        lines += "  " + shown + pad + c.title + "   (" + c.id + ")"
+    lines = lines + [
+        ""
+        "  Explorer: Up / Down move, Enter / Right open, Left closes a folder."
+        "  Editor: arrows, Home, End, PgUp, PgDn, Ctrl+Home / End, Ctrl+Left / Right,"
+        "  Tab / Shift+Tab indent by four spaces."
+        "  Menus: arrows, Enter, Escape."
+    ]
+    return ShortcutLines { lines = lines }
