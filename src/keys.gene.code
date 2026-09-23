@@ -10,6 +10,8 @@ bindings = {
     "ctrl+b" = "view.explorer"
     "ctrl+shift+e" = "focus.explorer"
     "ctrl+0" = "focus.explorer"
+    | Most terminals send ctrl+shift+e as ctrl+e — the same key to the program.
+    "ctrl+e" = "focus.explorer"
     "ctrl+1" = "focus.editor"
     "f6" = "focus.next"
     "shift+f6" = "focus.next"
@@ -45,7 +47,7 @@ shortcuts = [
     ""
     "  View"
     "    Ctrl+B          Show / hide the Explorer"
-    "    Ctrl+Shift+E    Focus the Explorer (also Ctrl+0)"
+    "    Ctrl+Shift+E    Focus the Explorer (also Ctrl+E, Ctrl+0)"
     "    Ctrl+1          Focus the Editor"
     "    F6              Move focus to the other pane"
     ""
@@ -63,9 +65,8 @@ shortcuts = [
     "    Tab / Shift+Tab          Indent / outdent (4 spaces)"
     "    Ctrl+Z / Ctrl+Y          Undo / redo"
     ""
-    "  Ctrl+Shift+E and Ctrl+1 need a terminal that sends them apart from"
-    "  Ctrl+E and 1 (kitty, foot, WezTerm, xterm, tmux with extended-keys)."
-    "  F6 always works."
+    "  Ctrl+1 needs a terminal that sends it apart from 1 (kitty, foot,"
+    "  WezTerm, xterm, tmux with extended-keys). F6 always works."
 ]
 
 Shortcuts =>

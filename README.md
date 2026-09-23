@@ -47,7 +47,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / Close File / Exit (each asks first if unsaved) |
 | Ctrl+B | Show / hide the Explorer |
-| Ctrl+Shift+E (Ctrl+0) / Ctrl+1 / F6 | Focus the Explorer / the editor / the other one |
+| Ctrl+Shift+E (or Ctrl+E, Ctrl+0) / Ctrl+1 / F6 | Focus the Explorer / the editor / the other one |
 | Alt+F Alt+V Alt+H, F10 | Menus: arrows, Enter, Escape |
 | Ctrl+Z / Ctrl+Y | Undo / redo (typing is one step per run) |
 | Ctrl+K Ctrl+S | Keyboard shortcuts |
@@ -56,9 +56,9 @@ In the editor: arrows, Home (first non-space, then column 0), End,
 PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab and Shift+Tab
 indent by four spaces (code refuses tabs); Enter keeps the indentation and
 adds a level after a block header (`… =>`, `if …`, `loop …` without a
-comma). Ctrl+Shift+E and Ctrl+1 need a terminal that tells them apart from
-Ctrl+E and 1 (kitty, foot, WezTerm, xterm, tmux with `extended-keys`); F6
-always works.
+comma). Most terminals send Ctrl+Shift+E as Ctrl+E, so that works too.
+Ctrl+1 needs a terminal that tells it apart from 1 (kitty, foot, WezTerm,
+xterm, tmux with `extended-keys`); F6 always works.
 
 ## How it is built
 

@@ -72,6 +72,20 @@ emit HandleKey { name = "ctrl+y", text = "" } to this
 emit State to this get redone
 assert redone.file.lines[0] = "xy| hi"
 
+| Ctrl+E — what most terminals send for Ctrl+Shift+E — moves the focus to
+| the explorer, where the arrows move the selection, not the cursor; F6
+| goes back.
+emit HandleKey { name = "ctrl+e", text = "" } to this
+emit State to this get in_tree
+assert in_tree.focus = "tree"
+emit HandleKey { name = "up", text = "" } to this
+emit State to this get moved_up
+assert moved_up.tree_sel = 0
+assert moved_up.file.row = redone.file.row
+emit HandleKey { name = "f6", text = "" } to this
+emit State to this get back
+assert back.focus = "editor"
+
 | Save writes it; the file is clean again.
 emit HandleKey { name = "ctrl+s", text = "" } to this
 emit ReadFile { path = "hello.code" } to files get on_disk
