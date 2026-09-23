@@ -2,8 +2,8 @@
 screen read back. No tmux or pyte needed — drive.py is a small emulator
 for exactly what the tty module sends.
 
-    python3 tools/smoke.py            # interpreted (euglena run)
-    python3 tools/smoke.py build/ide  # the built executable
+    python3 tools/smoke.py                 # from a checkout: cdlvsm euglena run
+    python3 tools/smoke.py <bundle>/ide    # a packaged or installed ide
 
 Exits non-zero, saying what, if anything is not as it should be.
 """
@@ -20,7 +20,10 @@ open(folder + "/notes.md", "w").write("notes\n")
 if len(sys.argv) > 1:
     argv, cwd = [os.path.abspath(sys.argv[1])], folder
 else:
-    argv, cwd = [os.path.expanduser("~/git/codelovesme/euglena/target/release/euglena"), "run"], app
+    cdlvsm = shutil.which("cdlvsm")
+    if not cdlvsm:
+        sys.exit("needs cdlvsm on PATH (with euglena installed), or a path to the ide to run")
+    argv, cwd = [cdlvsm, "euglena", "run"], app
 s = Session(argv, cwd, {"IDE_FOLDER": folder, "TERM": "xterm-256color"})
 failures = []
 def check(ok, what):

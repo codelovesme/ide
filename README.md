@@ -10,8 +10,6 @@ cdlvsm install ide          # also installs `code` if it is not there
 cdlvsm ide ~/some/project   # or `cdlvsm-ide`; `--link` adds a bare `ide`
 ```
 
-From a checkout: `IDE_FOLDER=~/some/project euglena run`.
-
 It opens the folder it is given, or the one it was started in. Ctrl+Q
 quits; the terminal is given back as it was, even if the program dies.
 
@@ -82,15 +80,27 @@ Organelles: `tty` (keys in, a screen out — only changed rows are written),
 `syntax` (spans from code's lexer, still coloured while a file does not
 lex), `fs`, `strings`, `env`.
 
+## Developing
+
+Needs only what anyone can install:
+
+```sh
+curl -sSf https://raw.githubusercontent.com/codelovesme/cdlvsm/main/install.sh | sh
+cdlvsm install euglena      # brings code too
+cdlvsm euglena install      # the organelles pinned in .code/lock.json
+cdlvsm euglena test
+IDE_FOLDER=~/some/project cdlvsm euglena run
+```
+
 ## Releasing
 
-A `v*` tag runs [the release workflow](.github/workflows/release.yml): the
-five modules are built from `codelovesme/code` at [CODE_REF](CODE_REF), the
-tests run, and [tools/package.sh](tools/package.sh) lays out
-`ide-<tag>-x86_64-linux.tar.gz` — [the launcher](bin/ide), `main.code`, the
-genes, and the modules beside `main.code` (the first place `code` looks), so
-the bundle needs nothing but a `code` interpreter. The smoke test then runs
-the bundle in a terminal on its own modules before it is published.
+A `v*` tag runs [the release workflow](.github/workflows/release.yml), which
+does exactly the above on a clean machine, then
+[tools/package.sh](tools/package.sh) lays out `ide-<tag>-x86_64-linux.tar.gz`
+— [the launcher](bin/ide), `main.code`, the genes, and the organelles beside
+`main.code` (the first place `code` looks), so the bundle needs nothing but
+a `code` interpreter. The smoke test then runs the bundle in a terminal on
+its own organelles before it is published.
 
 ## Tests
 
@@ -100,8 +110,8 @@ buffer), [tests/ide.code](tests/ide.code) (a folder opened, walked, a file
 edited, undone, saved, the menu, the prompts, and a frame drawn), all
 without a terminal.
 
-In a real terminal: `python3 tools/smoke.py` (interpreted) or
-`python3 tools/smoke.py build/ide` — a pty, keys pressed, the screen read
+In a real terminal: `python3 tools/smoke.py` (from a checkout) or
+`python3 tools/smoke.py <bundle>/ide` — a pty, keys pressed, the screen read
 back by [tools/drive.py](tools/drive.py), a small emulator for what `tty`
 sends (no tmux or pyte needed).
 

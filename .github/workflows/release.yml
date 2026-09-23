@@ -2,7 +2,10 @@ name: Release
 
 # A `v*` tag builds the bundle `cdlvsm install ide` fetches:
 # ide-<tag>-x86_64-linux.tar.gz — the launcher, main.code, the genes, and
-# the five modules beside them. A manual run does everything but publish.
+# the organelles beside them. Everything comes from public releases, the way
+# anyone would get it: cdlvsm installs euglena (and code), euglena installs
+# the organelles pinned in .code/lock.json. A manual run does everything but
+# publish.
 on:
   push:
     tags: ["v*"]
@@ -11,48 +14,24 @@ on:
 permissions:
   contents: write
 
-env:
-  CODE_VERSION: v2.8.1
-  EUGLENA_VERSION: v0.4.3
-
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Which code the modules are built from
-        id: ref
-        run: echo "code=$(cat CODE_REF)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@v4
-        with:
-          repository: codelovesme/code
-          ref: ${{ steps.ref.outputs.code }}
-          path: code-src
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Build the modules
-        run: tools/modules.sh code-src modules
-
-      - name: Install code and euglena
+      - name: Install cdlvsm, euglena and code
         run: |
           set -euo pipefail
-          mkdir -p tools-bin ~/.code/modules
-          curl -fsSL "https://github.com/codelovesme/code/releases/download/$CODE_VERSION/code-$CODE_VERSION-x86_64-linux.tar.gz" | tar xz -C tools-bin
-          curl -fsSL "https://github.com/codelovesme/euglena-cli/releases/download/$EUGLENA_VERSION/euglena-$EUGLENA_VERSION-x86_64-linux.tar.gz" | tar xz -C tools-bin
-          echo "CODE=$PWD/tools-bin/code-$CODE_VERSION-x86_64-linux/code" >> "$GITHUB_ENV"
-          echo "EUGLENA=$PWD/tools-bin/euglena-$EUGLENA_VERSION-x86_64-linux/euglena" >> "$GITHUB_ENV"
-          # euglena test resolves modules the way code does; the global
-          # cache is where the freshly built ones are found.
-          cp modules/*.so ~/.code/modules/
+          curl -sSf https://raw.githubusercontent.com/codelovesme/cdlvsm/main/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/cdlvsm" install euglena
+
+      - name: Install the organelles
+        run: cdlvsm euglena install
 
       - name: Test (and generate main.code)
-        run: |
-          set -euo pipefail
-          "$EUGLENA" code set "$CODE"
-          "$EUGLENA" test
+        run: cdlvsm euglena test
 
       - name: Version
         id: version
@@ -61,13 +40,13 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
       - name: Package
-        run: tools/package.sh "${{ steps.version.outputs.version }}" modules dist
+        run: tools/package.sh "${{ steps.version.outputs.version }}" dist
 
-      - name: Smoke test the bundle in a real terminal, on its own modules
+      - name: Smoke test the bundle in a real terminal, on its own organelles
         run: |
           set -euo pipefail
-          rm -rf ~/.code/modules
-          IDE_CODE="$CODE" python3 tools/smoke.py "dist/ide-${{ steps.version.outputs.version }}-x86_64-linux/ide"
+          rm -rf .code/modules "$HOME/.code/modules"
+          python3 tools/smoke.py "dist/ide-${{ steps.version.outputs.version }}-x86_64-linux/ide"
 
       - uses: actions/upload-artifact@v4
         with:

@@ -17,8 +17,9 @@ link "../src/render.gene.code"
 link "../src/tree.gene.code"
 
 | A folder to open: a code file, a folder with a file in it, and .git.
-root = "/tmp/ide-fixture-folder"
-emit Config { base_path = root } to fs
+| Made where the tests run; fs answers where that is, absolutely.
+emit Config { base_path = ".test-folder" } to fs get made
+root = made.base_path
 emit RemoveDir { path = "src" } to fs
 emit WriteFile { path = "hello.code", content = "| hi\nGreet { who } =>\n    return Hi\n" } to fs
 emit WriteFile { path = "src/notes.md", content = "notes" } to fs
@@ -35,7 +36,7 @@ assert s.tree = [
 assert s.focus = "tree"
 
 | A folder that is not there is refused, and the one open stays open.
-emit OpenFolder { path = "/tmp/ide-fixture-folder/nope" } to this get missing
+emit OpenFolder { path = root + "/nope" } to this get missing
 assert missing ∈ Failed
 emit State to this get still
 assert still.folder = root
@@ -91,7 +92,7 @@ assert screen.cursor_col = 20 + 5 + 2
 titles = []
 loop o over screen.overlays
     if o.row = 1, titles += o.spans[0].text
-assert titles = [" EXPLORER: IDE-FIXTURE-FOLDER", " hello.code"]
+assert titles = [" EXPLORER: .TEST-FOLDER", " hello.code"]
 kinds = []
 loop o over screen.overlays
     if o.row = 3 and o.col = 20

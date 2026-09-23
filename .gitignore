@@ -12,3 +12,9 @@ build/
 
 # Python bytecode from tools/
 __pycache__/
+
+# Made and removed by tests/ide.code
+.test-folder/
+
+# tools/package.sh output
+dist/
