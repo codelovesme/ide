@@ -28,6 +28,16 @@ Row 0 is the menu bar — File, View, Help on the left, the folder and file
 on the right. The last row is the status bar: messages, prompts ("Open
 folder:", "Save changes?"), the cursor position and the language.
 
+### Tabs and editor groups
+
+Every open file has a tab; the active tab's file is shown, and opening a
+file that is already open brings its tab back as it was left — edits,
+cursor and undo. Split Editor (Ctrl+\\, or View) opens the file again in
+a second editor group on the right; the two share the editor area half and
+half, as VS Code splits it, each with its own tabs. Exit asks once about
+every file with unsaved changes. (The same file in both groups is two
+copies for now: an edit in one does not show in the other.)
+
 ### Panes: nine slots
 
 The body is a 3×3 grid — `tl t tr / l c r / bl b br`
@@ -45,9 +55,12 @@ the editor (center); the grid is ready for more.
 | | |
 |---|---|
 | Ctrl+K Ctrl+O | Open Folder… |
-| Ctrl+S / Ctrl+W / Ctrl+Q | Save / Close File / Exit (each asks first if unsaved) |
+| Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |
+| Ctrl+PgDn / Ctrl+PgUp | Next / previous tab |
+| Ctrl+\\ | Split Editor: the file again, in a second editor on the right |
 | Ctrl+B | Show / hide the Explorer |
-| Ctrl+Shift+E (or Ctrl+E, Ctrl+0) / Ctrl+1 / F6 | Focus the Explorer / the editor / the other one |
+| Ctrl+Shift+E (or Ctrl+E, Ctrl+0) / Ctrl+1 / Ctrl+2 | Focus the Explorer / the first / the second editor |
+| F6 | Explorer, then each editor, round again |
 | Alt+F Alt+V Alt+H, F10 | Menus: arrows, Enter, Escape |
 | Ctrl+Z / Ctrl+Y | Undo / redo (typing is one step per run) |
 | Ctrl+K Ctrl+S | Keyboard shortcuts |
@@ -93,6 +106,7 @@ bar says which. Only pane settings exist so far.
 | `editor` | what a key does to a buffer |
 | `render` | the whole screen from the state, as `tty` overlays |
 | `settings` | settings.json read and checked, and written back |
+| `tabs` | the open files: editor groups, their tabs, which one shows |
 
 Everything but `ide` is pure: a particle in, a particle out. State lives in
 one gene because a gene's top level is its handlers' whole world. A handler

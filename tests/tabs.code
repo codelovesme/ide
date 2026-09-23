@@ -1,0 +1,58 @@
+| Tabs and editor groups: opening finds a file's own tab, stepping goes
+| round, closing the last tab of a group closes the group, and a split
+| opens a second group and then only moves between the two.
+
+link "../src/tabs.gene.code"
+
+a = { path = "a.code", store = "workspace", dirty = false }
+b = { path = "b.code", store = "workspace", dirty = true }
+c = { path = "c.code", store = "workspace", dirty = false }
+
+emit OpenTab { groups = [], current = 0, buffer = a } to this get one
+assert one.groups = [{ tabs = [a], active = 0 }]
+emit OpenTab { groups = one.groups, current = 0, buffer = b } to this get two
+assert two.groups = [{ tabs = [a, b], active = 1 }]
+
+| A new tab goes after the active one; an open file gets its tab back.
+emit StepTab { groups = two.groups, current = 0, step = 1 } to this get round
+assert round.groups[0].active = 0
+emit OpenTab { groups = round.groups, current = 0, buffer = c } to this get three
+assert three.groups = [{ tabs = [a, c, b], active = 1 }]
+emit OpenTab { groups = three.groups, current = 0, buffer = { path = "b.code", store = "workspace", dirty = false } } to this get again
+assert again.groups = [{ tabs = [a, c, b], active = 2 }]
+| The same path in another store is another file.
+emit FindTab { groups = again.groups, current = 0, path = "b.code", store = "prefs" } to this get elsewhere
+assert elsewhere.index = -1
+
+emit StepTab { groups = again.groups, current = 0, step = -1 } to this get back
+assert back.groups[0].active = 1
+
+| What the group shows, and changing it in place.
+emit Active { groups = back.groups, current = 0 } to this get shown
+assert shown.buffer = c
+emit PutActive { groups = back.groups, current = 0, buffer = c + { dirty = true } } to this get edited
+assert edited.groups[0].tabs[1].dirty
+
+| Closing the active tab shows its neighbour; closing the last one closes
+| the group.
+emit CloseTab { groups = [{ tabs = [a, c, b], active = 2 }], current = 0 } to this get closed_last
+assert closed_last.groups = [{ tabs = [a, c], active = 1 }]
+emit CloseTab { groups = [{ tabs = [a], active = 0 }], current = 0 } to this get none
+assert none.groups = []
+
+| A split opens a second group with the file, focused; with two, it only
+| moves the focus. Closing the right group's last tab leaves the left.
+emit SplitGroups { groups = [{ tabs = [a, b], active = 1 }], current = 0, buffer = b } to this get split
+assert split.groups = [{ tabs = [a, b], active = 1 }, { tabs = [b], active = 0 }]
+assert split.current = 1
+emit SplitGroups { groups = split.groups, current = 1, buffer = b } to this get moved
+assert moved.current = 0
+emit Length { value = moved.groups } to core get { value as still_two }
+assert still_two = 2
+emit CloseTab { groups = split.groups, current = 1 } to this get merged
+assert merged.groups = [{ tabs = [a, b], active = 1 }]
+assert merged.current = 0
+
+emit Unsaved { groups = split.groups } to this get unsaved
+assert unsaved.count = 2
+assert unsaved.first = "b.code"

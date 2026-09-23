@@ -21,7 +21,14 @@ tree_sel = 0
 tree_top = 0
 tree_page = 20
 
-| The open file: `{ path, lines, row, col, want, top, left, dirty, readonly }`.
+| The open files, in editor groups (see tabs.gene.code), and the group
+| with the focus.
+groups = []
+current = 0
+
+| The file the focused group shows, taken out of its tab while it is worked
+| on: `{ path, store, lines, row, col, want, top, left, dirty, readonly }`.
+| `Stash` puts it back, `Unstash` takes the next one out.
 file = null
 editor_page = 20
 undo = []
@@ -156,6 +163,21 @@ Run { command } =>
     if command = "file.save", emit SaveFile to this
     if command = "file.close", emit RequestClose to this
     if command = "app.quit", emit RequestQuit to this
+    if command = "tab.next" or command = "tab.previous"
+        step = 1
+        if command = "tab.previous", step = -1
+        emit Stash to this
+        emit StepTab { groups = groups, current = current, step = step } to this get stepped
+        groups = stepped.groups
+        emit Unstash to this
+    if command = "editor.split" and file ≠ null
+        emit Stash to this
+        emit SplitGroups { groups = groups, current = current, buffer = file } to this get split_up
+        groups = split_up.groups
+        current = split_up.current
+        emit Unstash to this
+        focus = "editor"
+    if command = "focus.group2", emit FocusGroup { index = 1 } to this
     if command = "file.openFolder"
         prompt = { kind = "open_folder", label = "Open folder: ", text = folder + "/" }
     if command = "view.explorer"
@@ -171,12 +193,20 @@ Run { command } =>
     if command = "focus.explorer"
         explorer = true
         focus = "tree"
-    if command = "focus.editor" and file ≠ null, focus = "editor"
+    if command = "focus.editor", emit FocusGroup { index = 0 } to this
+    | F6: the explorer, then each editor group, then round again.
     if command = "focus.next"
-        if focus = "editor" and explorer
+        emit Length { value = groups } to core get { value as open_groups }
+        if focus = "tree"
+            emit FocusGroup { index = 0 } to this
+            return Ran
+        if current + 1 < open_groups
+            emit FocusGroup { index = current + 1 } to this
+            return Ran
+        if explorer
             focus = "tree"
             return Ran
-        if focus = "tree" and file ≠ null, focus = "editor"
+        emit FocusGroup { index = 0 } to this
     if command = "menu.file", menu = { index = 0, item = 0 }
     if command = "menu.view", menu = { index = 1, item = 0 }
     if command = "menu.help", menu = { index = 2, item = 0 }
@@ -205,9 +235,12 @@ PromptKey { name, text } =>
     | The rest are "save first?" — y, n, or escape.
     if name ≠ "y" and name ≠ "n", return Typed
     prompt = null
-    if name = "y"
+    if name = "y" and asked.kind = "close"
         emit SaveFile to this get saved
         if saved ∉ Saved, return Cancelled
+    if name = "y" and asked.kind = "quit"
+        emit SaveAll to this get all_saved
+        if all_saved ∉ Saved, return Cancelled
     if asked.kind = "close", emit CloseFile to this
     if asked.kind = "quit", emit Quit to this
     return Answered
@@ -239,6 +272,8 @@ OpenFolder { path } =>
     tree = kids.nodes
     tree_sel = 0
     tree_top = 0
+    groups = []
+    current = 0
     file = null
     undo = []
     redo = []
@@ -282,23 +317,62 @@ TreeKey { name } =>
         if opened ∈ Opened and name = "enter", focus = "editor"
     return Handled
 
+| A file from the open folder, in its own tab of the focused group — or
+| its tab again, as it was left, if it is open there already.
 OpenFile { path } =>
+    emit Stash to this
+    emit FindTab { groups = groups, current = current, path = path, store = "workspace" } to this get found
+    if found.index ≥ 0
+        emit Show { buffer = groups[current].tabs[found.index] } to this
+        return Opened
     emit ReadFile { path = path } to files get read
     if read ∈ Exception
         message = "Error: " + read.message
         return Failed
     emit Split { value = read.content, separator = "\n" } to texts get split
-    file = { path = path, lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false, store = "workspace" }
+    emit Show { buffer = { path = path, store = "workspace", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false } } to this
+    return Opened
+
+| `buffer` shown in the focused group, in its tab.
+Show { buffer } =>
+    emit Stash to this
+    emit OpenTab { groups = groups, current = current, buffer = buffer } to this get opened_tab
+    groups = opened_tab.groups
+    current = opened_tab.current
+    emit Unstash to this
+    return Shown
+
+| `file`, with its undo history, put back into its tab.
+Stash =>
+    if file = null, return Nothing
+    emit PutActive { groups = groups, current = current, buffer = file + { undo = undo, redo = redo } } to this get put
+    groups = put.groups
+    return Stashed
+
+| The file the focused group shows, taken out of its tab to be worked on.
+Unstash =>
+    emit Active { groups = groups, current = current } to this get shown
+    file = shown.buffer
     undo = []
     redo = []
     last_edit = ""
-    return Opened
+    if file ≠ null and file.undo ≠ null, undo = file.undo
+    if file ≠ null and file.redo ≠ null, redo = file.redo
+    return Unstashed
+
+| The focus on editor group `index`, if there is one.
+FocusGroup { index } =>
+    emit Length { value = groups } to core get { value as open_groups }
+    if index ≥ open_groups, return Nothing
+    emit Stash to this
+    current = index
+    emit Unstash to this
+    focus = "editor"
+    return Focused
 
 ShowShortcuts =>
     emit Shortcuts to this get help
-    file = { path = "Keyboard Shortcuts", lines = help.lines, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = true }
-    undo = []
-    redo = []
+    emit Show { buffer = { path = "Keyboard Shortcuts", store = "help", lines = help.lines, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = true } } to this
     focus = "editor"
     return Shown
 
@@ -355,15 +429,21 @@ Redo =>
     last_edit = ""
     return Redone
 
+| `buffer` written where it came from.
+WriteBuffer { buffer } =>
+    emit Join { value = buffer.lines, separator = "\n" } to texts get joined
+    store = files
+    if buffer.store = "prefs", store = prefs
+    emit WriteFile { path = buffer.path, content = joined.value } to store get written
+    if written ∈ Exception, return Failed { reason = written.message }
+    return Written
+
 SaveFile =>
     if file = null, return Nothing
     if file.readonly, return Nothing
-    emit Join { value = file.lines, separator = "\n" } to texts get joined
-    store = files
-    if file.store = "prefs", store = prefs
-    emit WriteFile { path = file.path, content = joined.value } to store get written
-    if written ∈ Exception
-        message = "Error: " + written.message
+    emit WriteBuffer { buffer = file } to this get written
+    if written ∈ Failed
+        message = "Error: " + written.reason
         return Failed
     file = file + { dirty = false }
     message = "Saved " + file.path
@@ -371,6 +451,18 @@ SaveFile =>
     if file.store = "prefs"
         emit LoadSettings to this get loaded
         if loaded.problem = "", message = "Settings saved and applied"
+    return Saved
+
+| Every file with unsaved changes written — before exit, when asked.
+SaveAll =>
+    emit Stash to this
+    loop group over groups
+        loop tab over group.tabs
+            if tab.dirty
+                emit WriteBuffer { buffer = tab } to this get written
+                if written ∈ Failed
+                    message = "Error: " + tab.path + ": " + written.reason
+                    return Failed
     return Saved
 
 RequestClose =>
@@ -381,17 +473,26 @@ RequestClose =>
     emit CloseFile to this
     return Closed
 
+| The focused tab closed; its group goes when it was the last one there.
 CloseFile =>
-    file = null
-    undo = []
-    redo = []
-    focus = "tree"
-    explorer = true
+    emit Stash to this
+    emit CloseTab { groups = groups, current = current } to this get closed
+    groups = closed.groups
+    current = closed.current
+    emit Unstash to this
+    if file = null
+        focus = "tree"
+        explorer = true
     return Closed
 
 RequestQuit =>
-    if file ≠ null and file.dirty
-        prompt = { kind = "quit", label = "Save changes to " + file.path + " before exit? (y / n / Escape) ", text = "" }
+    emit Stash to this
+    emit Unsaved { groups = groups } to this get unsaved
+    if unsaved.count = 1
+        prompt = { kind = "quit", label = "Save changes to " + unsaved.first + " before exit? (y / n / Escape) ", text = "" }
+        return Asked
+    if unsaved.count > 1
+        prompt = { kind = "quit", label = "" + unsaved.count + " files have unsaved changes. Save them all before exit? (y / n / Escape) ", text = "" }
         return Asked
     emit Quit to this
     return Quitting
@@ -455,16 +556,16 @@ OpenSettings =>
         message = "Error: " + read.message
         return Failed
     emit Split { value = read.content, separator = "\n" } to texts get split
-    file = { path = "settings.json", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false, store = "prefs" }
-    undo = []
-    redo = []
-    last_edit = ""
+    emit Show { buffer = { path = "settings.json", store = "prefs", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false } } to this
     focus = "editor"
     return Opened
 
 | Everything the screen is drawn from, in one particle.
 State =>
+    emit Stash to this
     return IdeState {
+        groups = groups
+        current = current
         cols = cols
         rows = rows
         folder = folder
@@ -492,6 +593,12 @@ Render =>
     tree_top = screen.tree_top
     tree_page = screen.tree_page
     editor_page = screen.page
-    if file ≠ null, file = file + { top = screen.top, left = screen.left }
+    | Each group keeps how far its file was scrolled.
+    loop i, view over screen.views
+        if i = current and file ≠ null, file = file + { top = view.top, left = view.left }
+        if i ≠ current
+            shown = groups[i].tabs[groups[i].active]
+            emit PutActive { groups = groups, current = i, buffer = shown + { top = view.top, left = view.left } } to this get scrolled
+            groups = scrolled.groups
     emit Draw { overlays = screen.overlays, cursor_row = screen.cursor_row, cursor_col = screen.cursor_col } to term
     return Rendered

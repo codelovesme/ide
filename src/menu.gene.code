@@ -9,7 +9,7 @@ menus = [
         items = [
             { label = "Open Folder…", keys = "Ctrl+K Ctrl+O", command = "file.openFolder" }
             { label = "Save", keys = "Ctrl+S", command = "file.save" }
-            { label = "Close File", keys = "Ctrl+W", command = "file.close" }
+            { label = "Close Editor", keys = "Ctrl+W", command = "file.close" }
             { label = "Settings", keys = "Ctrl+,", command = "settings.open" }
             { label = "Exit", keys = "Ctrl+Q", command = "app.quit" }
         ]
@@ -25,6 +25,9 @@ menus = [
             { label = "Narrower Explorer", keys = "Ctrl+K ←", command = "view.narrower" }
             { label = "Focus Explorer", keys = "Ctrl+Shift+E", command = "focus.explorer" }
             { label = "Focus Editor", keys = "Ctrl+1", command = "focus.editor" }
+            { label = "Split Editor", keys = "Ctrl+\\", command = "editor.split" }
+            { label = "Next Tab", keys = "Ctrl+PgDn", command = "tab.next" }
+            { label = "Previous Tab", keys = "Ctrl+PgUp", command = "tab.previous" }
         ]
     }
     {

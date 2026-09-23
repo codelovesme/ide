@@ -1,0 +1,98 @@
+| Tabs — the open files, in editor groups, as VS Code keeps them. Pure.
+|
+| `groups` is a list of editor groups, left to right — one, or two after
+| Split Editor — and each is `{ tabs, active }`: its open files (buffers,
+| see editor.gene.code) and which one it shows. `current` is the group
+| that has the focus. A file is known by its `path` and `store` (the open
+| folder, or the settings folder), so opening it again finds its tab.
+
+max_groups = 2
+
+| The buffer the group `current` shows, or null when nothing is open.
+Active { groups, current } =>
+    group = groups[current]
+    if group = null, return ActiveTab { buffer = null }
+    return ActiveTab { buffer = group.tabs[group.active] }
+
+| `groups` with the tab `current` shows replaced by `buffer`.
+PutActive { groups, current, buffer } =>
+    group = groups[current]
+    if group = null, return Groups { groups = groups, current = current }
+    at = group.active
+    tabs = group.tabs[0, at) + [buffer] + group.tabs(at, length)
+    changed = group + { tabs = tabs }
+    return Groups { groups = groups[0, current) + [changed] + groups(current, length), current = current }
+
+| Where `path` (in `store`) is open in group `current`: its index, or -1.
+FindTab { groups, current, path, store } =>
+    group = groups[current]
+    if group = null, return Found { index = -1 }
+    loop i, tab over group.tabs
+        if tab.path = path and tab.store = store, return Found { index = i }
+    return Found { index = -1 }
+
+| `buffer` shown in group `current`: its own tab if it is open there, else
+| a new tab after the active one. With no group yet, the first one.
+OpenTab { groups, current, buffer } =>
+    emit Length { value = groups } to core get { value as count }
+    if count = 0, return Groups { groups = [{ tabs = [buffer], active = 0 }], current = 0 }
+    emit FindTab { groups = groups, current = current, path = buffer.path, store = buffer.store } to this get found
+    group = groups[current]
+    changed = group + { active = found.index }
+    if found.index < 0
+        at = group.active + 1
+        changed = { tabs = group.tabs[0, at) + [buffer] + group.tabs[at, length), active = at }
+    return Groups { groups = groups[0, current) + [changed] + groups(current, length), current = current }
+
+| The tab `step` (1 or -1) from the active one in group `current`, round.
+StepTab { groups, current, step } =>
+    group = groups[current]
+    if group = null, return Groups { groups = groups, current = current }
+    emit Length { value = group.tabs } to core get { value as count }
+    at = group.active + step
+    if at < 0, at = count - 1
+    if at ≥ count, at = 0
+    changed = group + { active = at }
+    return Groups { groups = groups[0, current) + [changed] + groups(current, length), current = current }
+
+| The active tab of group `current` closed. A group left with no tabs goes,
+| and the focus moves to the one that is left.
+CloseTab { groups, current } =>
+    group = groups[current]
+    if group = null, return Groups { groups = groups, current = current }
+    at = group.active
+    tabs = group.tabs[0, at) + group.tabs(at, length)
+    emit Length { value = tabs } to core get { value as left }
+    if left = 0
+        rest = groups[0, current) + groups(current, length)
+        emit Length { value = rest } to core get { value as groups_left }
+        focus_on = current
+        if focus_on ≥ groups_left, focus_on = groups_left - 1
+        if focus_on < 0, focus_on = 0
+        return Groups { groups = rest, current = focus_on }
+    if at ≥ left, at = left - 1
+    changed = { tabs = tabs, active = at }
+    return Groups { groups = groups[0, current) + [changed] + groups(current, length), current = current }
+
+| Split Editor: `buffer` opened in a new group to the right, which takes the
+| focus. With two groups already, the focus just moves to the other one.
+SplitGroups { groups, current, buffer } =>
+    emit Length { value = groups } to core get { value as count }
+    if count = 0, return Groups { groups = groups, current = current }
+    if count ≥ max_groups
+        other = current + 1
+        if other ≥ count, other = 0
+        return Groups { groups = groups, current = other }
+    return Groups { groups = groups + [{ tabs = [buffer], active = 0 }], current = count }
+
+| The files with unsaved changes, over every group: how many, and the
+| first one's path.
+Unsaved { groups } =>
+    count = 0
+    first = ""
+    loop group over groups
+        loop tab over group.tabs
+            if tab.dirty
+                if count = 0, first = tab.path
+                count += 1
+    return UnsavedFiles { count = count, first = first }

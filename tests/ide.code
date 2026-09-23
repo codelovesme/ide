@@ -9,6 +9,7 @@ link "../src/layout.gene.code"
 link "../src/menu.gene.code"
 link "../src/render.gene.code"
 link "../src/settings.gene.code"
+link "../src/tabs.gene.code"
 link "../src/tree.gene.code"
 
 | The organelles, linked the way the ide links them (tools/organelles.sh
@@ -120,7 +121,7 @@ assert screen.cursor_col = 30 + 5 + 2
 titles = []
 loop o over screen.overlays
     if o.row = 1, titles += o.spans[0].text
-assert titles = [" EXPLORER: .TEST-FOLDER", " hello.code"]
+assert titles = [" EXPLORER: .TEST-FOLDER", "", " hello.code "]
 kinds = []
 loop o over screen.overlays
     if o.row = 3 and o.col = 30
@@ -187,6 +188,79 @@ emit HandleKey { name = "q", text = "q" } to this
 emit State to this get refused
 assert refused.file.lines[0] = "Keyboard Shortcuts"
 assert refused.message = "This file is read-only."
+
+emit HandleKey { name = "ctrl+w", text = "" } to this
+emit State to this get help_closed
+assert help_closed.groups = []
+
+| Tabs. Two files open: two tabs, the second showing. Edits stay with
+| their tab while another is shown.
+emit OpenFile { path = "src/notes.md" } to this
+emit OpenFile { path = "hello.code" } to this
+emit FocusGroup { index = 0 } to this
+emit HandleKey { name = "q", text = "q" } to this
+emit HandleKey { name = "ctrl+pageup", text = "" } to this
+emit State to this get two_tabs
+assert two_tabs.file.path = "src/notes.md"
+emit Length { value = two_tabs.groups[0].tabs } to core get { value as tab_count }
+assert tab_count = 2
+emit HandleKey { name = "ctrl+pagedown", text = "" } to this
+emit State to this get kept
+assert kept.file.path = "hello.code"
+assert kept.file.lines[0] = "qxy| hi"
+assert kept.file.dirty
+| Opening an open file brings its tab back, edits and all.
+emit OpenFile { path = "src/notes.md" } to this
+emit OpenFile { path = "hello.code" } to this
+emit State to this get same_tab
+assert same_tab.file.lines[0] = "qxy| hi"
+emit Frame { state = same_tab } to this get tabbed
+strip = []
+loop o over tabbed.overlays
+    if o.row = 1 and o.col = 30
+        loop span over o.spans
+            if span.text ≠ "", strip += span.text
+assert strip = [" notes.md ", " hello.code ● "]
+
+| Split Editor: the file again in a group on the right, focused; the two
+| share the editor area half and half, with a line between them.
+emit HandleKey { name = "ctrl+\\", text = "" } to this
+emit State to this get split_state
+emit Length { value = split_state.groups } to core get { value as group_count }
+assert group_count = 2
+assert split_state.current = 1
+emit Frame { state = split_state } to this get split_screen
+lefts = []
+loop o over split_screen.overlays
+    if o.row = 1 and o.col ≥ 30, lefts += o.col
+assert lefts = [30, 30, 55, 56, 56]
+assert split_screen.cursor_col = 56 + 5 + 1
+| F6 goes round: explorer, left group, right group.
+emit HandleKey { name = "f6", text = "" } to this
+emit State to this get round_tree
+assert round_tree.focus = "tree"
+emit HandleKey { name = "f6", text = "" } to this
+emit State to this get round_left
+assert round_left.focus = "editor"
+assert round_left.current = 0
+| Quitting asks about both unsaved files at once; Escape keeps them.
+emit HandleKey { name = "ctrl+q", text = "" } to this
+emit State to this get quitting
+assert quitting.prompt.label = "2 files have unsaved changes. Save them all before exit? (y / n / Escape) "
+emit HandleKey { name = "escape", text = "" } to this
+| Closing the right group's only tab leaves the left one.
+emit FocusGroup { index = 1 } to this
+emit HandleKey { name = "ctrl+w", text = "" } to this
+emit HandleKey { name = "n", text = "n" } to this
+emit State to this get one_group
+emit Length { value = one_group.groups } to core get { value as groups_left }
+assert groups_left = 1
+assert one_group.file.path = "hello.code"
+emit HandleKey { name = "ctrl+w", text = "" } to this
+emit HandleKey { name = "n", text = "n" } to this
+emit HandleKey { name = "ctrl+w", text = "" } to this
+emit State to this get all_closed
+assert all_closed.groups = []
 
 | Settings. Ctrl+B hides the explorer and says so in settings.json.
 emit HandleKey { name = "ctrl+b", text = "" } to this

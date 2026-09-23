@@ -70,9 +70,57 @@ ExplorerView { pane, nodes, sel, top, focused, title } =>
         i += 1
     return PaneView { overlays = out, top = t, page = h }
 
-| The editor: the file's name, then its lines with numbers, scrolled to
-| keep the cursor in sight, coloured when the file is code.
-EditorView { pane, buffer, focused } =>
+| The editor area cut into one column per editor group, left to right —
+| halves for two, as VS Code splits it.
+SplitArea { pane, count } =>
+    if count < 2, return Areas { panes = [pane] }
+    half = 0
+    loop
+        if (half + 1) * 2 > pane.width, break
+        half += 1
+    return Areas { panes = [pane + { width = half }, pane + { x = pane.x + half, width = pane.width - half }] }
+
+| The tab strip: every open file's name (● when it has unsaved changes),
+| the active one lit, scrolled so the active one is always in sight.
+TabStrip { tabs, active, width, focused } =>
+    labels = []
+    sizes = []
+    loop tab over tabs
+        emit BaseName { path = tab.path } to this get tab_name
+        label = " " + tab_name.name + " "
+        if tab.dirty, label = label + "● "
+        emit Length { value = label } to core get { value as size }
+        labels += label
+        sizes += size
+    first = active
+    used = sizes[active]
+    loop
+        if first = 0, break
+        if used + sizes[first - 1] > width, break
+        first = first - 1
+        used = used + sizes[first]
+    spans = []
+    loop i, label over labels
+        if i < first, continue
+        style = "pane_title"
+        if i = active and focused, style = "selected_focus"
+        if i = active and not focused, style = "selected"
+        spans += { text = label, style = style }
+    return TabSpans { spans = spans }
+
+| An editor group: its tabs, then the active file's lines with numbers,
+| scrolled to keep the cursor in sight, coloured when the file is code.
+| `divider` draws a line down its left edge, between two groups.
+EditorView { pane as area, buffer, tabs, active, focused, divider } =>
+    pane = area
+    out = []
+    if divider
+        i = 0
+        loop
+            if i ≥ area.height, break
+            out += { row = 1 + area.y + i, col = area.x, spans = [{ text = "│", style = "border" }] }
+            i += 1
+        pane = area + { x = area.x + 1, width = area.width - 1 }
     h = pane.height - 1
     tw = pane.width - gutter
     t = buffer.top
@@ -84,13 +132,9 @@ EditorView { pane, buffer, focused } =>
     if buffer.col ≥ l + tw, l = buffer.col - tw + 1
     if l < 0, l = 0
 
-    emit BaseName { path = buffer.path } to this get file_name
-    title = " " + file_name.name
-    if buffer.dirty, title = title + " ●"
-    if buffer.readonly, title = title + "  (read-only)"
-    title_style = "pane_title"
-    if focused, title_style = "pane_title_focus"
-    out = [{ row = 1 + pane.y, col = pane.x, spans = [{ text = title, width = pane.width, style = title_style }] }]
+    emit TabStrip { tabs = tabs, active = active, width = pane.width, focused = focused } to this get strip
+    out += { row = 1 + pane.y, col = pane.x, spans = [{ text = "", width = pane.width, style = "pane_title" }] }
+    out += { row = 1 + pane.y, col = pane.x, spans = strip.spans }
 
     coloured = null
     if buffer.path[length - 5, length) = ".code"
@@ -165,8 +209,9 @@ Frame { state } =>
     body = state.rows - 2
     panes = []
     if state.explorer, panes += { id = "explorer", slot = state.explorer_slot }
-    if state.file ≠ null, panes += { id = "editor", slot = "c" }
-    if state.file = null and not state.explorer, panes += { id = "welcome", slot = "c" }
+    emit Length { value = state.groups } to core get { value as group_count }
+    if group_count > 0, panes += { id = "editor", slot = "c" }
+    if group_count = 0 and not state.explorer, panes += { id = "welcome", slot = "c" }
     emit Layout { width = state.cols, height = body, panes = panes, side = state.side_width, edge = state.panel_height } to this get placed
 
     emit BaseName { path = state.folder } to this get folder_name
@@ -179,8 +224,9 @@ Frame { state } =>
 
     tree_top = state.tree_top
     tree_page = 10
-    top = 0, left = 0, page = 10
+    page = 10
     cursor_row = null, cursor_col = null
+    views = []
     loop pane over placed.panes
         if pane.id = "explorer"
             emit ExplorerView { pane = pane, nodes = state.tree, sel = state.tree_sel, top = state.tree_top, focused = state.focus = "tree", title = folder_name.name } to this get view
@@ -188,12 +234,17 @@ Frame { state } =>
             tree_top = view.top
             tree_page = view.page
         if pane.id = "editor"
-            emit EditorView { pane = pane, buffer = state.file, focused = state.focus = "editor" } to this get view
-            overlays = overlays + view.overlays
-            top = view.top, left = view.left, page = view.page
-            if state.focus = "editor"
-                cursor_row = view.cursor_row
-                cursor_col = view.cursor_col
+            emit SplitArea { pane = pane, count = group_count } to this get areas
+            loop gi, area over areas.panes
+                group = state.groups[gi]
+                focused = state.focus = "editor" and gi = state.current
+                emit EditorView { pane = area, buffer = group.tabs[group.active], tabs = group.tabs, active = group.active, focused = focused, divider = gi > 0 } to this get view
+                overlays = overlays + view.overlays
+                views += { top = view.top, left = view.left }
+                if gi = state.current, page = view.page
+                if focused
+                    cursor_row = view.cursor_row
+                    cursor_col = view.cursor_col
         if pane.id = "welcome"
             emit WelcomeView { pane = pane } to this get view
             overlays = overlays + view.overlays
@@ -215,7 +266,6 @@ Frame { state } =>
         cursor_col = cursor_col
         tree_top = tree_top
         tree_page = tree_page
-        top = top
-        left = left
+        views = views
         page = page
     }
