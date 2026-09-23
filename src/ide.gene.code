@@ -45,8 +45,16 @@ term = null
 files = null
 texts = null
 vars = null
+| A second `fs`, based in the settings folder rather than the open one.
+prefs = null
 
-| Links the five organelles from the folder `from`, relative to where the program
+| The user's settings (see settings.gene.code), and where they are kept.
+settings = null
+settings_dir = ""
+side_width = 30
+panel_height = 10
+
+| Links the six organelles from the folder `from`, relative to where the program
 | was started: `.` in a release bundle (bin/ide starts it there), and
 | `organelles` in a checkout (tools/organelles.sh puts them there).
 Organelles { from } =>
@@ -55,7 +63,9 @@ Organelles { from } =>
     link from + "/strings.so" as strings_at
     link from + "/syntax.so" as syntax_at
     link from + "/tty.so" as tty_at
-    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at }
+    link from + "/json.so" as json_at
+    link from + "/fs.so" as prefs_at
+    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at }
 
 | Links them, and hands each gene the ones it uses.
 UseOrganelles { from } =>
@@ -65,6 +75,8 @@ UseOrganelles { from } =>
     files = linked.fs
     texts = linked.strings
     term = linked.tty
+    prefs = linked.prefs
+    emit SettingsUses { json = linked.json } to this
     emit EditorUses { texts = linked.strings } to this
     emit RenderUses { texts = linked.strings, colours = linked.syntax } to this
     return linked
@@ -81,6 +93,12 @@ EuglenaHasBeenBorn { cell_name } =>
     if start_in = ""
         emit Config { base_path = "." } to files get here
         start_in = here.base_path
+    | Settings live where VS Code's would on this system: the config folder.
+    emit Get { name = "XDG_CONFIG_HOME", default = "" } to vars get xdg
+    emit Get { name = "HOME", default = "/" } to vars get home
+    config = xdg.value
+    if config = "", config = home.value + "/.config"
+    emit SettingsAt { dir = config + "/codelovesme-ide" } to this
     emit OpenFolder { path = start_in } to this get opened
     if opened ∈ Failed, return opened
     emit Start {} to term get started
@@ -144,8 +162,12 @@ Run { command } =>
         explorer = not explorer
         if not explorer and focus = "tree" and file ≠ null, focus = "editor"
         if explorer and file = null, focus = "tree"
-    if command = "view.explorerLeft", explorer_slot = "l"
-    if command = "view.explorerRight", explorer_slot = "r"
+        emit StoreSetting { key = "workbench.sideBar.visible", value = explorer } to this
+    if command = "view.explorerLeft", emit StoreSetting { key = "workbench.sideBar.location", value = "left" } to this
+    if command = "view.explorerRight", emit StoreSetting { key = "workbench.sideBar.location", value = "right" } to this
+    if command = "view.wider", emit StoreSetting { key = "workbench.sideBar.width", value = side_width + 2 } to this
+    if command = "view.narrower" and side_width > 10, emit StoreSetting { key = "workbench.sideBar.width", value = side_width - 2 } to this
+    if command = "settings.open", emit OpenSettings to this
     if command = "focus.explorer"
         explorer = true
         focus = "tree"
@@ -266,7 +288,7 @@ OpenFile { path } =>
         message = "Error: " + read.message
         return Failed
     emit Split { value = read.content, separator = "\n" } to texts get split
-    file = { path = path, lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false }
+    file = { path = path, lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false, store = "workspace" }
     undo = []
     redo = []
     last_edit = ""
@@ -304,6 +326,15 @@ EditorKey { name, text } =>
     file = edited.buffer + { dirty = true }
     return Changed
 
+| The open file's text replaced whole, as one edit (what a paste of
+| everything would be).
+SetLines { lines } =>
+    if file = null or file.readonly, return Nothing
+    undo += { lines = file.lines, row = file.row, col = file.col }
+    file = file + { lines = lines, row = 0, col = 0, want = 0, dirty = true }
+    last_edit = ""
+    return Changed
+
 Undo =>
     emit Length { value = undo } to core get { value as count }
     if file = null or count = 0, return Nothing
@@ -328,12 +359,18 @@ SaveFile =>
     if file = null, return Nothing
     if file.readonly, return Nothing
     emit Join { value = file.lines, separator = "\n" } to texts get joined
-    emit WriteFile { path = file.path, content = joined.value } to files get written
+    store = files
+    if file.store = "prefs", store = prefs
+    emit WriteFile { path = file.path, content = joined.value } to store get written
     if written ∈ Exception
         message = "Error: " + written.message
         return Failed
     file = file + { dirty = false }
     message = "Saved " + file.path
+    | Saving settings.json is how an edit to it takes effect.
+    if file.store = "prefs"
+        emit LoadSettings to this get loaded
+        if loaded.problem = "", message = "Settings saved and applied"
     return Saved
 
 RequestClose =>
@@ -364,6 +401,67 @@ Quit =>
     emit Stop {} to term
     return Quitting
 
+| Where the settings are kept: `dir`/settings.json. Loads them.
+SettingsAt { dir } =>
+    emit Config { base_path = dir } to prefs get configured
+    if configured ∈ Exception
+        message = "Error: settings: " + configured.message
+        return Failed
+    settings_dir = configured.base_path
+    emit LoadSettings to this get loaded
+    return loaded
+
+| settings.json read, checked and applied. A missing file is the defaults.
+LoadSettings =>
+    emit Exists { path = "settings.json" } to prefs get there
+    text = null
+    if there.is_file
+        emit ReadFile { path = "settings.json" } to prefs get read
+        if read ∉ Exception, text = read.content
+    emit ReadSettings { text = text } to this get read_back
+    settings = read_back.values
+    explorer = settings["workbench.sideBar.visible"]
+    explorer_slot = "l"
+    if settings["workbench.sideBar.location"] = "right", explorer_slot = "r"
+    side_width = settings["workbench.sideBar.width"]
+    panel_height = settings["workbench.panel.height"]
+    if not explorer and focus = "tree" and file ≠ null, focus = "editor"
+    if read_back.problem ≠ "", message = "Error: " + read_back.problem
+    return read_back
+
+| One setting changed from inside the ide (Ctrl+B, moving or resizing the
+| explorer): applied, and written to settings.json — which, if it is open
+| and unedited, shows the change too.
+StoreSetting { key, value } =>
+    settings = settings + { "$key" = value }
+    emit WriteSettings { values = settings } to this get written_text
+    emit WriteFile { path = "settings.json", content = written_text.text } to prefs get written
+    if written ∈ Exception
+        message = "Error: settings could not be saved: " + written.message
+    emit LoadSettings to this
+    if file ≠ null and file.store = "prefs" and not file.dirty
+        emit Split { value = written_text.text, separator = "\n" } to texts get fresh
+        file = file + { lines = fresh.value }
+    return Stored
+
+| Ctrl+, — settings.json in the editor, made first if there is none yet.
+OpenSettings =>
+    emit Exists { path = "settings.json" } to prefs get there
+    if not there.is_file
+        emit WriteSettings { values = settings } to this get first_text
+        emit WriteFile { path = "settings.json", content = first_text.text } to prefs
+    emit ReadFile { path = "settings.json" } to prefs get read
+    if read ∈ Exception
+        message = "Error: " + read.message
+        return Failed
+    emit Split { value = read.content, separator = "\n" } to texts get split
+    file = { path = "settings.json", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false, store = "prefs" }
+    undo = []
+    redo = []
+    last_edit = ""
+    focus = "editor"
+    return Opened
+
 | Everything the screen is drawn from, in one particle.
 State =>
     return IdeState {
@@ -380,6 +478,8 @@ State =>
         message = message
         explorer = explorer
         explorer_slot = explorer_slot
+        side_width = side_width
+        panel_height = panel_height
     }
 
 Render =>

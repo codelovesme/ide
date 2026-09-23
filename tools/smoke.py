@@ -24,7 +24,8 @@ else:
     if not cdlvsm:
         sys.exit("needs cdlvsm on PATH (with euglena installed), or a path to the ide to run")
     argv, cwd = [cdlvsm, "euglena", "run"], app
-s = Session(argv, cwd, {"IDE_FOLDER": folder, "TERM": "xterm-256color"})
+config = tempfile.mkdtemp(prefix="ide-smoke-config-")
+s = Session(argv, cwd, {"IDE_FOLDER": folder, "TERM": "xterm-256color", "XDG_CONFIG_HOME": config})
 failures = []
 def check(ok, what):
     print(("ok   " if ok else "FAIL ") + what)
@@ -52,6 +53,10 @@ s.keys(b"\x1b", 0.6)
 s.keys(b"\x02", 0.6)
 check("EXPLORER" not in s.screen.row(1), "ctrl+b hides the explorer")
 s.keys(b"\x02", 0.6)
+s.keys(b"\x0b\x1b[C", 0.8)
+check(s.screen.row(1)[32:].startswith(" notes.md"), "ctrl+k → makes the explorer wider: " + s.screen.row(1)[28:44])
+settings = open(config + "/codelovesme-ide/settings.json").read()
+check('"workbench.sideBar.width": 32' in settings, "and settings.json remembers it")
 s.resize(90, 20, 1.2)
 check("Ln 1" in s.screen.row(19), "redraws at a new size")
 s.keys(b"x\x11", 0.8)
@@ -60,4 +65,5 @@ s.keys(b"n", 1.5)
 check(s.exit == 0, "exits cleanly")
 check(not s.screen.alt and s.screen.visible, "terminal given back")
 shutil.rmtree(folder)
+shutil.rmtree(config)
 sys.exit(1 if failures else 0)

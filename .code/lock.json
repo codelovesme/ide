@@ -31,6 +31,18 @@
       "setup": "Config",
       "global": false
     },
+    "json": {
+      "name": "json",
+      "version": "2.8.2",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.2",
+      "asset": "json-linux-x86_64.so",
+      "sha256": "b98df3a121f8a8645771058c2565e32bd31d211763ce311ff2cdfca27e299010",
+      "handlers": [
+        "Parse",
+        "Stringify"
+      ],
+      "global": false
+    },
     "strings": {
       "name": "strings",
       "version": "2.8.2",

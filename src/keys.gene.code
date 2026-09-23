@@ -19,6 +19,7 @@ bindings = {
     "alt+f" = "menu.file"
     "alt+v" = "menu.view"
     "alt+h" = "menu.help"
+    "ctrl+," = "settings.open"
     "ctrl+z" = "edit.undo"
     "ctrl+y" = "edit.redo"
     "ctrl+shift+z" = "edit.redo"
@@ -27,6 +28,8 @@ bindings = {
 chords = {
     "ctrl+k ctrl+o" = "file.openFolder"
     "ctrl+k ctrl+s" = "help.keys"
+    "ctrl+k right" = "view.wider"
+    "ctrl+k left" = "view.narrower"
 }
 
 | `pending` is the first key of a chord, or `""`. Answers the command to
@@ -43,6 +46,7 @@ shortcuts = [
     "    Ctrl+K Ctrl+O   Open Folder…"
     "    Ctrl+S          Save"
     "    Ctrl+W          Close File"
+    "    Ctrl+,          Settings (settings.json — save it to apply)"
     "    Ctrl+Q          Exit"
     ""
     "  View"
@@ -50,6 +54,7 @@ shortcuts = [
     "    Ctrl+Shift+E    Focus the Explorer (also Ctrl+E, Ctrl+0)"
     "    Ctrl+1          Focus the Editor"
     "    F6              Move focus to the other pane"
+    "    Ctrl+K →/←      Make the Explorer wider / narrower"
     ""
     "  Menus"
     "    Alt+F  Alt+V  Alt+H, or F10, then arrows, Enter, Escape"

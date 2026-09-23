@@ -1,0 +1,61 @@
+| Settings — the user's preferences, as VS Code keeps them: a JSON file,
+| `settings.json`, that the ide reads at start, writes when a preference
+| changes (Ctrl+B, moving or resizing the explorer), and opens for editing
+| (Ctrl+, or File > Settings). Pure: text in, checked values out.
+|
+| A value that is missing or not what it should be falls back to its
+| default, and says so — a typo in the file never stops the ide.
+
+defaults = {
+    "workbench.sideBar.visible" = true
+    "workbench.sideBar.location" = "left"
+    "workbench.sideBar.width" = 30
+    "workbench.panel.height" = 10
+}
+
+| The `json` organelle, handed over when the ide links it.
+parser = null
+
+SettingsUses { json } =>
+    parser = json
+    return Using
+
+| `text` (the file, or null when there is none) as settings. Answers
+| `Prefs { values, problem }`: every setting with a good value, and what
+| was wrong, if anything (`""` when nothing was).
+ReadSettings { text } =>
+    if text = null, return Prefs { values = defaults, problem = "" }
+    emit Parse { text = text } to parser get parsed
+    if parsed ∈ Exception
+        return Prefs { values = defaults, problem = "settings.json is not valid JSON — using the defaults" }
+    given = parsed.value
+    if given ∉ Object
+        return Prefs { values = defaults, problem = "settings.json should be an object — using the defaults" }
+    values = defaults
+    wrong = []
+    visible = given["workbench.sideBar.visible"]
+    if visible ∈ Boolean, values = values + { "workbench.sideBar.visible" = visible }
+    if visible ≠ null and visible ∉ Boolean, wrong += "workbench.sideBar.visible (true or false)"
+    location = given["workbench.sideBar.location"]
+    if location = "left" or location = "right", values = values + { "workbench.sideBar.location" = location }
+    if location ≠ null and location ≠ "left" and location ≠ "right", wrong += "workbench.sideBar.location (\"left\" or \"right\")"
+    width = given["workbench.sideBar.width"]
+    good_width = width ∈ Number
+    if good_width, good_width = width ≥ 10
+    if good_width, values = values + { "workbench.sideBar.width" = width }
+    if width ≠ null and not good_width, wrong += "workbench.sideBar.width (10 or more)"
+    height = given["workbench.panel.height"]
+    good_height = height ∈ Number
+    if good_height, good_height = height ≥ 3
+    if good_height, values = values + { "workbench.panel.height" = height }
+    if height ≠ null and not good_height, wrong += "workbench.panel.height (3 or more)"
+    problem = ""
+    loop i, what over wrong
+        if i = 0, problem = "settings.json: using the default for " + what
+        if i > 0, problem = problem + ", " + what
+    return Prefs { values = values, problem = problem }
+
+| `values` as the text of settings.json.
+WriteSettings { values } =>
+    emit Stringify { value = values, pretty = true } to parser get text
+    return SettingsText { text = text.value + "\n" }

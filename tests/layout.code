@@ -46,10 +46,15 @@ emit Layout { width = 120, height = 40, panes = [{ id = "a", slot = "l" }, { id 
 assert sides.panes[0].width = 30
 assert sides.panes[1] = { id = "b", slot = "r", x = 30, y = 0, width = 90, height = 40 }
 
-| A narrow screen keeps the sides smaller.
-emit Layout { width = 80, height = 24, panes = [{ id = "tree", slot = "l" }, { id = "file", slot = "c" }] } to this get narrow
+| The side is as wide as asked, but always leaves the middle 20 columns.
+emit Layout { width = 80, height = 24, panes = [{ id = "tree", slot = "l" }, { id = "file", slot = "c" }], side = 44 } to this get asked
+assert asked.panes[0].width = 44
+assert asked.panes[1].width = 36
+emit Layout { width = 40, height = 24, panes = [{ id = "tree", slot = "l" }, { id = "file", slot = "c" }] } to this get narrow
 assert narrow.panes[0].width = 20
-assert narrow.panes[1].width = 60
+assert narrow.panes[1].width = 20
+emit Layout { width = 120, height = 40, panes = [{ id = "file", slot = "c" }, { id = "panel", slot = "b" }], edge = 15 } to this get panel
+assert panel.panes[1] = { id = "panel", slot = "b", x = 0, y = 25, width = 120, height = 15 }
 
 | Two panes asking for one slot: the first has it.
 emit Layout { width = 120, height = 40, panes = [{ id = "a", slot = "c" }, { id = "b", slot = "c" }] } to this get clash

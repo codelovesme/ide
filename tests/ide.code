@@ -8,6 +8,7 @@ link "../src/keys.gene.code"
 link "../src/layout.gene.code"
 link "../src/menu.gene.code"
 link "../src/render.gene.code"
+link "../src/settings.gene.code"
 link "../src/tree.gene.code"
 
 | The organelles, linked the way the ide links them (tools/organelles.sh
@@ -15,6 +16,19 @@ link "../src/tree.gene.code"
 emit UseOrganelles { from = "organelles" } to this get lib
 assert lib ∈ Linked
 files = lib.fs
+prefs_fs = lib.prefs
+json_lib = lib.json
+
+| Settings kept where the tests run, starting from none.
+emit Config { base_path = ".test-config" } to prefs_fs
+emit DeleteFile { path = "settings.json" } to prefs_fs
+emit SettingsAt { dir = ".test-config" } to this get first_settings
+assert first_settings.values = {
+    "workbench.sideBar.visible" = true
+    "workbench.sideBar.location" = "left"
+    "workbench.sideBar.width" = 30
+    "workbench.panel.height" = 10
+}
 
 | A folder to open: a code file, a folder with a file in it, and .git.
 | Made where the tests run; fs answers where that is, absolutely.
@@ -94,14 +108,14 @@ emit State to this get saved
 assert not saved.file.dirty
 assert saved.message = "Saved hello.code"
 
-| The frame at the default 80 columns: menu bar, the explorer 20 wide on
-| the left, the file in the center.
+| The frame at the default 80 columns: menu bar, the explorer 30 wide on
+| the left (the default width), the file in the center.
 emit State to this get now
 emit Frame { state = now } to this get screen
 assert screen ∈ Screen
 assert screen.overlays[1].spans[1].text = " File "
 assert screen.cursor_row = 2
-assert screen.cursor_col = 20 + 5 + 2
+assert screen.cursor_col = 30 + 5 + 2
 | The explorer's title row, and the editor's first line, coloured.
 titles = []
 loop o over screen.overlays
@@ -109,7 +123,7 @@ loop o over screen.overlays
 assert titles = [" EXPLORER: .TEST-FOLDER", " hello.code"]
 kinds = []
 loop o over screen.overlays
-    if o.row = 3 and o.col = 20
+    if o.row = 3 and o.col = 30
         loop span over o.spans
             kinds += span.style
 assert kinds = ["line_number", "plain", "class", "plain", "variable", "plain", "operator", "plain"]
@@ -174,4 +188,48 @@ emit State to this get refused
 assert refused.file.lines[0] = "Keyboard Shortcuts"
 assert refused.message = "This file is read-only."
 
+| Settings. Ctrl+B hides the explorer and says so in settings.json.
+emit HandleKey { name = "ctrl+b", text = "" } to this
+emit ReadFile { path = "settings.json" } to prefs_fs get stored
+emit Parse { text = stored.content } to json_lib get stored_values
+assert stored_values.value["workbench.sideBar.visible"] = false
+emit HandleKey { name = "ctrl+b", text = "" } to this
+
+| Ctrl+K → makes it two columns wider; Ctrl+K ← narrower again.
+emit HandleKey { name = "ctrl+k", text = "" } to this
+emit HandleKey { name = "right", text = "" } to this
+emit State to this get wider
+assert wider.side_width = 32
+emit HandleKey { name = "ctrl+k", text = "" } to this
+emit HandleKey { name = "left", text = "" } to this
+emit State to this get narrower
+assert narrower.side_width = 30
+
+| Ctrl+, opens settings.json; saving an edit to it applies it.
+emit HandleKey { name = "ctrl+,", text = "" } to this
+emit State to this get editing_settings
+assert editing_settings.file.path = "settings.json"
+assert editing_settings.file.lines[0] = "{"
+assert editing_settings.focus = "editor"
+emit SetLines { lines = ["{", "  \"workbench.sideBar.location\": \"right\",", "  \"workbench.sideBar.width\": 40", "}", ""] } to this
+emit HandleKey { name = "ctrl+s", text = "" } to this
+emit State to this get applied
+assert applied.explorer_slot = "r"
+assert applied.side_width = 40
+assert applied.explorer
+assert applied.message = "Settings saved and applied"
+
+| A setting that is not what it should be falls back, and says so.
+emit SetLines { lines = ["{ \"workbench.sideBar.width\": \"wide\" }"] } to this
+emit HandleKey { name = "ctrl+s", text = "" } to this
+emit State to this get fell_back
+assert fell_back.side_width = 30
+assert fell_back.message = "Error: settings.json: using the default for workbench.sideBar.width (10 or more)"
+emit SetLines { lines = ["not json"] } to this
+emit HandleKey { name = "ctrl+s", text = "" } to this
+emit State to this get broken
+assert broken.message = "Error: settings.json is not valid JSON — using the defaults"
+assert broken.explorer_slot = "l"
+
+emit RemoveDir { path = "." } to prefs_fs
 emit RemoveDir { path = "." } to files

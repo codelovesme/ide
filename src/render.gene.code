@@ -151,6 +151,7 @@ StatusBar { width, row, message, prompt, buffer } =>
     if buffer ≠ null
         language = "Plain Text"
         if buffer.path[length - 5, length) = ".code", language = "code"
+        if buffer.path[length - 5, length) = ".json", language = "JSON"
         right = "Ln " + (buffer.row + 1) + ", Col " + (buffer.col + 1) + "    " + language + "  "
     style = "status"
     if message[0, 6) = "Error:", style = "status_warn"
@@ -166,7 +167,7 @@ Frame { state } =>
     if state.explorer, panes += { id = "explorer", slot = state.explorer_slot }
     if state.file ≠ null, panes += { id = "editor", slot = "c" }
     if state.file = null and not state.explorer, panes += { id = "welcome", slot = "c" }
-    emit Layout { width = state.cols, height = body, panes = panes } to this get placed
+    emit Layout { width = state.cols, height = body, panes = panes, side = state.side_width, edge = state.panel_height } to this get placed
 
     emit BaseName { path = state.folder } to this get folder_name
     title = "ide — " + folder_name.name

@@ -51,6 +51,8 @@ the editor (center); the grid is ready for more.
 | Alt+F Alt+V Alt+H, F10 | Menus: arrows, Enter, Escape |
 | Ctrl+Z / Ctrl+Y | Undo / redo (typing is one step per run) |
 | Ctrl+K Ctrl+S | Keyboard shortcuts |
+| Ctrl+, | Settings (settings.json) |
+| Ctrl+K → / Ctrl+K ← | Explorer wider / narrower (also in the View menu) |
 
 In the editor: arrows, Home (first non-space, then column 0), End,
 PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab and Shift+Tab
@@ -59,6 +61,25 @@ adds a level after a block header (`… =>`, `if …`, `loop …` without a
 comma). Most terminals send Ctrl+Shift+E as Ctrl+E, so that works too.
 Ctrl+1 needs a terminal that tells it apart from 1 (kitty, foot, WezTerm,
 xterm, tmux with `extended-keys`); F6 always works.
+
+## Settings
+
+Like VS Code, a JSON file: `settings.json` in `$XDG_CONFIG_HOME/codelovesme-ide/`
+(`~/.config/codelovesme-ide/` when that is not set). Ctrl+, or File >
+Settings opens it; saving it applies it. Hiding, moving or resizing the
+explorer writes it for you.
+
+```json
+{
+  "workbench.sideBar.visible": true,
+  "workbench.sideBar.location": "left",
+  "workbench.sideBar.width": 30,
+  "workbench.panel.height": 10
+}
+```
+
+A value that is missing or wrong falls back to its default, and the status
+bar says which. Only pane settings exist so far.
 
 ## How it is built
 
@@ -71,6 +92,7 @@ xterm, tmux with `extended-keys`); F6 always works.
 | `tree` | the folder as flat rows (a handler cannot recurse, so opening a folder splices its children in) |
 | `editor` | what a key does to a buffer |
 | `render` | the whole screen from the state, as `tty` overlays |
+| `settings` | settings.json read and checked, and written back |
 
 Everything but `ide` is pure: a particle in, a particle out. State lives in
 one gene because a gene's top level is its handlers' whole world. A handler
@@ -78,7 +100,8 @@ that fails puts `Error: …` in the status bar instead of stalling.
 
 Organelles: `tty` (keys in, a screen out — only changed rows are written),
 `syntax` (spans from code's lexer, still coloured while a file does not
-lex), `fs`, `strings`, `env`.
+lex), `fs` (twice: the open folder, and the settings folder), `json`,
+`strings`, `env`.
 
 ## Developing
 
@@ -99,7 +122,7 @@ A `v*` tag runs [the release workflow](.github/workflows/release.yml), which
 does exactly the above on a clean machine. Then
 [tools/package.sh](tools/package.sh) builds the ide as a program (`code
 build`) and lays out `ide-<tag>-x86_64-linux.tar.gz`: the program, [its
-launcher](bin/ide), and the five organelles beside it. It needs no `code`
+launcher](bin/ide), and the six organelles beside it. It needs no `code`
 interpreter to run. The smoke test proves that — it runs the bundle with no
 `code` on the machine and no module cache — before it is published.
 
