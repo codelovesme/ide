@@ -89,6 +89,11 @@ buffer), [tests/ide.code](tests/ide.code) (a folder opened, walked, a file
 edited, undone, saved, the menu, the prompts, and a frame drawn), all
 without a terminal.
 
+In a real terminal: `python3 tools/smoke.py` (interpreted) or
+`python3 tools/smoke.py build/ide` — a pty, keys pressed, the screen read
+back by [tools/drive.py](tools/drive.py), a small emulator for what `tty`
+sends (no tmux or pyte needed).
+
 ## Next
 
 Tabs and more than one file, Ctrl+P, find, the clipboard, the mouse,
