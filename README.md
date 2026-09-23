@@ -56,7 +56,7 @@ the editor (center); the grid is ready for more.
 |---|---|
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |
-| Ctrl+PgDn / Ctrl+PgUp | Next / previous tab |
+| Ctrl+Tab / Ctrl+Shift+Tab (or Ctrl+PgDn / Ctrl+PgUp) | Next / previous tab — many terminals send Ctrl+Tab as plain Tab; Ctrl+PgDn always works |
 | Ctrl+\\ | Split Editor: the file again, in a second editor on the right |
 | Ctrl+B | Show / hide the Explorer |
 | Ctrl+Shift+E (or Ctrl+E, Ctrl+0) / Ctrl+1 / Ctrl+2 | Focus the Explorer / the first / the second editor |

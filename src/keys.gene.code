@@ -33,6 +33,10 @@ defaults = [
     { key = "f6", command = "focus.next" }
     { key = "shift+f6", command = "focus.next" }
     { key = "ctrl+\\", command = "editor.split" }
+    | Many terminals send ctrl+tab as a plain tab; ctrl+pagedown / pageup
+    | always arrive, so they stay as the second way.
+    { key = "ctrl+tab", command = "tab.next" }
+    { key = "ctrl+shift+tab", command = "tab.previous" }
     { key = "ctrl+pagedown", command = "tab.next" }
     { key = "ctrl+pageup", command = "tab.previous" }
     { key = "ctrl+z", command = "edit.undo" }

@@ -19,6 +19,9 @@ assert table.keys["ctrl+k ctrl+o"] = "file.openFolder"
 assert table.prefixes["ctrl+k"]
 assert table.labels["file.openFolder"] = "Ctrl+K Ctrl+O"
 assert table.labels["view.wider"] = "Ctrl+K →"
+assert table.keys["ctrl+tab"] = "tab.next"
+assert table.keys["ctrl+shift+tab"] = "tab.previous"
+assert table.labels["tab.next"] = "Ctrl+Tab"
 emit Keymap { name = "ctrl+s", pending = "", table = table } to this get save
 assert save.command = "file.save"
 emit Keymap { name = "ctrl+k", pending = "", table = table } to this get waiting
