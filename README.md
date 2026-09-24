@@ -119,8 +119,13 @@ what is in use (`Claude Code · sonnet · high · Ask`).
 Nothing here is built into the ide. The models and efforts are the ones a
 tool reports itself — a server's `/v1/models`; Codex's catalogue, with the
 efforts each model takes and its default — or, where it cannot say, the
-`"models"` / `"efforts"` lists in its entry, which win (Claude Code's entry
-carries the names its `--model` and `--effort` take; edit them there).
+`"models"` / `"efforts"` lists in its entry, which win. A model there is a
+name, or `{ "id": "claude-opus-5-5", "name": "Opus 5.5" }` — the id is what
+the tool is given, the name what you see — so several versions of one
+model can sit side by side. Claude Code's entry lists its models by their
+versioned ids (Opus 5.5, Opus 5, Sonnet 5, Haiku 4.5, Fable 5.1, Fable 5 —
+some need usage credits on some plans) and the efforts its `--effort`
+takes; edit them there. Codex shows its own names for its models.
 `local`, `claude` and `codex` are default entries of `ai.providers`, merged
 under yours — add your own beside them. The local model takes no effort
 yet (that needs the localai module to pass one on).
@@ -149,7 +154,8 @@ shown on the line over the input:
 
 ```json
 "ai.providers": {
-  "claude": { "type": "claude-code", "command": "claude", "model": "", "models": ["fable", "opus", "sonnet"],
+  "claude": { "type": "claude-code", "command": "claude", "model": "",
+              "models": [{ "id": "claude-opus-5-5", "name": "Opus 5.5" }, { "id": "claude-sonnet-5", "name": "Sonnet 5" }, "…"],
               "effort": "", "efforts": ["low", "medium", "high", "xhigh", "max"] },
   "codex":  { "type": "codex", "command": "codex", "model": "", "effort": "" }
 },

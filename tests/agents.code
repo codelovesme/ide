@@ -154,6 +154,30 @@ assert back_to_fake.picker_rows.chosen = ["fake", "m1", "low"]
 emit HandleKey { name = "escape", text = "" } to this
 emit State to this get closed_picker
 assert closed_picker.picker = null
+| Versioned models: an entry lists ids with names; the picker shows the
+| name, the run takes the id. Claude Code's default list is versioned, and
+| the first (bare aliases) is read as it.
+emit ReadSettings { text = "{ \"ai.providers\": { \"claude\": { \"type\": \"claude-code\", \"models\": [\"fable\", \"opus\", \"sonnet\"] } } }" } to this get upgraded
+assert upgraded.values["ai.providers"]["claude"]["models"][0] = { id = "claude-opus-5-5", name = "Opus 5.5" }
+emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh", models = [{ id = "m-1-5", name = "M 1.5" }, { id = "m-1", name = "M 1" }], efforts = ["low", "high"] } } } to this
+emit HandleKey { name = "alt+m", text = "" } to this
+emit State to this get versioned
+assert versioned.picker_rows.held.name = "fake"
+assert versioned.picker_rows.choices[1] = ["", "m-1-5", "m-1"]
+assert versioned.picker_rows.held.names["m-1-5"] = "M 1.5"
+emit HandleKey { name = "enter", text = "" } to this
+emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit HandleKey { name = "escape", text = "" } to this
+emit State to this get on_versioned
+assert on_versioned.settings["ai.providers"]["fake"]["model"] = "m-1-5"
+assert on_versioned.ai_status = "Claude Code · M 1.5 · Ask"
+emit ProviderFor { settings = on_versioned.settings } to this get versioned_provider
+emit AgentCommand { provider = versioned_provider, mode = "ask", session = "", prompt_file = "/p", err_file = "/e", allow = [] } to this get versioned_line
+emit Contains { text = versioned_line.text, part = "--model 'm-1-5'" } to this get id_passed
+assert id_passed.yes
+emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh", model = "m1", effort = "low", models = ["m1", "m2"], efforts = ["low", "high"] } } } to this
+
 | The run takes the model and effort.
 emit AgentCommand { provider = { type = "claude-code", command = "claude", model = "m1", effort = "low" }, mode = "ask", session = "", prompt_file = "/p", err_file = "/e", allow = [] } to this get with_effort
 emit Contains { text = with_effort.text, part = "--model 'm1' --effort 'low'" } to this get effort_passed

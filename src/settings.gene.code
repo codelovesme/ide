@@ -18,9 +18,24 @@ defaults = {
     "ai.providers" = {
         local = { type = "openai-compatible", endpoint = "", model = "", apiKeyEnv = "", contextTokens = 32768 }
         | Claude Code cannot list its models or efforts: these are the names
-        | its --model and --effort take (edit them here; "" is its own
-        | default). Codex reports both itself.
-        claude = { type = "claude-code", command = "claude", model = "", models = ["fable", "opus", "sonnet"], effort = "", efforts = ["low", "medium", "high", "xhigh", "max"] }
+        | its --model and --effort take, a model by its full, versioned id
+        | (so two versions of one can sit side by side) and shown by `name`.
+        | Edit them here; "" is its own default. Codex reports both itself.
+        claude = {
+            type = "claude-code"
+            command = "claude"
+            model = ""
+            models = [
+                { id = "claude-opus-5-5", name = "Opus 5.5" }
+                { id = "claude-opus-5", name = "Opus 5" }
+                { id = "claude-sonnet-5", name = "Sonnet 5" }
+                { id = "claude-haiku-4-5-20251001", name = "Haiku 4.5" }
+                { id = "claude-fable-5-1", name = "Fable 5.1" }
+                { id = "claude-fable-5", name = "Fable 5" }
+            ]
+            effort = ""
+            efforts = ["low", "medium", "high", "xhigh", "max"]
+        }
         codex = { type = "codex", command = "codex", model = "", effort = "" }
     }
     "ai.chat.location" = "r"
@@ -107,6 +122,10 @@ ReadSettings { text } =>
             if one ∉ Object, good_providers = false
     | The user's entries over the defaults: an entry they name wins whole,
     | the others (claude, codex) stay there to pick.
+    | A claude entry still carrying the first default list (bare aliases,
+    | written out by 0.10) takes the versioned one.
+    if good_providers and providers["claude"] ∈ Object and providers["claude"]["models"] = ["fable", "opus", "sonnet"]
+        providers = providers + { claude = providers["claude"] + { models = defaults["ai.providers"]["claude"]["models"] } }
     if good_providers, values = values + { "ai.providers" = defaults["ai.providers"] + providers }
     if providers ≠ null and not good_providers, wrong += "ai.providers (an object of { \"type\", \"endpoint\", \"model\" … })"
     chat_at = given["ai.chat.location"]

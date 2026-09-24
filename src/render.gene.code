@@ -250,6 +250,7 @@ PickerView { picker, rows, cols, height } =>
         value = rows.chosen[r]
         if r = 0, value = rows.held.title
         if r = 1 and value = "", value = "its default"
+        if r = 1 and rows.held.names[value] ≠ null, value = rows.held.names[value]
         if r = 2 and value = ""
             value = "default"
             if rows.usual_effort ≠ "", value = "default (" + rows.usual_effort + ")"
@@ -285,6 +286,7 @@ PickerView { picker, rows, cols, height } =>
             item = picker.list.items[top + i]
             shown = item
             if item = "", shown = "(default)"
+            if picker.row = 1 and rows.held.names[item] ≠ null, shown = rows.held.names[item] + "   " + item
             style = "menu_item"
             if top + i = picker.list.index, style = "menu_item_active"
             out += { row = 6 + i, col = col + 10, spans = [{ text = "  " + shown, width = width - 10, style = style }] }

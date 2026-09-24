@@ -1039,11 +1039,15 @@ ChatNotice =>
     chat_notice = provider.problem
     chat_label = ""
     ai_status = ""
+    shown_model = provider.model
+    if provider.models ≠ null
+        loop one over provider.models
+            if one ∈ Object and one["id"] = provider.model and one["name"] ∈ String, shown_model = one["name"]
     if provider.problem = "" and provider.runner = "cli"
         mode = "Ask"
         if settings["ai.agent.mode"] = "edit", mode = "Edit"
         ai_status = provider.title
-        if provider.model ≠ "", ai_status = ai_status + " · " + provider.model
+        if provider.model ≠ "", ai_status = ai_status + " · " + shown_model
         if provider.effort ≠ "", ai_status = ai_status + " · " + provider.effort
         chat_label = ai_status + " · " + mode + " (Shift+Tab) · Alt+M: switch"
         ai_status = ai_status + " · " + mode
@@ -1942,19 +1946,21 @@ Log { source, level, message as logged } =>
 
 | Whether the provider `provider` (from ProviderFor) can be used now, the
 | models it offers — the ones settings list (`"models"`), else the ones it
-| says it has: a server's /v1/models, `codex debug models` — and the
+| says it has: a server's /v1/models, `codex debug models` — as ids, with
+| `names` (id → what to show: "Opus 5.5" for claude-opus-5-5) — and the
 | efforts each takes (`levels`: model → { efforts, default }; the model
 | "" for any), from Codex's catalogue or the entry's `"efforts"`.
 ProviderCheck { provider } =>
     if provider.problem ≠ ""
-        return Check { ready = false, note = "not set up", models = [], levels = {} }
+        return Check { ready = false, note = "not set up", models = [], names = {}, levels = {} }
     found = []
+    names = {}
     levels = {}
     ready = true
     note = "ready"
     if provider.type = "claude-code"
         emit Run { command = provider.command, args = ["auth", "status"], cwd = folder } to procs get auth
-        if auth ∈ Exception, return Check { ready = false, note = provider.command + " is not installed", models = [], levels = {} }
+        if auth ∈ Exception, return Check { ready = false, note = provider.command + " is not installed", models = [], names = {}, levels = {} }
         emit Parse { text = auth.stdout } to jsons get status
         signed_in = status ∉ Exception and status.value ∈ Object and status.value["loggedIn"] = true
         if not signed_in
@@ -1962,7 +1968,7 @@ ProviderCheck { provider } =>
             note = "not signed in — run " + provider.command + " once"
     if provider.type = "codex"
         emit Run { command = provider.command, args = ["login", "status"], cwd = folder } to procs get login
-        if login ∈ Exception, return Check { ready = false, note = provider.command + " is not installed", models = [], levels = {} }
+        if login ∈ Exception, return Check { ready = false, note = provider.command + " is not installed", models = [], names = {}, levels = {} }
         if not login.success
             ready = false
             note = "not signed in — " + provider.command + " login"
@@ -1973,6 +1979,9 @@ ProviderCheck { provider } =>
                 loop one over codex_listed.value["models"]
                     if one["slug"] ∈ String and one["visibility"] ≠ "hide"
                         found += one["slug"]
+                        if one["display_name"] ∈ String
+                            slug_name = one["slug"]
+                            names = names + { "$slug_name" = one["display_name"] }
                         takes = []
                         if one["supported_reasoning_levels"] ∈ Array
                             loop level over one["supported_reasoning_levels"]
@@ -2007,14 +2016,20 @@ ProviderCheck { provider } =>
                     if one["id"] ∈ String, found += one["id"]
     if provider.models ≠ null
         found = []
+        names = {}
         loop one over provider.models
             if one ∈ String, found += one
+            | { "id": "claude-opus-5-5", "name": "Opus 5.5" }: shown by its name.
+            if one ∈ Object and one["id"] ∈ String
+                found += one["id"]
+                listed_id = one["id"]
+                if one["name"] ∈ String, names = names + { "$listed_id" = one["name"] }
     if provider.efforts ≠ null
         takes = []
         loop one over provider.efforts
             if one ∈ String, takes += one
         levels = { "" = { efforts = takes, default = "" } }
-    return Check { ready = ready, note = note, models = found, levels = levels }
+    return Check { ready = ready, note = note, models = found, names = names, levels = levels }
 
 | Alt+M (or Settings > AI: Switch Model…): three rows — the AI, its
 | model, its effort — the cursor on the model. ←/→ change the row's value
@@ -2029,7 +2044,7 @@ OpenModelPicker =>
         emit ProviderCheck { provider = provider } to this get check
         title = name
         if provider.title ≠ null, title = provider.title
-        found += { name = name, title = title, ready = check.ready, note = check.note, models = check.models, levels = check.levels, api = provider.runner = "api" }
+        found += { name = name, title = title, ready = check.ready, note = check.note, models = check.models, names = check.names, levels = check.levels, api = provider.runner = "api" }
         if name = settings["ai.provider"], at = i
     picker = { providers = found, ai = at, row = 1, list = null }
     return Opened
