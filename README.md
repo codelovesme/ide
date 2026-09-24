@@ -16,7 +16,7 @@ quits; the terminal is given back as it was, even if the program dies.
 ## The screen
 
 ```
-  File  View  Help                                   ide — project — src/a.code ●
+  File  View  Settings  Help                         ide — project — src/a.code ●
  EXPLORER: PROJECT             a.code ●
  ▾ src                           1 | a comment
      a.code                      2 Greet { who } =>
@@ -24,7 +24,7 @@ quits; the terminal is given back as it was, even if the program dies.
                                                            Ln 2, Col 5    code
 ```
 
-Row 0 is the menu bar — File, View, Help on the left, the folder and file
+Row 0 is the menu bar — File, View, Settings, Help on the left, the folder and file
 on the right. The last row is the status bar: messages, prompts ("Open
 folder:", "Save changes?"), the cursor position and the language.
 
@@ -82,7 +82,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+B | Show / hide the Explorer |
 | Ctrl+Shift+E (or Ctrl+E, Ctrl+0) / Ctrl+1 / Ctrl+2 | Focus the Explorer / the first / the second editor |
 | F6 | Explorer, then each editor, round again |
-| Alt+F Alt+V Alt+H, F10 | Menus: arrows, Enter, Escape |
+| Alt+F Alt+V Alt+S Alt+H, F10 | Menus: arrows, Enter, Escape |
 | Ctrl+Z / Ctrl+Y | Undo / redo (typing is one step per run) |
 | Ctrl+K Ctrl+S | Keyboard shortcuts |
 | Ctrl+, | Settings (settings.json) |
@@ -101,7 +101,7 @@ xterm, tmux with `extended-keys`); F6 always works.
 ## Settings
 
 Like VS Code, a JSON file: `settings.json` in `$XDG_CONFIG_HOME/codelovesme-ide/`
-(`~/.config/codelovesme-ide/` when that is not set). Ctrl+, or File >
+(`~/.config/codelovesme-ide/` when that is not set). Ctrl+, or Settings >
 Settings opens it; saving it applies it. Hiding, moving or resizing the
 explorer writes it for you.
 
@@ -127,7 +127,7 @@ bar says which.
 ## Keyboard shortcuts
 
 Like VS Code, `keybindings.json` beside `settings.json`, on top of the
-defaults. File > Keyboard Shortcuts (JSON) opens it; saving it applies it.
+defaults. Settings > Keyboard Shortcuts (JSON) opens it; saving it applies it.
 
 ```json
 [

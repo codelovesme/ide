@@ -267,6 +267,26 @@ emit State to this get asking
 assert asking.prompt.text = root + "/"
 emit HandleKey { name = "escape", text = "" } to this
 
+| The menus: File, View, Settings, Help. Alt+S opens Settings; Enter on
+| its first item opens settings.json; arrows wrap round all four.
+emit Framed to this get bar
+emit RowTexts { screen = bar, row = 0 } to this get bar_texts
+assert bar_texts.texts[1] = " File " and bar_texts.texts[3] = " Settings " and bar_texts.texts[4] = " Help "
+emit HandleKey { name = "alt+s", text = "" } to this
+emit State to this get settings_menu
+assert settings_menu.menu.index = 2
+emit HandleKey { name = "right", text = "" } to this
+emit HandleKey { name = "right", text = "" } to this
+emit State to this get wrapped
+assert wrapped.menu.index = 0
+emit HandleKey { name = "left", text = "" } to this
+emit HandleKey { name = "left", text = "" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get from_menu
+assert from_menu.menu = null
+assert from_menu.file.path = "settings.json"
+emit HandleKey { name = "ctrl+w", text = "" } to this
+
 | Ctrl+, opens settings.json; saving an edit to it applies it.
 emit HandleKey { name = "ctrl+,", text = "" } to this
 emit State to this get editing_settings

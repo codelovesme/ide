@@ -52,6 +52,7 @@ defaults = [
     { key = "alt+f", command = "menu.file" }
     { key = "f10", command = "menu.file" }
     { key = "alt+v", command = "menu.view" }
+    { key = "alt+s", command = "menu.settings" }
     { key = "alt+h", command = "menu.help" }
     { key = "ctrl+k ctrl+s", command = "help.keys" }
 ]
@@ -95,6 +96,7 @@ commands = [
     { id = "edit.redo", title = "Redo" }
     { id = "menu.file", title = "File menu" }
     { id = "menu.view", title = "View menu" }
+    { id = "menu.settings", title = "Settings menu" }
     { id = "menu.help", title = "Help menu" }
     { id = "help.keys", title = "This list" }
     { id = "help.about", title = "About" }

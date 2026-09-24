@@ -264,7 +264,8 @@ Run { command } =>
     if command = "terminal.new", emit NewTerminal { slot = "" } to this
     if command = "menu.file", menu = { index = 0, item = 0 }
     if command = "menu.view", menu = { index = 1, item = 0 }
-    if command = "menu.help", menu = { index = 2, item = 0 }
+    if command = "menu.settings", menu = { index = 2, item = 0 }
+    if command = "menu.help", menu = { index = 3, item = 0 }
     if command = "edit.undo" and focus = "editor", emit Undo to this
     if command = "edit.redo" and focus = "editor", emit Redo to this
     if command = "help.keys", emit ShowShortcuts to this

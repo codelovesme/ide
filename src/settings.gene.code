@@ -21,6 +21,7 @@ defaults = {
         "tab.previous"
         "menu.file"
         "menu.view"
+        "menu.settings"
         "menu.help"
         "app.quit"
         "focus.editor"
