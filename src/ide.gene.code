@@ -58,6 +58,15 @@ explorer_slot = "l"
 
 max_undo = 200
 
+| Where the cursor has been, for Alt+← / Alt+→ (VS Code's Go Back /
+| Forward): `{ path, row, col }` spots, `spot_at` the one in use. A spot is
+| kept when the cursor goes to another file or 10 or more lines away; a
+| smaller move just moves the spot. `navigating` while going to one.
+spots = []
+spot_at = -1
+navigating = false
+max_spots = 50
+
 | The organelles. They are linked while the program runs, not when it is
 | built — a built program would otherwise carry the full path each one had
 | on the machine that built it. See `Organelles`.
@@ -222,6 +231,7 @@ FindTerminal { id } =>
     return Place { group = -1, tab = -1 }
 
 HandleKey { name, text } =>
+    emit NoteSpot to this
     if prompt ≠ null
         emit PromptKey { name = name, text = text } to this
         return Handled
@@ -344,6 +354,8 @@ Run { command } =>
     if command = "ai.showChanges", emit ShowAiChanges to this
     if command = "ai.toggleMode", emit ToggleAgentMode to this
     if command = "ai.switchModel", emit OpenModelPicker to this
+    if command = "nav.back", emit GoSpot { step = -1 } to this
+    if command = "nav.forward", emit GoSpot { step = 1 } to this
     if command = "help.keys", emit ShowShortcuts to this
     if command = "help.about", message = "codelovesme ide — a terminal IDE for code, built on euglena"
     return Ran
@@ -663,6 +675,7 @@ Show { buffer, slot } =>
 | `file`, with its undo history, put back into its tab.
 Stash =>
     if file = null, return Nothing
+    emit NoteSpot to this
     emit PutActive { groups = groups, current = current, buffer = file + { undo = undo, redo = redo } } to this get put
     groups = put.groups
     return Stashed
@@ -2155,3 +2168,50 @@ PickerSet { col, value } =>
     message = "AI: " + ai_status
     if not held.ready, message = "Error: AI: " + held.name + " is " + held.note
     return Set
+
+
+| ── Go Back / Go Forward ───────────────────────────────────────────────
+
+| Where the cursor is now, kept (see `spots`): a new spot when it is in
+| another file than the one in use or 10 or more lines from it — anything
+| after the one in use is dropped then, as a browser does — else the one
+| in use moved to it.
+NoteSpot =>
+    if navigating or file = null or file.store ≠ "workspace", return Nothing
+    here = { path = file.path, row = file.row, col = file.col }
+    last = spots[spot_at]
+    if last ≠ null and last.path = here.path
+        apart = here.row - last.row
+        if apart < 0, apart = 0 - apart
+        if apart < 10
+            spots = spots[0, spot_at) + [here] + spots(spot_at, length)
+            return Moved
+    kept = spots[0, spot_at + 1) + [here]
+    emit Length { value = kept } to core get { value as count }
+    if count > max_spots, kept = kept[count - max_spots, count)
+    spots = kept
+    emit Length { value = spots } to core get { value as now }
+    spot_at = now - 1
+    return Kept
+
+| Alt+← (`step` -1) / Alt+→ (1): the spot before or after the one in use,
+| its file opened and the cursor put back there.
+GoSpot { step } =>
+    emit NoteSpot to this
+    emit Length { value = spots } to core get { value as count }
+    target = spot_at + step
+    if target < 0 or target ≥ count
+        message = "Nowhere further to go"
+        return Nothing
+    spot = spots[target]
+    spot_at = target
+    navigating = true
+    emit OpenFile { path = spot.path } to this get opened
+    if opened ∈ Opened and file ≠ null and file.path = spot.path
+        emit Length { value = file.lines } to core get { value as size }
+        row = spot.row
+        if row ≥ size, row = size - 1
+        if row < 0, row = 0
+        file = file + { row = row, col = spot.col, want = spot.col }
+    navigating = false
+    return Went

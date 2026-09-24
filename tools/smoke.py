@@ -59,6 +59,10 @@ s.keys(b"\x1b[9;5u", 0.8)
 check(s.screen.row(0).rstrip().endswith("src/hello.code"), "ctrl+tab (as terminals that tell it apart send it) goes to the next tab")
 s.keys(b"\x1b[9;5u", 0.8)
 check(s.screen.row(0).rstrip().endswith("notes.md"), "ctrl+tab again goes round, past the last tab to the first")
+s.keys(b"\x1b[1;3D", 0.8)                  # alt+left
+check(s.screen.row(0).rstrip().endswith("src/hello.code"), "alt+← goes back to where the cursor was")
+s.keys(b"\x1b[1;3C", 0.8)                  # alt+right
+check(s.screen.row(0).rstrip().endswith("notes.md"), "alt+→ goes forward again")
 s.keys(b"\x1c", 0.8)
 check(s.screen.row(1).count("notes.md") == 2 and "│" in s.screen.row(2), "ctrl+\\ splits: the file again, in a second editor on the right")
 s.keys(b"\x17", 0.8)

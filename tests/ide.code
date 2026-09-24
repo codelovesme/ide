@@ -557,5 +557,34 @@ emit State to this get hidden_root
 assert hidden_root.prompt.dir = ""
 emit HandleKey { name = "escape", text = "" } to this
 
+| Alt+← / Alt+→: back and forward through where the cursor has been —
+| another file, or a jump of 10 lines or more.
+long_lines = []
+loop i over [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+    long_lines += "line " + i
+emit Join { value = long_lines, separator = "\n" } to strings_lib get long_text
+emit WriteFile { path = "long.code", content = long_text.value } to files
+emit OpenFile { path = "long.code" } to this
+emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "ctrl+end", text = "" } to this
+emit OpenFile { path = "hello.code" } to this
+emit HandleKey { name = "alt+left", text = "" } to this
+emit State to this get went_back
+assert went_back.file.path = "long.code" and went_back.file.row = 29
+emit HandleKey { name = "alt+left", text = "" } to this
+emit State to this get went_back_again
+assert went_back_again.file.path = "long.code" and went_back_again.file.row = 1
+emit HandleKey { name = "alt+right", text = "" } to this
+emit HandleKey { name = "alt+right", text = "" } to this
+emit State to this get went_forward
+assert went_forward.file.path = "hello.code"
+| Going back, then somewhere new, drops what was ahead.
+emit HandleKey { name = "alt+left", text = "" } to this
+emit HandleKey { name = "ctrl+home", text = "" } to this
+emit HandleKey { name = "alt+right", text = "" } to this
+emit State to this get nothing_ahead
+assert nothing_ahead.message = "Nowhere further to go" and nothing_ahead.file.row = 0
+emit DeleteFile { path = "long.code" } to files
+
 emit RemoveDir { path = "." } to prefs_fs
 emit RemoveDir { path = "." } to files

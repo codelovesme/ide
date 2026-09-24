@@ -204,6 +204,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+N | New File… — in the folder picked in the Explorer (a file picked: its folder; nothing picked, or the Explorer hidden: the root). Only the name is asked; a name ending in `/` makes a folder |
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |
+| Alt+← / Alt+→ | Go Back / Go Forward: where the cursor has been — another file, or a jump of 10 lines or more (View menu too) |
 | Ctrl+Tab (or Ctrl+PgDn) | Next tab, round and round (Ctrl+PgUp goes back) — some terminals (GNOME's) send Ctrl+Tab as plain Tab; Ctrl+PgDn works there |
 | Ctrl+\\ | Split Editor: the file again, in a second editor on the right |
 | Ctrl+B | Show / hide the Explorer |

@@ -29,6 +29,8 @@ menus = [
             { label = "Undo AI Changes", command = "ai.undoTurn" }
             { label = "Move Tab…", command = "view.moveTab" }
             { label = "Split Editor", command = "editor.split" }
+            { label = "Go Back", command = "nav.back" }
+            { label = "Go Forward", command = "nav.forward" }
             { label = "Next Tab", command = "tab.next" }
             { label = "Previous Tab", command = "tab.previous" }
             { label = "Focus Explorer", command = "focus.explorer" }
