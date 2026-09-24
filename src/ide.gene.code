@@ -23,6 +23,9 @@ tree = []
 tree_sel = 0
 tree_top = 0
 tree_page = 20
+| Whether the user has picked a row in the explorer since the folder was
+| opened: until then, a new file goes to the root.
+tree_picked = false
 
 | Everything open, as tabs in groups, each group in a slot (see
 | tabs.gene.code), and the group with the focus.
@@ -275,6 +278,7 @@ Run { command } =>
         emit MoveCurrent { into = command[13, length) } to this
     if command[0, 10) = "view.edge."
         emit ResizeEdge { direction = command[10, length) } to this
+    if command = "file.new", emit NewFile to this
     if command = "file.openFolder"
         prompt = { kind = "open_folder", label = "Open folder: ", text = folder + "/" }
     if command = "view.explorer"
@@ -483,10 +487,11 @@ PromptKey { name, text } =>
     if name = "escape"
         prompt = null
         return Cancelled
-    if asked.kind = "open_folder" or asked.kind = "move"
+    if asked.kind = "open_folder" or asked.kind = "move" or asked.kind = "new_file"
         if name = "enter"
             prompt = null
             if asked.kind = "open_folder", emit OpenFolder { path = asked.text } to this
+            if asked.kind = "new_file", emit CreateNewFile { dir = asked.dir, name = asked.text } to this
             if asked.kind = "move", emit MoveCurrent { into = asked.text } to this
             return Answered
         if name = "backspace"
@@ -534,6 +539,7 @@ OpenFolder { path } =>
     tree = kids.nodes
     tree_sel = 0
     tree_top = 0
+    tree_picked = false
     | The files go; the explorer and the terminals stay where they are.
     emit Stash to this
     kept = []
@@ -553,6 +559,7 @@ OpenFolder { path } =>
 TreeKey { name } =>
     emit Length { value = tree } to core get { value as count }
     if count = 0, return Handled
+    tree_picked = true
     if name = "down" and tree_sel < count - 1, tree_sel += 1
     if name = "up" and tree_sel > 0, tree_sel = tree_sel - 1
     if name = "home", tree_sel = 0
@@ -1526,3 +1533,91 @@ UndoAiChanges =>
     chat = chat + { checkpoints = [], turns = chat.turns + [{ role = "tool", text = "undid the AI's changes to " + count + " file(s)" }] }
     message = "The AI's changes are undone"
     return Undone
+
+
+| ── New File ───────────────────────────────────────────────────────────
+
+| Ctrl+N: a name asked for, in the folder picked in the explorer — a
+| folder, or the folder of a file — else at the root.
+NewFile =>
+    dir = ""
+    emit FindView { groups = groups, path = explorer_view.path, store = explorer_view.store } to this get explorer_at
+    node = tree[tree_sel]
+    if tree_picked and explorer_at.group ≥ 0 and node ≠ null
+        if node.is_dir, dir = node.path
+        if not node.is_dir
+            emit Split { value = node.path, separator = "/" } to texts get parts
+            emit Length { value = parts.value } to core get { value as depth }
+            emit Join { value = parts.value[0, depth - 1), separator = "/" } to texts get parent
+            dir = parent.value
+    label = "New file (a name ending in / makes a folder): "
+    if dir ≠ "", label = "New file in " + dir + "/: "
+    prompt = { kind = "new_file", label = label, text = "", dir = dir }
+    return Asked
+
+| The file (or, with a trailing `/`, the folder) made, shown in the
+| explorer, and a file opened.
+CreateNewFile { dir, name } =>
+    emit Trim { value = name } to texts get trimmed
+    given = trimmed.value
+    if given = "", return Nothing
+    is_folder = given[length - 1] = "/"
+    if is_folder, given = given[0, length - 1)
+    path = given
+    if dir ≠ "", path = dir + "/" + given
+    emit SafePath { path = path } to this get safe
+    if not safe.ok or safe.path = "."
+        message = "Error: " + path + " is not a name inside the folder"
+        return Failed
+    emit Exists { path = safe.path } to files get there
+    if there ∉ Exception and (there.is_file or there.is_dir)
+        message = "Error: " + safe.path + " is there already"
+        return Failed
+    made = null
+    if is_folder
+        emit CreateDir { path = safe.path } to files get made_dir
+        made = made_dir
+    if not is_folder
+        emit WriteFile { path = safe.path, content = "" } to files get made_file
+        made = made_file
+    if made ∈ Exception
+        message = "Error: " + made.message
+        return Failed
+    emit RefreshTree { reveal = safe.path } to this
+    if not is_folder, emit OpenFile { path = safe.path } to this
+    message = "Created " + safe.path
+    return Created
+
+| The explorer read again from the disk, its open folders open still, and
+| the folders on the way to `reveal` opened and it selected.
+RefreshTree { reveal } =>
+    opened = {}
+    loop node over tree
+        if node.is_dir and node.open, opened = opened + { "$node.path" = true }
+    emit Split { value = reveal, separator = "/" } to texts get parts
+    emit Length { value = parts.value } to core get { value as depth }
+    on_the_way = ""
+    loop i, part over parts.value
+        if i < depth - 1
+            if on_the_way ≠ "", on_the_way = on_the_way + "/"
+            on_the_way = on_the_way + part
+            opened = opened + { "$on_the_way" = true }
+    emit ListDir { path = "." } to files get listing
+    if listing ∈ Exception, return Failed
+    emit Children { entries = listing.entries, parent = "", depth = 0 } to this get kids
+    nodes = kids.nodes
+    i = 0
+    loop
+        node = nodes[i]
+        if node = null, break
+        if node.is_dir and opened[node.path] = true
+            emit ListDir { path = node.path } to files get inner
+            if inner ∉ Exception
+                emit Children { entries = inner.entries, parent = node.path, depth = node.depth + 1 } to this get inner_kids
+                emit Expand { nodes = nodes, index = i, children = inner_kids.nodes } to this get grown
+                nodes = grown.nodes
+        i += 1
+    tree = nodes
+    loop at, node over tree
+        if node.path = reveal, tree_sel = at
+    return Refreshed

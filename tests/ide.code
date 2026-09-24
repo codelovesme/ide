@@ -43,6 +43,16 @@ Contains { text, part } =>
         i += 1
     return Is { yes = false }
 
+| `value` typed, a key a character.
+TypeText { value } =>
+    emit Length { value = value } to core get { value as size }
+    i = 0
+    loop
+        if i ≥ size, break
+        emit HandleKey { name = value[i], text = value[i] } to this
+        i += 1
+    return Typed
+
 | The slot each group is in, and the kind of its active tab.
 WhereNow {} =>
     emit State to this get state
@@ -487,6 +497,65 @@ emit State to this get back_to_files
 assert back_to_files.focus ≠ "chat"
 emit DeleteFile { path = "AGENTS.md" } to files
 emit Kill { id = "silent-model" } to procs_lib
+
+| New File (Ctrl+N): nothing picked in the explorer yet — at the root.
+emit OpenFolder { path = root } to this
+emit ShowExplorer { focused = true } to this
+emit HandleKey { name = "ctrl+n", text = "" } to this
+emit State to this get new_at_root
+assert new_at_root.prompt.kind = "new_file" and new_at_root.prompt.dir = ""
+emit TypeText { value = "top.code" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit Exists { path = "top.code" } to files get top_made
+assert top_made.is_file
+emit State to this get top_open
+assert top_open.file.path = "top.code" and top_open.message = "Created top.code"
+| A folder picked: in it, the folder opened in the explorer, the file selected.
+emit ShowExplorer { focused = true } to this
+emit HandleKey { name = "home", text = "" } to this
+emit State to this get on_src
+assert on_src.tree[on_src.tree_sel].path = "src"
+emit HandleKey { name = "ctrl+n", text = "" } to this
+emit State to this get new_in_src
+assert new_in_src.prompt.dir = "src" and new_in_src.prompt.label = "New file in src/: "
+emit TypeText { value = "b.code" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit Exists { path = "src/b.code" } to files get b_made
+assert b_made.is_file
+emit State to this get b_open
+assert b_open.file.path = "src/b.code"
+assert b_open.tree[b_open.tree_sel].path = "src/b.code" and b_open.tree[0].open
+| A file picked: in its folder. A trailing / makes a folder.
+emit ShowExplorer { focused = true } to this
+emit HandleKey { name = "ctrl+n", text = "" } to this
+emit State to this get beside_b
+assert beside_b.prompt.dir = "src"
+emit TypeText { value = "deep/" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit Exists { path = "src/deep" } to files get deep_made
+assert deep_made.is_dir
+| The new folder is selected, so the next file goes in it; a name that
+| is taken is refused.
+emit ShowExplorer { focused = true } to this
+emit HandleKey { name = "ctrl+n", text = "" } to this
+emit State to this get in_deep
+assert in_deep.prompt.dir = "src/deep"
+emit TypeText { value = "c.code" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit ShowExplorer { focused = true } to this
+emit HandleKey { name = "ctrl+n", text = "" } to this
+emit TypeText { value = "c.code" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get taken
+assert taken.message = "Error: src/deep/c.code is there already"
+emit DeleteFile { path = "src/deep/c.code" } to files
+emit RemoveDir { path = "src/deep" } to files
+| The explorer hidden: at the root again.
+emit HideExplorer to this
+emit HandleKey { name = "ctrl+n", text = "" } to this
+emit State to this get hidden_root
+assert hidden_root.prompt.dir = ""
+emit HandleKey { name = "escape", text = "" } to this
 
 emit RemoveDir { path = "." } to prefs_fs
 emit RemoveDir { path = "." } to files

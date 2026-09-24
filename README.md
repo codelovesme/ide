@@ -133,6 +133,7 @@ the editor (center); the grid is ready for more.
 
 | | |
 |---|---|
+| Ctrl+N | New File… — in the folder picked in the Explorer (a file picked: its folder; nothing picked, or the Explorer hidden: the root). Only the name is asked; a name ending in `/` makes a folder |
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |
 | Ctrl+Tab / Ctrl+Shift+Tab (or Ctrl+PgDn / Ctrl+PgUp) | Next / previous tab — many terminals send Ctrl+Tab as plain Tab; Ctrl+PgDn always works |

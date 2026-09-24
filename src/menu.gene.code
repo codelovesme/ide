@@ -7,6 +7,7 @@ menus = [
         title = "File"
         col = 0
         items = [
+            { label = "New File…", command = "file.new" }
             { label = "Open Folder…", command = "file.openFolder" }
             { label = "Save", command = "file.save" }
             { label = "Close Editor", command = "file.close" }

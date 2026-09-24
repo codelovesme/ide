@@ -16,6 +16,7 @@
 | the focus (the tree or the editor).
 
 defaults = [
+    { key = "ctrl+n", command = "file.new" }
     { key = "ctrl+k ctrl+o", command = "file.openFolder" }
     { key = "ctrl+s", command = "file.save" }
     { key = "ctrl+w", command = "file.close" }
@@ -63,6 +64,7 @@ defaults = [
 | Every command a key can run, with what it does — the only names
 | keybindings.json may use.
 commands = [
+    { id = "file.new", title = "New File… (in the folder picked in the explorer)" }
     { id = "file.openFolder", title = "Open Folder…" }
     { id = "file.save", title = "Save" }
     { id = "file.close", title = "Close the tab" }

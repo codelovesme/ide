@@ -62,7 +62,7 @@ check(s.screen.row(1).count("notes.md") == 2 and "│" in s.screen.row(2), "ctrl
 s.keys(b"\x17", 0.8)
 check(s.screen.row(1).count("notes.md") == 1, "ctrl+w closes it again")
 s.keys(b"\x1bf", 0.6)
-check("Open Folder" in s.screen.row(1) and "Ctrl+K Ctrl+O" in s.screen.row(1), "alt+f opens the File menu, with each item's key")
+check("New File" in s.screen.row(1) and "Ctrl+N" in s.screen.row(1) and "Ctrl+K Ctrl+O" in s.screen.row(2), "alt+f opens the File menu, with each item's key")
 s.keys(b"\x1b", 0.6)
 s.keys(b"\x1bs", 0.6)
 check("Settings (JSON)" in s.screen.row(1) and "Ctrl+," in s.screen.row(1) and "Keyboard Shortcuts (JSON)" in s.screen.row(2), "alt+s opens the Settings menu")
@@ -74,6 +74,11 @@ s.keys(b"\x0b\x1b[C", 0.8)
 check(s.screen.row(1)[33:].startswith(" hello.code "), "ctrl+k → makes the explorer wider: " + s.screen.row(1)[28:44])
 settings = open(config + "/codelovesme-ide/settings.json").read()
 check('"workbench.layout.left": 32' in settings, "and settings.json remembers it")
+s.keys(b"\x05\x1b[H", 0.6)                 # the explorer, its first row (src)
+s.keys(b"\x0e", 0.6)                       # ctrl+n
+check("New file in src/:" in s.screen.row(39), "ctrl+n asks for a name, in the folder picked in the explorer")
+s.keys(b"made.code\r", 1.0)
+check(os.path.isfile(folder + "/src/made.code") and "made.code" in s.screen.row(1), "the file is made there and opened")
 
 # The AI chat: Ctrl+L opens it on the right; with no model set up it says how.
 s.keys(b"\x0c", 1.0)
