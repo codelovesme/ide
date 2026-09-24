@@ -120,13 +120,19 @@ ReadSettings { text } =>
     if good_providers
         loop key, one over providers
             if one ∉ Object, good_providers = false
-    | The user's entries over the defaults: an entry they name wins whole,
-    | the others (claude, codex) stay there to pick.
+    | The user's entries over the defaults, field by field: an entry they
+    | name keeps the default's fields they leave out (claude's lists of
+    | models and efforts), and the entries they do not name stay to pick.
     | A claude entry still carrying the first default list (bare aliases,
     | written out by 0.10) takes the versioned one.
     if good_providers and providers["claude"] ∈ Object and providers["claude"]["models"] = ["fable", "opus", "sonnet"]
         providers = providers + { claude = providers["claude"] + { models = defaults["ai.providers"]["claude"]["models"] } }
-    if good_providers, values = values + { "ai.providers" = defaults["ai.providers"] + providers }
+    if good_providers
+        merged = defaults["ai.providers"]
+        loop key, entry over providers
+            if merged[key] ≠ null, merged = merged + { "$key" = merged[key] + entry }
+            if merged[key] = null, merged = merged + { "$key" = entry }
+        values = values + { "ai.providers" = merged }
     if providers ≠ null and not good_providers, wrong += "ai.providers (an object of { \"type\", \"endpoint\", \"model\" … })"
     chat_at = given["ai.chat.location"]
     if chat_at ∈ String and slots[chat_at] = true, values = values + { "ai.chat.location" = chat_at }

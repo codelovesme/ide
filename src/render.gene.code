@@ -236,61 +236,67 @@ DiffRows { pane, view, focused } =>
         i += 1
     return PaneView { overlays = out, top = top }
 
-| The model picker: a box near the top — the AI, its model, its effort,
-| each `◂ value ▸`, the row being changed lit — and under it, when Enter
-| opened one, the list of a row's choices.
+| The model picker: three lists side by side — the AI, its models, its
+| efforts — every choice in sight, ● on what is in use, the cursor lit in
+| each (brightest in the list being moved in); under them, how the AI under
+| the cursor stands.
 PickerView { picker, rows, cols, height } =>
-    width = cols - 8
-    if width > 90, width = 90
-    col = (cols - width) / 2
-    if col < 0, col = 0
-    out = [{ row = 2, col = col, spans = [{ text = " AI — ←/→ change · ↑/↓ row · Enter: list · Esc: done", width = width, style = "menu_active" }] }]
-    labels = ["AI", "Model", "Effort"]
-    loop r, label over labels
-        value = rows.chosen[r]
-        if r = 0, value = rows.held.title
-        if r = 1 and value = "", value = "its default"
-        if r = 1 and rows.held.names[value] ≠ null, value = rows.held.names[value]
-        if r = 2 and value = ""
-            value = "default"
-            if rows.usual_effort ≠ "", value = "default (" + rows.usual_effort + ")"
-        note = ""
-        note_colour = null
-        if r = 0
-            note = rows.held.note
-            if not rows.held.ready, note_colour = [230, 140, 60]
-        if r = 2 and not rows.effort_known
-            note = "not supported"
-            if not rows.held.api, note = "not listed — add \"efforts\": [...] to its entry"
-        style = "menu_item"
-        note_style = "menu_key"
-        if r = picker.row
-            style = "menu_item_active"
-            note_style = "menu_key_active"
-        note_span = { text = note + "  ", width = width - 44, align = "right", style = note_style }
-        if note_colour ≠ null, note_span = note_span + { fg = note_colour }
-        out += { row = 3 + r, col = col, spans = [
-            { text = "  " + label, width = 10, style = style }
-            { text = "◂ " + value + " ▸", width = 34, style = style }
-            note_span
-        ] }
-    if picker.list ≠ null
-        emit Length { value = picker.list.items } to core get { value as count }
-        room = height - 10
-        if room < 1, room = 1
+    width = cols - 6
+    if width > 110, width = 110
+    left = (cols - width) / 2
+    if left < 0, left = 0
+    ai_width = 26
+    effort_width = 20
+    model_width = width - ai_width - effort_width
+    widths = [ai_width, model_width, effort_width]
+    starts = [left, left + ai_width, left + ai_width + model_width]
+    out = [{ row = 2, col = left, spans = [{ text = " AI — ←/→ list · ↑/↓ move · Enter pick · Esc done", width = width, style = "menu_active" }] }]
+    titles = ["AI", "Model", "Effort"]
+    loop c, title over titles
+        out += { row = 3, col = starts[c], spans = [{ text = " " + title, width = widths[c], style = "folder" }] }
+    | How many rows: the longest list, at most what the screen holds.
+    longest = 1
+    loop c, options over rows.choices
+        emit Length { value = options } to core get { value as size }
+        if size > longest, longest = size
+    room = height - 9
+    if room < 1, room = 1
+    shown = longest
+    if shown > room, shown = room
+    loop c, options over rows.choices
+        emit Length { value = options } to core get { value as count }
+        cursor = picker.cursors[c]
         top = 0
-        if picker.list.index ≥ room, top = picker.list.index - room + 1
+        if cursor ≥ shown, top = cursor - shown + 1
         i = 0
         loop
-            if i ≥ room or top + i ≥ count, break
-            item = picker.list.items[top + i]
-            shown = item
-            if item = "", shown = "(default)"
-            if picker.row = 1 and rows.held.names[item] ≠ null, shown = rows.held.names[item] + "   " + item
+            if i ≥ shown, break
+            item = options[top + i]
+            text = ""
+            if item ≠ null
+                text = item
+                if c = 0
+                    loop one over picker.providers
+                        if one.name = item and one.title ≠ item, text = one.title + " · " + item
+                if c = 1 and item = "", text = "(its default)"
+                if c = 1 and item ≠ "" and rows.held.names[item] ≠ null, text = rows.held.names[item]
+                if c = 2 and item = ""
+                    text = "(default)"
+                    if rows.usual_effort ≠ "", text = "(default: " + rows.usual_effort + ")"
+                mark = "  "
+                if item = rows.chosen[c] and (c = 0 or rows.chosen[0] = rows.held.name), mark = "● "
+                text = " " + mark + text
+            if c = 2 and count = 0 and i = 0, text = "   (not supported)"
             style = "menu_item"
-            if top + i = picker.list.index, style = "menu_item_active"
-            out += { row = 6 + i, col = col + 10, spans = [{ text = "  " + shown, width = width - 10, style = style }] }
+            if item ≠ null and top + i = cursor
+                style = "selected"
+                if c = picker.col, style = "menu_item_active"
+            out += { row = 4 + i, col = starts[c], spans = [{ text = text, width = widths[c] - 1, style = style }, { text = "│", style = "border" }] }
             i += 1
+    note = rows.held.title + ": " + rows.held.note
+    note_span = { text = " " + note, width = width, style = "menu_item" }
+    if not rows.held.ready, note_span = note_span + { fg = [230, 140, 60] }
+    out += { row = 4 + shown, col = left, spans = [note_span] }
     return Overlays { overlays = out }
 
 | The tab strip: every tab's name (● when a file has unsaved changes),

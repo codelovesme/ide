@@ -109,63 +109,68 @@ emit State to this get labelled
 assert labelled.chat_label = "Claude Code · Ask (Shift+Tab) · Alt+M: switch"
 assert labelled.ai_status = "Claude Code · Ask"
 
-| The model picker (Alt+M): the AI, its model, its effort — on the model.
-| ←/→ change a row at once; Enter lists a row's choices.
+| The model picker (Alt+M): the AIs, the models, the efforts, side by
+| side — the cursor in the models. ↑/↓ move, Enter picks, ←/→ change list.
 emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh", models = ["m1", "m2"], efforts = ["low", "high"] } } } to this
 emit HandleKey { name = "alt+m", text = "" } to this
 emit State to this get picking
-assert picking.picker.row = 1
+assert picking.picker.col = 1
 assert picking.picker_rows.held.name = "fake" and picking.picker_rows.held.ready
 assert picking.picker_rows.choices[0] = ["local", "claude", "codex", "fake"]
 assert picking.picker_rows.choices[1] = ["", "m1", "m2"]
 assert picking.picker_rows.choices[2] = ["", "low", "high"]
 emit Framed to this get picker_frame
 assert picker_frame ∈ Screen
-| → on the model: m1, straight away.
-emit HandleKey { name = "right", text = "" } to this
+| ↓ only moves; Enter picks: m1.
+emit HandleKey { name = "down", text = "" } to this
+emit State to this get moved_only
+assert moved_only.settings["ai.providers"]["fake"]["model"] = null
+emit HandleKey { name = "enter", text = "" } to this
 emit State to this get on_m1
 assert on_m1.settings["ai.providers"]["fake"]["model"] = "m1"
 assert on_m1.ai_status = "Claude Code · m1 · Ask"
-| ↓ to the effort, ← goes round to the last: high.
-emit HandleKey { name = "down", text = "" } to this
-emit HandleKey { name = "left", text = "" } to this
+| → to the efforts, End, Enter: high.
+emit HandleKey { name = "right", text = "" } to this
+emit HandleKey { name = "end", text = "" } to this
+emit HandleKey { name = "enter", text = "" } to this
 emit State to this get on_high
 assert on_high.settings["ai.providers"]["fake"]["effort"] = "high"
 assert on_high.ai_status = "Claude Code · m1 · high · Ask"
-| Enter lists the efforts; ↑, Enter picks low.
-emit HandleKey { name = "enter", text = "" } to this
-emit State to this get listing
-assert listing.picker.list.items = ["", "low", "high"] and listing.picker.list.index = 2
-emit HandleKey { name = "up", text = "" } to this
-emit HandleKey { name = "enter", text = "" } to this
-emit State to this get on_low
-assert on_low.picker.list = null and on_low.settings["ai.providers"]["fake"]["effort"] = "low"
-| The AI row: → goes round to local, and its rows are local's.
-emit HandleKey { name = "up", text = "" } to this
-emit HandleKey { name = "up", text = "" } to this
-emit HandleKey { name = "right", text = "" } to this
-emit State to this get on_local
-assert on_local.settings["ai.provider"] = "local" and on_local.picker_rows.held.name = "local"
-assert not on_local.picker_rows.effort_known
-| ← back to fake: its model and effort are as they were left.
+| ← ← to the AIs, Home: local — shown, not yet in use; its efforts: none.
 emit HandleKey { name = "left", text = "" } to this
+emit HandleKey { name = "left", text = "" } to this
+emit HandleKey { name = "home", text = "" } to this
+emit State to this get on_local
+assert on_local.picker_rows.held.name = "local" and on_local.settings["ai.provider"] = "fake"
+assert on_local.picker_rows.choices[2] = [] and not on_local.picker_rows.effort_known
+emit Framed to this get local_frame
+assert local_frame ∈ Screen
+| End: fake again, its choices as they were left; Escape closes.
+emit HandleKey { name = "end", text = "" } to this
 emit State to this get back_to_fake
-assert back_to_fake.picker_rows.chosen = ["fake", "m1", "low"]
+assert back_to_fake.picker_rows.chosen = ["fake", "m1", "high"]
+assert back_to_fake.picker.cursors = [3, 1, 2]
 emit HandleKey { name = "escape", text = "" } to this
 emit State to this get closed_picker
 assert closed_picker.picker = null
+
 | Versioned models: an entry lists ids with names; the picker shows the
 | name, the run takes the id. Claude Code's default list is versioned, and
 | the first (bare aliases) is read as it.
 emit ReadSettings { text = "{ \"ai.providers\": { \"claude\": { \"type\": \"claude-code\", \"models\": [\"fable\", \"opus\", \"sonnet\"] } } }" } to this get upgraded
 assert upgraded.values["ai.providers"]["claude"]["models"][0] = { id = "claude-opus-5-5", name = "Opus 5.5" }
+| An entry that names only some fields keeps the default's others.
+emit ReadSettings { text = "{ \"ai.providers\": { \"claude\": { \"model\": \"claude-sonnet-5\" } } }" } to this get partial_entry
+assert partial_entry.values["ai.providers"]["claude"]["model"] = "claude-sonnet-5"
+assert partial_entry.values["ai.providers"]["claude"]["type"] = "claude-code"
+assert partial_entry.values["ai.providers"]["claude"]["efforts"] = ["low", "medium", "high", "xhigh", "max"]
+assert partial_entry.values["ai.providers"]["codex"]["type"] = "codex"
 emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh", models = [{ id = "m-1-5", name = "M 1.5" }, { id = "m-1", name = "M 1" }], efforts = ["low", "high"] } } } to this
 emit HandleKey { name = "alt+m", text = "" } to this
 emit State to this get versioned
 assert versioned.picker_rows.held.name = "fake"
 assert versioned.picker_rows.choices[1] = ["", "m-1-5", "m-1"]
 assert versioned.picker_rows.held.names["m-1-5"] = "M 1.5"
-emit HandleKey { name = "enter", text = "" } to this
 emit HandleKey { name = "down", text = "" } to this
 emit HandleKey { name = "enter", text = "" } to this
 emit HandleKey { name = "escape", text = "" } to this

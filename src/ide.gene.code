@@ -2031,10 +2031,12 @@ ProviderCheck { provider } =>
         levels = { "" = { efforts = takes, default = "" } }
     return Check { ready = ready, note = note, models = found, names = names, levels = levels }
 
-| Alt+M (or Settings > AI: Switch Model…): three rows — the AI, its
-| model, its effort — the cursor on the model. ←/→ change the row's value
-| (at once), ↑/↓ move between rows, Enter lists the row's choices, Escape
-| closes. Every AI is checked as it opens (ProviderCheck).
+| Alt+M (or Settings > AI: Switch Model…): three lists side by side —
+| every AI, its models, its efforts — all their choices in sight. ←/→ (or
+| Tab) move between the lists, ↑/↓ within one, Enter picks; ● is what is
+| in use. Moving in the AI list shows that AI's models and efforts; picking
+| one of them makes that AI the one in use too. Every AI is checked as the
+| lists open (ProviderCheck).
 OpenModelPicker =>
     emit ProviderNames to this get names
     found = []
@@ -2046,13 +2048,29 @@ OpenModelPicker =>
         if provider.title ≠ null, title = provider.title
         found += { name = name, title = title, ready = check.ready, note = check.note, models = check.models, names = check.names, levels = check.levels, api = provider.runner = "api" }
         if name = settings["ai.provider"], at = i
-    picker = { providers = found, ai = at, row = 1, list = null }
+    picker = { providers = found, col = 1, cursors = [at, 0, 0] }
+    emit PickerAim to this
     return Opened
 
-| What the picker's rows show and offer, for the AI it is on: `choices`
-| per row (the first, "", is the tool's own default), and what is chosen.
+| The model and effort lists' cursors put on what the AI under the first
+| list's cursor has chosen.
+PickerAim =>
+    emit PickerRows to this get aimed
+    cursors = picker.cursors
+    model_at = 0
+    loop i, one over aimed.choices[1]
+        if one = aimed.chosen[1], model_at = i
+    effort_at = 0
+    loop i, one over aimed.choices[2]
+        if one = aimed.chosen[2], effort_at = i
+    picker = picker + { cursors = [cursors[0], model_at, effort_at] }
+    return Aimed
+
+| What the lists hold, for the AI under the first list's cursor:
+| `choices` per list (a model or effort "" is the tool's own default),
+| what that AI has chosen, and which AI is in use.
 PickerRows =>
-    held = picker.providers[picker.ai]
+    held = picker.providers[picker.cursors[0]]
     entry = settings["ai.providers"][held.name]
     model = entry["model"]
     if model ∉ String, model = ""
@@ -2068,75 +2086,58 @@ PickerRows =>
     if level ≠ null
         efforts = level.efforts
         usual = level.default
+    known = level ≠ null and not held.api
+    effort_choices = [""] + efforts
+    if not known, effort_choices = []
     return Rows {
         held = held
-        choices = [ai_names, [""] + held.models, [""] + efforts]
-        chosen = [held.name, model, effort]
+        choices = [ai_names, [""] + held.models, effort_choices]
+        chosen = [settings["ai.provider"], model, effort]
         usual_effort = usual
-        effort_known = level ≠ null and not held.api
+        effort_known = known
     }
 
 | A key in the model picker.
 PickerKey { name } =>
-    emit PickerRows to this get shown_rows
-    if picker.list ≠ null
-        emit Length { value = picker.list.items } to core get { value as count }
-        index = picker.list.index
-        if name = "down" and index < count - 1, index += 1
-        if name = "up" and index > 0, index = index - 1
-        if name = "home", index = 0
-        if name = "end", index = count - 1
-        if name = "pagedown"
-            index = index + 10
-            if index > count - 1, index = count - 1
-        if name = "pageup"
-            index = index - 10
-            if index < 0, index = 0
-        picker = picker + { list = picker.list + { index = index } }
-        if name = "escape", picker = picker + { list = null }
-        if name = "enter"
-            emit PickerSet { row = picker.row, value = picker.list.items[index] } to this
-            picker = picker + { list = null }
-        return Handled
     if name = "escape" or name = "q"
         picker = null
         return Handled
-    if name = "up" and picker.row > 0, picker = picker + { row = picker.row - 1 }
-    if name = "down" and picker.row < 2, picker = picker + { row = picker.row + 1 }
-    options = shown_rows.choices[picker.row]
+    col = picker.col
+    if (name = "right" or name = "tab") and col < 2, col += 1
+    if (name = "left" or name = "shift+tab") and col > 0, col = col - 1
+    picker = picker + { col = col }
+    emit PickerRows to this get shown_rows
+    options = shown_rows.choices[col]
     emit Length { value = options } to core get { value as count }
-    if name = "enter"
-        at = 0
-        loop i, one over options
-            if one = shown_rows.chosen[picker.row], at = i
-        picker = picker + { list = { items = options, index = at } }
-        return Handled
-    if (name = "left" or name = "right") and count > 1
-        at = 0
-        loop i, one over options
-            if one = shown_rows.chosen[picker.row], at = i
-        if name = "right", at = at + 1
-        if name = "left", at = at - 1
-        if at < 0, at = count - 1
-        if at ≥ count, at = 0
-        emit PickerSet { row = picker.row, value = options[at] } to this
+    cursors = picker.cursors
+    at = cursors[col]
+    if name = "down" and at < count - 1, at += 1
+    if name = "up" and at > 0, at = at - 1
+    if name = "home", at = 0
+    if name = "end" and count > 0, at = count - 1
+    if name = "pagedown"
+        at = at + 10
+        if at > count - 1, at = count - 1
+    if name = "pageup"
+        at = at - 10
+        if at < 0, at = 0
+    if at ≠ cursors[col]
+        picker = picker + { cursors = cursors[0, col) + [at] + cursors(col, length) }
+        | Another AI under the cursor: its own choices in the other lists.
+        if col = 0, emit PickerAim to this
+    if (name = "enter" or name = "space") and count > 0
+        emit PickerSet { col = col, value = options[picker.cursors[col]] } to this
     return Handled
 
-| A row of the picker set to `value`, and used from now on: the AI
-| (ai.provider), or its model or effort (in its ai.providers entry). An
-| effort the new model does not take goes back to the default.
-PickerSet { row, value } =>
-    if row = 0
-        at = picker.ai
-        loop i, one over picker.providers
-            if one.name = value, at = i
-        picker = picker + { ai = at }
-        emit StoreSetting { key = "ai.provider", value = value } to this
-    if row > 0
-        held = picker.providers[picker.ai]
+| A pick: the AI (ai.provider), or a model or effort of the AI under the
+| first list's cursor (in its ai.providers entry) — which then is the AI in
+| use. An effort the new model does not take goes back to the default.
+PickerSet { col, value } =>
+    held = picker.providers[picker.cursors[0]]
+    if col > 0
         all = settings["ai.providers"]
         entry = all[held.name]
-        if row = 1
+        if col = 1
             entry = entry + { model = value }
             level = held.levels[value]
             if level = null, level = held.levels[""]
@@ -2146,9 +2147,11 @@ PickerSet { row, value } =>
                 loop one over level.efforts
                     if one = effort, takes = true
                 if not takes, entry = entry + { effort = "" }
-        if row = 2, entry = entry + { effort = value }
+        if col = 2, entry = entry + { effort = value }
         emit StoreSetting { key = "ai.providers", value = all + { "$held.name" = entry } } to this
+    emit StoreSetting { key = "ai.provider", value = held.name } to this
+    emit PickerAim to this
     emit ChatNotice to this
     message = "AI: " + ai_status
-    if not picker.providers[picker.ai].ready, message = "Error: AI: " + picker.providers[picker.ai].name + " is " + picker.providers[picker.ai].note
+    if not held.ready, message = "Error: AI: " + held.name + " is " + held.note
     return Set

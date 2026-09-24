@@ -100,21 +100,25 @@ writes the entries in for you):
 }
 ```
 
-**Picking the AI: Alt+M** (or Settings > AI: Switch Model…) opens three
-rows — the AI, its model, its effort — with the cursor on the model:
+**Picking the AI: Alt+M** (or Settings > AI: Switch Model…) shows every
+AI, and the models and efforts of the one under the cursor, side by side —
+all the choices at once, ● on what is in use:
 
 ```
- AI       ◂ Claude Code ▸   ready
- Model    ◂ sonnet ▸
- Effort   ◂ high ▸
+ AI                     │ Model            │ Effort
+   local                │   (its default)  │   (default)
+ ● Claude Code · claude │ ● Opus 5.5       │   low
+   Codex · codex        │   Opus 5         │   medium
+                        │   Sonnet 5       │ ● high
+ Claude Code: ready
 ```
 
-←/→ change the row you are on, at once; ↑/↓ move between rows; Enter
-lists a row's choices (for a long list of models); Escape closes. Each AI
-is checked as it opens — ready, not installed, not signed in, not
-reachable, the key refused — and keeps its own model and effort, so
-switching away and back finds them as they were. The status bar shows
-what is in use (`Claude Code · sonnet · high · Ask`).
+←/→ (or Tab) move between the lists, ↑/↓ within one, Enter picks, Escape
+closes. Moving in the AI list shows that AI's models and efforts without
+switching to it; picking one of them does. Each AI is checked as the lists
+open — ready, not installed, not signed in, not reachable, the key refused
+— and keeps its own model and effort. The status bar shows what is in use
+(`Claude Code · Opus 5.5 · high · Ask`).
 
 Nothing here is built into the ide. The models and efforts are the ones a
 tool reports itself — a server's `/v1/models`; Codex's catalogue, with the
@@ -127,7 +131,8 @@ versioned ids (Opus 5.5, Opus 5, Sonnet 5, Haiku 4.5, Fable 5.1, Fable 5 —
 some need usage credits on some plans) and the efforts its `--effort`
 takes; edit them there. Codex shows its own names for its models.
 `local`, `claude` and `codex` are default entries of `ai.providers`, merged
-under yours — add your own beside them. The local model takes no effort
+under yours field by field (an entry giving only a `"model"` keeps the rest)
+— add your own beside them. The local model takes no effort
 yet (that needs the localai module to pass one on).
 
 **Or Claude Code / Codex behind the same chat.** With `"ai.provider":
