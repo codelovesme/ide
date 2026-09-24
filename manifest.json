@@ -5,6 +5,7 @@
     "env": "env",
     "fs": "fs",
     "json": "json",
+    "pty": "pty",
     "strings": "strings",
     "syntax": "syntax",
     "tty": "tty"

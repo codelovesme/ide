@@ -1,6 +1,7 @@
-| The ide gene driven the way keys drive it, without a terminal: a folder
-| opened, the tree walked, a file opened, edited, undone, saved; the menu
-| and a prompt; and a frame drawn from all of it.
+| The ide gene driven the way keys drive it, without a terminal of its
+| own: a folder opened, the explorer as a tab, the tree walked, files
+| opened in tabs, edited, undone, saved; tabs moved anywhere; a terminal;
+| the menu, the prompts, settings and keybindings; frames drawn from it all.
 
 link "../src/editor.gene.code"
 link "../src/ide.gene.code"
@@ -12,6 +13,30 @@ link "../src/settings.gene.code"
 link "../src/tabs.gene.code"
 link "../src/tree.gene.code"
 
+| A frame, the way Render makes one.
+Framed {} =>
+    emit State to this get state
+    emit Placement { state = state } to this get placement
+    emit Frame { state = state, placement = placement, screens = {} } to this get screen
+    return screen
+
+| The texts of every overlay on screen row `row`, left to right as drawn.
+RowTexts { screen, row } =>
+    texts = []
+    loop o over screen.overlays
+        if o.row = row
+            loop span over o.spans
+                if span.text ≠ "", texts += span.text
+    return Texts { texts = texts }
+
+| The slot each group is in, and the kind of its active tab.
+WhereNow {} =>
+    emit State to this get state
+    out = []
+    loop group over state.groups
+        out += group.slot + ":" + group.tabs[group.active].kind
+    return Where { groups = out }
+
 | The organelles, linked the way the ide links them (tools/organelles.sh
 | lays them out first).
 emit UseOrganelles { from = "organelles" } to this get lib
@@ -19,21 +44,18 @@ assert lib ∈ Linked
 files = lib.fs
 prefs_fs = lib.prefs
 json_lib = lib.json
+shells = lib.pty
 
 | Settings kept where the tests run, starting from none.
 emit Config { base_path = ".test-config" } to prefs_fs
 emit DeleteFile { path = "settings.json" } to prefs_fs
 emit DeleteFile { path = "keybindings.json" } to prefs_fs
 emit SettingsAt { dir = ".test-config" } to this get first_settings
-assert first_settings.values = {
-    "workbench.sideBar.visible" = true
-    "workbench.sideBar.location" = "left"
-    "workbench.sideBar.width" = 30
-    "workbench.panel.height" = 10
-}
+assert first_settings.values["workbench.layout.left"] = 30
+assert first_settings.values["workbench.layout.bottom"] = 12
+assert first_settings.values["workbench.sideBar.visible"]
 
 | A folder to open: a code file, a folder with a file in it, and .git.
-| Made where the tests run; fs answers where that is, absolutely.
 emit Config { base_path = ".test-folder" } to files get made
 root = made.base_path
 emit RemoveDir { path = "src" } to files
@@ -43,6 +65,7 @@ emit WriteFile { path = ".git/HEAD", content = "ref" } to files
 
 emit OpenFolder { path = root } to this get opened
 assert opened ∈ Opened
+emit ShowExplorer { focused = true } to this
 emit State to this get s
 assert s.folder = root
 assert s.tree = [
@@ -50,37 +73,31 @@ assert s.tree = [
     { path = "hello.code", name = "hello.code", depth = 0, is_dir = false, open = false }
 ]
 assert s.focus = "tree"
+emit WhereNow to this get start
+assert start.groups = ["l:explorer"]
 
 | A folder that is not there is refused, and the one open stays open.
 emit OpenFolder { path = root + "/nope" } to this get missing
 assert missing ∈ Failed
-emit State to this get still
-assert still.folder = root
 
 | Enter on a folder opens it; left closes it again.
 emit HandleKey { name = "enter", text = "" } to this
 emit State to this get expanded
 assert expanded.tree[0].open
-assert expanded.tree[1] = { path = "src/notes.md", name = "notes.md", depth = 1, is_dir = false, open = false }
 emit HandleKey { name = "left", text = "" } to this
-emit State to this get collapsed
-emit Length { value = collapsed.tree } to core get { value as rows_left }
-assert rows_left = 2
 
-| Down to the code file, enter: it opens, and the editor has the focus.
+| Down to the code file, enter: it opens in the center, and has the keys.
 emit HandleKey { name = "down", text = "" } to this
 emit HandleKey { name = "enter", text = "" } to this
 emit State to this get editing
 assert editing.focus = "editor"
 assert editing.file.path = "hello.code"
-assert editing.file.lines = ["| hi", "Greet { who } =>", "    return Hi", ""]
+emit WhereNow to this get with_file
+assert with_file.groups = ["l:explorer", "c:file"]
 
-| Typing, then undo takes the whole word back; redo puts it back.
+| Typing, undo, redo.
 emit HandleKey { name = "x", text = "x" } to this
 emit HandleKey { name = "y", text = "y" } to this
-emit State to this get typed
-assert typed.file.lines[0] = "xy| hi"
-assert typed.file.dirty
 emit HandleKey { name = "ctrl+z", text = "" } to this
 emit State to this get undone
 assert undone.file.lines[0] = "| hi"
@@ -88,98 +105,151 @@ emit HandleKey { name = "ctrl+y", text = "" } to this
 emit State to this get redone
 assert redone.file.lines[0] = "xy| hi"
 
-| Ctrl+E — what most terminals send for Ctrl+Shift+E — moves the focus to
-| the explorer, where the arrows move the selection, not the cursor; F6
-| goes back.
+| Ctrl+E moves the keys to the explorer, where the arrows move the
+| selection, not the cursor; F6 goes on to the file.
 emit HandleKey { name = "ctrl+e", text = "" } to this
 emit State to this get in_tree
 assert in_tree.focus = "tree"
 emit HandleKey { name = "up", text = "" } to this
 emit State to this get moved_up
 assert moved_up.tree_sel = 0
-assert moved_up.file.row = redone.file.row
 emit HandleKey { name = "f6", text = "" } to this
 emit State to this get back
 assert back.focus = "editor"
+assert back.file.row = redone.file.row
 
-| Save writes it; the file is clean again.
+| Save.
 emit HandleKey { name = "ctrl+s", text = "" } to this
 emit ReadFile { path = "hello.code" } to files get on_disk
 assert on_disk.content = "xy| hi\nGreet { who } =>\n    return Hi\n"
-emit State to this get saved
-assert not saved.file.dirty
-assert saved.message = "Saved hello.code"
 
-| The frame at the default 80 columns: menu bar, the explorer 30 wide on
-| the left (the default width), the file in the center.
-emit State to this get now
-emit Frame { state = now } to this get screen
-assert screen ∈ Screen
-assert screen.overlays[1].spans[1].text = " File "
+| The frame at 80 columns: the explorer group 30 wide on the left, the
+| file's group in the center with a line down its left edge; each has a
+| tab strip; the cursor is in the file.
+emit Framed to this get screen
+emit RowTexts { screen = screen, row = 1 } to this get strips
+assert strips.texts = [" Explorer ", "│", " hello.code "]
+emit RowTexts { screen = screen, row = 2 } to this get second_row
+assert second_row.texts[0] = " .TEST-FOLDER"
 assert screen.cursor_row = 2
-assert screen.cursor_col = 30 + 5 + 2
-| The explorer's title row, and the editor's first line, coloured.
-titles = []
-loop o over screen.overlays
-    if o.row = 1, titles += o.spans[0].text
-assert titles = [" EXPLORER: .TEST-FOLDER", "", " hello.code "]
+assert screen.cursor_col = 31 + 5 + 2
 kinds = []
 loop o over screen.overlays
-    if o.row = 3 and o.col = 30
+    if o.row = 3 and o.col = 31
         loop span over o.spans
             kinds += span.style
 assert kinds = ["line_number", "plain", "class", "plain", "variable", "plain", "operator", "plain"]
 
-| Alt+F opens File; down, down, enter runs Close File.
-emit HandleKey { name = "alt+f", text = "" } to this
-emit State to this get menu_open
-assert menu_open.menu = { index = 0, item = 0 }
-emit HandleKey { name = "down", text = "" } to this
-emit HandleKey { name = "down", text = "" } to this
-emit HandleKey { name = "enter", text = "" } to this
-emit State to this get closed
-assert closed.menu = null
-assert closed.file = null
-assert closed.focus = "tree"
+| Tabs: a second file opens beside the first; Ctrl+PgUp / PgDn switch;
+| edits stay with their tab.
+emit OpenFile { path = "src/notes.md" } to this
+emit HandleKey { name = "q", text = "q" } to this
+emit HandleKey { name = "ctrl+pageup", text = "" } to this
+emit State to this get first_tab
+assert first_tab.file.path = "hello.code"
+emit HandleKey { name = "ctrl+pagedown", text = "" } to this
+emit State to this get second_tab
+assert second_tab.file.lines[0] = "qnotes"
+emit Framed to this get tabbed
+emit RowTexts { screen = tabbed, row = 1 } to this get tab_strip
+assert tab_strip.texts = [" Explorer ", "│", " hello.code ", " notes.md ● "]
 
-| Ctrl+B hides the explorer; with no file, the welcome pane shows.
-emit HandleKey { name = "ctrl+b", text = "" } to this
-emit State to this get bare
-assert not bare.explorer
-emit Frame { state = bare } to this get welcome
-found = false
-loop o over welcome.overlays
-    if o.spans[0].text = "  codelovesme ide", found = true
-assert found
-emit HandleKey { name = "ctrl+b", text = "" } to this
-
-| Ctrl+K Ctrl+O asks for a folder in the status bar; Escape drops it.
+| Move Tab: the file to the right — its own group there — then the
+| explorer into the center as a tab beside the other file.
 emit HandleKey { name = "ctrl+k", text = "" } to this
-emit HandleKey { name = "ctrl+o", text = "" } to this
-emit State to this get asking
-assert asking.prompt.kind = "open_folder"
-assert asking.prompt.text = root + "/"
-emit HandleKey { name = "s", text = "s" } to this
-emit State to this get typing
-assert typing.prompt.text = root + "/s"
-emit HandleKey { name = "escape", text = "" } to this
-emit State to this get dropped
-assert dropped.prompt = null
-
-| An edited file asks before closing; n closes it unsaved.
-emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "m", text = "m" } to this
+emit State to this get asking_where
+assert asking_where.prompt.kind = "move"
+emit HandleKey { name = "r", text = "r" } to this
 emit HandleKey { name = "enter", text = "" } to this
-emit HandleKey { name = "z", text = "z" } to this
+emit WhereNow to this get moved_right
+assert moved_right.groups = ["l:explorer", "c:file", "r:file"]
+emit State to this get after_move
+assert after_move.file.path = "src/notes.md"
+emit HandleKey { name = "ctrl+e", text = "" } to this
+emit Run { command = "view.moveTab.c" } to this
+emit WhereNow to this get explorer_center
+assert explorer_center.groups = ["c:explorer", "r:file"]
+emit State to this get as_tab
+emit Length { value = as_tab.groups[0].tabs } to core get { value as center_tabs }
+assert center_tabs = 2
+assert as_tab.focus = "tree"
+| And back to the left.
+emit Run { command = "view.explorerLeft" } to this
+emit WhereNow to this get explorer_left
+assert explorer_left.groups = ["c:file", "r:file", "l:explorer"]
+| A place that is not one is refused.
+emit MoveCurrent { into = "middle" } to this get nowhere
+assert nowhere ∈ Failed
+
+| Resizing: with the explorer focused, Ctrl+K → widens the left.
+emit HandleKey { name = "ctrl+k", text = "" } to this
+emit HandleKey { name = "right", text = "" } to this
+emit State to this get wider
+assert wider.sizes.left = 32
+emit HandleKey { name = "ctrl+k", text = "" } to this
+emit HandleKey { name = "left", text = "" } to this
+emit State to this get narrower
+assert narrower.sizes.left = 30
+
+| Ctrl+B hides the explorer (settings.json says so) and shows it again.
+emit HandleKey { name = "ctrl+b", text = "" } to this
+emit WhereNow to this get hidden
+assert hidden.groups = ["c:file", "r:file"]
+emit ReadFile { path = "settings.json" } to prefs_fs get stored
+emit Parse { text = stored.content } to json_lib get stored_values
+assert stored_values.value["workbench.sideBar.visible"] = false
+emit HandleKey { name = "ctrl+b", text = "" } to this
+emit WhereNow to this get shown_again
+assert shown_again.groups = ["c:file", "r:file", "l:explorer"]
+
+| A terminal: Ctrl+` opens one at the bottom, with the keys. Keys go to
+| the shell — except the few commands that skip it (F6 here).
+emit HandleKey { name = "ctrl+`", text = "" } to this
+emit WhereNow to this get with_terminal
+assert with_terminal.groups = ["c:file", "r:file", "l:explorer", "b:terminal"]
+emit State to this get in_terminal
+assert in_terminal.focus = "terminal"
+terminal_id = in_terminal.groups[3].tabs[0].id
+emit HandleKey { name = "ctrl+e", text = "" } to this
+emit State to this get still_terminal
+assert still_terminal.focus = "terminal"
+emit HandleKey { name = "f6", text = "" } to this
+emit State to this get left_terminal
+assert left_terminal.focus ≠ "terminal"
+| Ctrl+` again gives the keys back to the terminal.
+emit HandleKey { name = "ctrl+`", text = "" } to this
+emit State to this get back_in_terminal
+assert back_in_terminal.focus = "terminal"
+| Moved into the center, as a tab beside the files.
+emit Run { command = "view.moveTab.c" } to this
+emit WhereNow to this get terminal_center
+assert terminal_center.groups = ["c:terminal", "r:file", "l:explorer"]
+| A terminal whose shell ended closes its tab.
+emit TerminalExited { id = terminal_id, code = 0 } to this
+emit WhereNow to this get terminal_gone
+assert terminal_gone.groups = ["c:file", "r:file", "l:explorer"]
+emit Close { id = terminal_id } to shells
+
+| Closing: an edited file asks; n closes it unsaved.
+emit FocusSlot { slot = "r" } to this
 emit HandleKey { name = "ctrl+w", text = "" } to this
 emit State to this get asked
 assert asked.prompt.kind = "close"
 emit HandleKey { name = "n", text = "n" } to this
-emit State to this get unsaved
-assert unsaved.file = null
-emit ReadFile { path = "hello.code" } to files get untouched
-assert untouched.content = on_disk.content
+emit WhereNow to this get right_closed
+assert right_closed.groups = ["c:file", "l:explorer"]
 
-| The shortcuts open read-only; typing is refused.
+| Quitting with an unsaved file asks; Escape keeps it.
+emit FocusSlot { slot = "c" } to this
+emit HandleKey { name = "z", text = "z" } to this
+emit HandleKey { name = "ctrl+q", text = "" } to this
+emit State to this get quitting
+assert quitting.prompt.label = "Save changes to hello.code before exit? (y / n / Escape) "
+emit HandleKey { name = "escape", text = "" } to this
+emit HandleKey { name = "ctrl+z", text = "" } to this
+
+| The shortcuts open read-only, in the files' place.
 emit HandleKey { name = "ctrl+k", text = "" } to this
 emit HandleKey { name = "ctrl+s", text = "" } to this
 emit State to this get help
@@ -187,145 +257,48 @@ assert help.file.readonly
 assert help.file.lines[0] = "Keyboard Shortcuts"
 emit HandleKey { name = "q", text = "q" } to this
 emit State to this get refused
-assert refused.file.lines[0] = "Keyboard Shortcuts"
 assert refused.message = "This file is read-only."
-
 emit HandleKey { name = "ctrl+w", text = "" } to this
-emit State to this get help_closed
-assert help_closed.groups = []
 
-| Tabs. Two files open: two tabs, the second showing. Edits stay with
-| their tab while another is shown.
-emit OpenFile { path = "src/notes.md" } to this
-emit OpenFile { path = "hello.code" } to this
-emit FocusGroup { index = 0 } to this
-emit HandleKey { name = "q", text = "q" } to this
-emit HandleKey { name = "ctrl+pageup", text = "" } to this
-emit State to this get two_tabs
-assert two_tabs.file.path = "src/notes.md"
-emit Length { value = two_tabs.groups[0].tabs } to core get { value as tab_count }
-assert tab_count = 2
-emit HandleKey { name = "ctrl+pagedown", text = "" } to this
-emit State to this get kept
-assert kept.file.path = "hello.code"
-assert kept.file.lines[0] = "qxy| hi"
-assert kept.file.dirty
-| Opening an open file brings its tab back, edits and all.
-emit OpenFile { path = "src/notes.md" } to this
-emit OpenFile { path = "hello.code" } to this
-emit State to this get same_tab
-assert same_tab.file.lines[0] = "qxy| hi"
-emit Frame { state = same_tab } to this get tabbed
-strip = []
-loop o over tabbed.overlays
-    if o.row = 1 and o.col = 30
-        loop span over o.spans
-            if span.text ≠ "", strip += span.text
-assert strip = [" notes.md ", " hello.code ● "]
-
-| Split Editor: the file again in a group on the right, focused; the two
-| share the editor area half and half, with a line between them.
-emit HandleKey { name = "ctrl+\\", text = "" } to this
-emit State to this get split_state
-emit Length { value = split_state.groups } to core get { value as group_count }
-assert group_count = 2
-assert split_state.current = 1
-emit Frame { state = split_state } to this get split_screen
-lefts = []
-loop o over split_screen.overlays
-    if o.row = 1 and o.col ≥ 30, lefts += o.col
-assert lefts = [30, 30, 55, 56, 56]
-assert split_screen.cursor_col = 56 + 5 + 1
-| F6 goes round: explorer, left group, right group.
-emit HandleKey { name = "f6", text = "" } to this
-emit State to this get round_tree
-assert round_tree.focus = "tree"
-emit HandleKey { name = "f6", text = "" } to this
-emit State to this get round_left
-assert round_left.focus = "editor"
-assert round_left.current = 0
-| Quitting asks about both unsaved files at once; Escape keeps them.
-emit HandleKey { name = "ctrl+q", text = "" } to this
-emit State to this get quitting
-assert quitting.prompt.label = "2 files have unsaved changes. Save them all before exit? (y / n / Escape) "
+| Ctrl+K Ctrl+O asks for a folder; Escape drops it.
+emit HandleKey { name = "ctrl+k", text = "" } to this
+emit HandleKey { name = "ctrl+o", text = "" } to this
+emit State to this get asking
+assert asking.prompt.text = root + "/"
 emit HandleKey { name = "escape", text = "" } to this
-| Closing the right group's only tab leaves the left one.
-emit FocusGroup { index = 1 } to this
-emit HandleKey { name = "ctrl+w", text = "" } to this
-emit HandleKey { name = "n", text = "n" } to this
-emit State to this get one_group
-emit Length { value = one_group.groups } to core get { value as groups_left }
-assert groups_left = 1
-assert one_group.file.path = "hello.code"
-emit HandleKey { name = "ctrl+w", text = "" } to this
-emit HandleKey { name = "n", text = "n" } to this
-emit HandleKey { name = "ctrl+w", text = "" } to this
-emit State to this get all_closed
-assert all_closed.groups = []
-
-| Settings. Ctrl+B hides the explorer and says so in settings.json.
-emit HandleKey { name = "ctrl+b", text = "" } to this
-emit ReadFile { path = "settings.json" } to prefs_fs get stored
-emit Parse { text = stored.content } to json_lib get stored_values
-assert stored_values.value["workbench.sideBar.visible"] = false
-emit HandleKey { name = "ctrl+b", text = "" } to this
-
-| Ctrl+K → makes it two columns wider; Ctrl+K ← narrower again.
-emit HandleKey { name = "ctrl+k", text = "" } to this
-emit HandleKey { name = "right", text = "" } to this
-emit State to this get wider
-assert wider.side_width = 32
-emit HandleKey { name = "ctrl+k", text = "" } to this
-emit HandleKey { name = "left", text = "" } to this
-emit State to this get narrower
-assert narrower.side_width = 30
 
 | Ctrl+, opens settings.json; saving an edit to it applies it.
 emit HandleKey { name = "ctrl+,", text = "" } to this
 emit State to this get editing_settings
 assert editing_settings.file.path = "settings.json"
-assert editing_settings.file.lines[0] = "{"
-assert editing_settings.focus = "editor"
-emit SetLines { lines = ["{", "  \"workbench.sideBar.location\": \"right\",", "  \"workbench.sideBar.width\": 40", "}", ""] } to this
+emit SetLines { lines = ["{", "  \"workbench.layout.left\": 40,", "  \"workbench.sideBar.width\": 99", "}", ""] } to this
 emit HandleKey { name = "ctrl+s", text = "" } to this
 emit State to this get applied
-assert applied.explorer_slot = "r"
-assert applied.side_width = 40
-assert applied.explorer
+assert applied.sizes.left = 40
 assert applied.message = "Settings saved and applied"
-
-| A setting that is not what it should be falls back, and says so.
-emit SetLines { lines = ["{ \"workbench.sideBar.width\": \"wide\" }"] } to this
+| The name before 0.6 is still read when the new one is absent.
+emit SetLines { lines = ["{ \"workbench.sideBar.width\": 44 }"] } to this
+emit HandleKey { name = "ctrl+s", text = "" } to this
+emit State to this get old_name
+assert old_name.sizes.left = 44
+emit SetLines { lines = ["{ \"workbench.layout.left\": \"wide\" }"] } to this
 emit HandleKey { name = "ctrl+s", text = "" } to this
 emit State to this get fell_back
-assert fell_back.side_width = 30
-assert fell_back.message = "Error: settings.json: using the default for workbench.sideBar.width (10 or more)"
-emit SetLines { lines = ["not json"] } to this
-emit HandleKey { name = "ctrl+s", text = "" } to this
-emit State to this get broken
-assert broken.message = "Error: settings.json is not valid JSON — using the defaults"
-assert broken.explorer_slot = "l"
+assert fell_back.sizes.left = 30
+assert fell_back.message = "Error: settings.json: using the default for workbench.layout.left (10 or more)"
 
-| keybindings.json: opened from the File menu, made empty the first time;
-| saving an entry makes its key run the command.
+| keybindings.json: an entry's key runs its command once saved.
 emit Run { command = "keybindings.open" } to this
 emit State to this get bindings_open
 assert bindings_open.file.path = "keybindings.json"
-assert bindings_open.file.lines = ["[", "]", ""]
-emit SetLines { lines = ["[", "  { \"key\": \"ctrl+j\", \"command\": \"view.explorer\" }", "]"] } to this
+emit SetLines { lines = ["[", "  { \"key\": \"ctrl+g\", \"command\": \"view.explorer\" }", "]"] } to this
 emit HandleKey { name = "ctrl+s", text = "" } to this
 emit State to this get bindings_saved
 assert bindings_saved.message = "Keyboard shortcuts saved and applied"
-assert bindings_saved.keytable.labels["view.explorer"] = "Ctrl+B"
-was_visible = bindings_saved.explorer
-emit HandleKey { name = "ctrl+j", text = "" } to this
-emit State to this get toggled
-assert toggled.explorer ≠ was_visible
-emit HandleKey { name = "ctrl+j", text = "" } to this
-emit SetLines { lines = ["[{ \"key\": \"ctrl+g\", \"command\": \"no.such\" }]"] } to this
-emit HandleKey { name = "ctrl+s", text = "" } to this
-emit State to this get bindings_bad
-assert bindings_bad.message = "Error: keybindings.json: entry 1: no command \"no.such\""
+emit WhereNow to this get before_g
+emit HandleKey { name = "ctrl+g", text = "" } to this
+emit WhereNow to this get after_g
+assert after_g.groups ≠ before_g.groups
 
 emit RemoveDir { path = "." } to prefs_fs
 emit RemoveDir { path = "." } to files

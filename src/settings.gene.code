@@ -1,7 +1,7 @@
 | Settings — the user's preferences, as VS Code keeps them: a JSON file,
 | `settings.json`, that the ide reads at start, writes when a preference
-| changes (Ctrl+B, moving or resizing the explorer), and opens for editing
-| (Ctrl+, or File > Settings). Pure: text in, checked values out.
+| changes (Ctrl+B, moving the explorer, resizing a side), and opens for
+| editing (Ctrl+, or File > Settings). Pure: text in, checked values out.
 |
 | A value that is missing or not what it should be falls back to its
 | default, and says so — a typo in the file never stops the ide.
@@ -9,9 +9,32 @@
 defaults = {
     "workbench.sideBar.visible" = true
     "workbench.sideBar.location" = "left"
-    "workbench.sideBar.width" = 30
-    "workbench.panel.height" = 10
+    "workbench.layout.left" = 30
+    "workbench.layout.right" = 40
+    "workbench.layout.top" = 10
+    "workbench.layout.bottom" = 12
+    "terminal.integrated.shell" = ""
+    "terminal.integrated.commandsToSkipShell" = [
+        "terminal.toggle"
+        "focus.next"
+        "tab.next"
+        "tab.previous"
+        "menu.file"
+        "menu.view"
+        "menu.help"
+        "app.quit"
+        "focus.editor"
+        "focus.group2"
+    ]
 }
+
+| The side track sizes, each at least `least`.
+sizes = [
+    { key = "workbench.layout.left", least = 10, old = "workbench.sideBar.width" }
+    { key = "workbench.layout.right", least = 10, old = "" }
+    { key = "workbench.layout.top", least = 3, old = "" }
+    { key = "workbench.layout.bottom", least = 3, old = "workbench.panel.height" }
+]
 
 | The `json` organelle, handed over when the ide links it.
 parser = null
@@ -39,16 +62,24 @@ ReadSettings { text } =>
     location = given["workbench.sideBar.location"]
     if location = "left" or location = "right", values = values + { "workbench.sideBar.location" = location }
     if location ≠ null and location ≠ "left" and location ≠ "right", wrong += "workbench.sideBar.location (\"left\" or \"right\")"
-    width = given["workbench.sideBar.width"]
-    good_width = width ∈ Number
-    if good_width, good_width = width ≥ 10
-    if good_width, values = values + { "workbench.sideBar.width" = width }
-    if width ≠ null and not good_width, wrong += "workbench.sideBar.width (10 or more)"
-    height = given["workbench.panel.height"]
-    good_height = height ∈ Number
-    if good_height, good_height = height ≥ 3
-    if good_height, values = values + { "workbench.panel.height" = height }
-    if height ≠ null and not good_height, wrong += "workbench.panel.height (3 or more)"
+    | Sizes; the names before 0.6 are still read when the new one is absent.
+    loop track over sizes
+        size = given[track.key]
+        if size = null and track.old ≠ "", size = given[track.old]
+        good = size ∈ Number
+        if good, good = size ≥ track.least
+        if good, values = values + { "$track.key" = size }
+        if size ≠ null and not good, wrong += track.key + " (" + track.least + " or more)"
+    shell = given["terminal.integrated.shell"]
+    if shell ∈ String, values = values + { "terminal.integrated.shell" = shell }
+    if shell ≠ null and shell ∉ String, wrong += "terminal.integrated.shell (a program's path)"
+    skips = given["terminal.integrated.commandsToSkipShell"]
+    good_skips = skips ∈ Array
+    if good_skips
+        loop one over skips
+            if one ∉ String, good_skips = false
+    if good_skips, values = values + { "terminal.integrated.commandsToSkipShell" = skips }
+    if skips ≠ null and not good_skips, wrong += "terminal.integrated.commandsToSkipShell (a list of command ids)"
     problem = ""
     loop i, what over wrong
         if i = 0, problem = "settings.json: using the default for " + what

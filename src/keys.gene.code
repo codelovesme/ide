@@ -22,8 +22,15 @@ defaults = [
     { key = "ctrl+q", command = "app.quit" }
     { key = "ctrl+,", command = "settings.open" }
     { key = "ctrl+b", command = "view.explorer" }
-    { key = "ctrl+k right", command = "view.wider" }
-    { key = "ctrl+k left", command = "view.narrower" }
+    { key = "ctrl+k right", command = "view.edge.right" }
+    { key = "ctrl+k left", command = "view.edge.left" }
+    { key = "ctrl+k up", command = "view.edge.up" }
+    { key = "ctrl+k down", command = "view.edge.down" }
+    { key = "ctrl+k m", command = "view.moveTab" }
+    | Ctrl+` — a terminal sends it as Ctrl+Space (NUL) unless it tells them apart.
+    { key = "ctrl+`", command = "terminal.toggle" }
+    { key = "ctrl+space", command = "terminal.toggle" }
+    { key = "ctrl+k t", command = "terminal.new" }
     | Most terminals send ctrl+shift+e as ctrl+e — the same key to the program.
     { key = "ctrl+shift+e", command = "focus.explorer" }
     { key = "ctrl+e", command = "focus.explorer" }
@@ -61,12 +68,26 @@ commands = [
     { id = "view.explorer", title = "Show / hide the Explorer" }
     { id = "view.explorerLeft", title = "Explorer on the left" }
     { id = "view.explorerRight", title = "Explorer on the right" }
-    { id = "view.wider", title = "Explorer wider" }
-    { id = "view.narrower", title = "Explorer narrower" }
+    { id = "view.edge.right", title = "Move the focused side's edge right" }
+    { id = "view.edge.left", title = "Move the focused side's edge left" }
+    { id = "view.edge.up", title = "Move the focused side's edge up" }
+    { id = "view.edge.down", title = "Move the focused side's edge down" }
+    { id = "view.moveTab", title = "Move the tab to another place (asks where)" }
+    { id = "view.moveTab.l", title = "Move the tab to the left" }
+    { id = "view.moveTab.r", title = "Move the tab to the right" }
+    { id = "view.moveTab.t", title = "Move the tab to the top" }
+    { id = "view.moveTab.b", title = "Move the tab to the bottom" }
+    { id = "view.moveTab.c", title = "Move the tab to the center" }
+    { id = "view.moveTab.tl", title = "Move the tab to the top left" }
+    { id = "view.moveTab.tr", title = "Move the tab to the top right" }
+    { id = "view.moveTab.bl", title = "Move the tab to the bottom left" }
+    { id = "view.moveTab.br", title = "Move the tab to the bottom right" }
+    { id = "terminal.toggle", title = "Terminal: open one, or move the keys to and from it" }
+    { id = "terminal.new", title = "New terminal" }
     { id = "focus.explorer", title = "Focus the Explorer" }
-    { id = "focus.editor", title = "Focus the first editor group" }
-    { id = "focus.group2", title = "Focus the second editor group" }
-    { id = "focus.next", title = "Explorer, then each editor group, round again" }
+    { id = "focus.editor", title = "Focus the center" }
+    { id = "focus.group2", title = "Focus the right" }
+    { id = "focus.next", title = "Focus the next place, round again" }
     { id = "editor.split", title = "Split Editor: this file again, on the right" }
     { id = "tab.next", title = "Next tab" }
     { id = "tab.previous", title = "Previous tab" }
@@ -96,6 +117,7 @@ shown_as = {
     end = "End"
     insert = "Insert"
     right = "→"
+    "`" = "`"
     left = "←"
     up = "↑"
     down = "↓"
@@ -242,7 +264,9 @@ Shortcuts { table } =>
         lines += "  " + shown + pad + c.title + "   (" + c.id + ")"
     lines = lines + [
         ""
-        "  Explorer: Up / Down move, Enter / Right open, Left closes a folder."
+        "  Explorer: Up / Down move, Enter / Right open, Left closes a folder, Space shows."
+        "  Terminal: every key goes to the shell, except the commands in"
+        "  terminal.integrated.commandsToSkipShell (settings.json)."
         "  Editor: arrows, Home, End, PgUp, PgDn, Ctrl+Home / End, Ctrl+Left / Right,"
         "  Tab / Shift+Tab indent by four spaces."
         "  Menus: arrows, Enter, Escape."

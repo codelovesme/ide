@@ -1,14 +1,23 @@
-| Tabs — the open files, in editor groups, as VS Code keeps them. Pure.
+| Tabs — what is open, where. Pure.
 |
-| `groups` is a list of editor groups, left to right — one, or two after
-| Split Editor — and each is `{ tabs, active }`: its open files (buffers,
-| see editor.gene.code) and which one it shows. `current` is the group
-| that has the focus. A file is known by its `path` and `store` (the open
-| folder, or the settings folder), so opening it again finds its tab.
+| Everything shown is a tab — a *view* — and every tab is in a group, and
+| every group sits in one of the nine slots of the layout (`tl t tr l c r
+| bl b br`, see layout.gene.code), at most one group to a slot. So a file,
+| the explorer, a terminal — later a git tree — can each go anywhere, side
+| by side or as tabs of one group.
+|
+| `groups` is a list of `{ slot, tabs, active }`; `current` is the index of
+| the group with the focus. A view is an object with a `kind`:
+|
+|   file      a buffer (see editor.gene.code) — `path`, `store`, lines…
+|   explorer  the folder's tree (its rows live in the ide gene)
+|   terminal  a shell, by its `id` in the `pty` organelle
+|
+| and a `path` and `store` it is known by, so opening it again finds its
+| tab: a file by where it is, `Explorer` in `view`, `Terminal 2` in
+| `terminal`.
 
-max_groups = 2
-
-| The buffer the group `current` shows, or null when nothing is open.
+| The view group `current` shows, or null when there is none.
 Active { groups, current } =>
     group = groups[current]
     if group = null, return ActiveTab { buffer = null }
@@ -23,6 +32,19 @@ PutActive { groups, current, buffer } =>
     changed = group + { tabs = tabs }
     return Groups { groups = groups[0, current) + [changed] + groups(current, length), current = current }
 
+| The index of the group in `slot`, or -1.
+GroupAt { groups, slot } =>
+    loop i, group over groups
+        if group.slot = slot, return Found { index = i }
+    return Found { index = -1 }
+
+| Where a view (`path` in `store`) is open: the group and the tab, or -1s.
+FindView { groups, path, store } =>
+    loop gi, group over groups
+        loop ti, tab over group.tabs
+            if tab.path = path and tab.store = store, return Place { group = gi, tab = ti }
+    return Place { group = -1, tab = -1 }
+
 | Where `path` (in `store`) is open in group `current`: its index, or -1.
 FindTab { groups, current, path, store } =>
     group = groups[current]
@@ -31,18 +53,21 @@ FindTab { groups, current, path, store } =>
         if tab.path = path and tab.store = store, return Found { index = i }
     return Found { index = -1 }
 
-| `buffer` shown in group `current`: its own tab if it is open there, else
-| a new tab after the active one. With no group yet, the first one.
-OpenTab { groups, current, buffer } =>
-    emit Length { value = groups } to core get { value as count }
-    if count = 0, return Groups { groups = [{ tabs = [buffer], active = 0 }], current = 0 }
-    emit FindTab { groups = groups, current = current, path = buffer.path, store = buffer.store } to this get found
-    group = groups[current]
+| `buffer` shown in the group in `slot` — its own tab if it is open there,
+| else a new tab after the active one — and that group focused. With no
+| group in `slot` yet, one is made there.
+OpenIn { groups, slot, buffer } =>
+    emit GroupAt { groups = groups, slot = slot } to this get at
+    if at.index < 0
+        emit Length { value = groups } to core get { value as count }
+        return Groups { groups = groups + [{ slot = slot, tabs = [buffer], active = 0 }], current = count }
+    emit FindTab { groups = groups, current = at.index, path = buffer.path, store = buffer.store } to this get found
+    group = groups[at.index]
     changed = group + { active = found.index }
     if found.index < 0
-        at = group.active + 1
-        changed = { tabs = group.tabs[0, at) + [buffer] + group.tabs[at, length), active = at }
-    return Groups { groups = groups[0, current) + [changed] + groups(current, length), current = current }
+        after = group.active + 1
+        changed = group + { tabs = group.tabs[0, after) + [buffer] + group.tabs[after, length), active = after }
+    return Groups { groups = groups[0, at.index) + [changed] + groups(at.index, length), current = at.index }
 
 | The tab `step` (1 or -1) from the active one in group `current`, round.
 StepTab { groups, current, step } =>
@@ -55,8 +80,14 @@ StepTab { groups, current, step } =>
     changed = group + { active = at }
     return Groups { groups = groups[0, current) + [changed] + groups(current, length), current = current }
 
-| The active tab of group `current` closed. A group left with no tabs goes,
-| and the focus moves to the one that is left.
+| Which group has the focus once the one at `gone` has closed: the center's
+| if there is one, else the first.
+Refocus { groups } =>
+    emit GroupAt { groups = groups, slot = "c" } to this get center
+    if center.index ≥ 0, return Found { index = center.index }
+    return Found { index = 0 }
+
+| The active tab of group `current` closed. A group left with no tabs goes.
 CloseTab { groups, current } =>
     group = groups[current]
     if group = null, return Groups { groups = groups, current = current }
@@ -65,25 +96,52 @@ CloseTab { groups, current } =>
     emit Length { value = tabs } to core get { value as left }
     if left = 0
         rest = groups[0, current) + groups(current, length)
-        emit Length { value = rest } to core get { value as groups_left }
-        focus_on = current
-        if focus_on ≥ groups_left, focus_on = groups_left - 1
-        if focus_on < 0, focus_on = 0
-        return Groups { groups = rest, current = focus_on }
+        emit Refocus { groups = rest } to this get next
+        return Groups { groups = rest, current = next.index }
     if at ≥ left, at = left - 1
-    changed = { tabs = tabs, active = at }
+    changed = group + { tabs = tabs, active = at }
     return Groups { groups = groups[0, current) + [changed] + groups(current, length), current = current }
 
-| Split Editor: `buffer` opened in a new group to the right, which takes the
-| focus. With two groups already, the focus just moves to the other one.
+| The tab at (`group`, `tab`) closed, wherever it is — a terminal whose
+| shell ended, the explorer hidden. The focus stays where it was when it can.
+CloseAt { groups, current, group, tab } =>
+    held = groups[group]
+    if held = null, return Groups { groups = groups, current = current }
+    tabs = held.tabs[0, tab) + held.tabs(tab, length)
+    emit Length { value = tabs } to core get { value as left }
+    if left = 0
+        rest = groups[0, group) + groups(group, length)
+        focus_on = current
+        if current > group, focus_on = current - 1
+        if current = group
+            emit Refocus { groups = rest } to this get next
+            focus_on = next.index
+        return Groups { groups = rest, current = focus_on }
+    active = held.active
+    if tab < active, active = active - 1
+    if active ≥ left, active = left - 1
+    changed = held + { tabs = tabs, active = active }
+    return Groups { groups = groups[0, group) + [changed] + groups(group, length), current = current }
+
+| The active tab of group `current` moved to the group in `into` (made if
+| there is none), which takes the focus. Its old group goes if left empty.
+MoveTab { groups, current, into } =>
+    group = groups[current]
+    if group = null or group.slot = into, return Groups { groups = groups, current = current }
+    moving = group.tabs[group.active]
+    emit CloseTab { groups = groups, current = current } to this get without
+    emit OpenIn { groups = without.groups, slot = into, buffer = moving } to this get moved
+    return moved
+
+| Split Editor: `buffer` opened again in the group on the right — or in
+| the center, when the right is where it already is.
 SplitGroups { groups, current, buffer } =>
-    emit Length { value = groups } to core get { value as count }
-    if count = 0, return Groups { groups = groups, current = current }
-    if count ≥ max_groups
-        other = current + 1
-        if other ≥ count, other = 0
-        return Groups { groups = groups, current = other }
-    return Groups { groups = groups + [{ tabs = [buffer], active = 0 }], current = count }
+    group = groups[current]
+    if group = null, return Groups { groups = groups, current = current }
+    target = "r"
+    if group.slot = "r", target = "c"
+    emit OpenIn { groups = groups, slot = target, buffer = buffer } to this get split
+    return split
 
 | The files with unsaved changes, over every group: how many, and the
 | first one's path.
@@ -92,7 +150,15 @@ Unsaved { groups } =>
     first = ""
     loop group over groups
         loop tab over group.tabs
-            if tab.dirty
+            if tab.kind = "file" and tab.dirty
                 if count = 0, first = tab.path
                 count += 1
     return UnsavedFiles { count = count, first = first }
+
+| Every terminal open, over every group: their ids.
+Terminals { groups } =>
+    ids = []
+    loop group over groups
+        loop tab over group.tabs
+            if tab.kind = "terminal", ids += tab.id
+    return TerminalIds { ids = ids }

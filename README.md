@@ -28,13 +28,34 @@ Row 0 is the menu bar — File, View, Help on the left, the folder and file
 on the right. The last row is the status bar: messages, prompts ("Open
 folder:", "Save changes?"), the cursor position and the language.
 
+### Everything is a tab, anywhere
+
+Files, the Explorer and terminals are all tabs, and every group of tabs
+sits in one of the nine slots. **Move Tab** (View menu, or Ctrl+K M) asks
+where — `l r t b c tl tr bl br` — and takes the tab there, beside whatever
+is in that slot already; commands `view.moveTab.<slot>` do it in one key
+(keybindings.json). So the explorer can be a tab in the center, a terminal
+can sit on the right, two files can share a group or stand side by side.
+The explorer is one tab like the rest: Ctrl+B takes it away and brings it
+back where it was.
+
+### The terminal
+
+Ctrl+\` (View > Terminal) opens one at the bottom, in the open folder, and
+moves the keys between it and the files; View > New Terminal (or Ctrl+K T)
+adds another. It is your shell (`$SHELL`, or `terminal.integrated.shell`),
+on a real pseudo-terminal, with its colours. While it has the keys, every
+key goes to the shell — Ctrl+C, Ctrl+E, Ctrl+W are the shell's — except the
+commands listed in `terminal.integrated.commandsToSkipShell` (F6, Ctrl+Tab,
+the menus, Ctrl+Q, Ctrl+\` …). `exit` closes its tab. Most terminals send
+Ctrl+\` as Ctrl+Space, which is bound too. Not yet: scrollback, the mouse.
+
 ### Tabs and editor groups
 
 Every open file has a tab; the active tab's file is shown, and opening a
 file that is already open brings its tab back as it was left — edits,
 cursor and undo. Split Editor (Ctrl+\\, or View) opens the file again in
-a second editor group on the right; the two share the editor area half and
-half, as VS Code splits it, each with its own tabs. Exit asks once about
+the group on the right. Exit asks once about
 every file with unsaved changes. (The same file in both groups is two
 copies for now: an edit in one does not show in the other.)
 
@@ -65,7 +86,9 @@ the editor (center); the grid is ready for more.
 | Ctrl+Z / Ctrl+Y | Undo / redo (typing is one step per run) |
 | Ctrl+K Ctrl+S | Keyboard shortcuts |
 | Ctrl+, | Settings (settings.json) |
-| Ctrl+K → / Ctrl+K ← | Explorer wider / narrower (also in the View menu) |
+| Ctrl+K and an arrow | Move the focused side's edge (the left grows with →, the bottom with ↑) |
+| Ctrl+K M | Move the tab to another place |
+| Ctrl+\` (Ctrl+Space) / Ctrl+K T | The terminal / a new terminal |
 
 In the editor: arrows, Home (first non-space, then column 0), End,
 PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab and Shift+Tab
@@ -86,13 +109,20 @@ explorer writes it for you.
 {
   "workbench.sideBar.visible": true,
   "workbench.sideBar.location": "left",
-  "workbench.sideBar.width": 30,
-  "workbench.panel.height": 10
+  "workbench.layout.left": 30,
+  "workbench.layout.right": 40,
+  "workbench.layout.top": 10,
+  "workbench.layout.bottom": 12,
+  "terminal.integrated.shell": "",
+  "terminal.integrated.commandsToSkipShell": ["terminal.toggle", "focus.next", "…"]
 }
 ```
 
+(`workbench.sideBar.width` and `workbench.panel.height`, the names before
+0.6, are still read.)
+
 A value that is missing or wrong falls back to its default, and the status
-bar says which. Only pane settings exist so far.
+bar says which.
 
 ## Keyboard shortcuts
 
@@ -126,7 +156,7 @@ Enter, Ctrl+I is Tab, Ctrl+M is Enter.)
 | `editor` | what a key does to a buffer |
 | `render` | the whole screen from the state, as `tty` overlays |
 | `settings` | settings.json read and checked, and written back |
-| `tabs` | the open files: editor groups, their tabs, which one shows |
+| `tabs` | what is open where: groups in slots, their tabs (files, the explorer, terminals) |
 
 Everything but `ide` is pure: a particle in, a particle out. State lives in
 one gene because a gene's top level is its handlers' whole world. A handler
@@ -135,7 +165,7 @@ that fails puts `Error: …` in the status bar instead of stalling.
 Organelles: `tty` (keys in, a screen out — only changed rows are written),
 `syntax` (spans from code's lexer, still coloured while a file does not
 lex), `fs` (twice: the open folder, and the settings folder), `json`,
-`strings`, `env`.
+`strings`, `env`, `pty` (the terminals).
 
 ## Developing
 
@@ -156,7 +186,7 @@ A `v*` tag runs [the release workflow](.github/workflows/release.yml), which
 does exactly the above on a clean machine. Then
 [tools/package.sh](tools/package.sh) builds the ide as a program (`code
 build`) and lays out `ide-<tag>-x86_64-linux.tar.gz`: the program, [its
-launcher](bin/ide), and the six organelles beside it. It needs no `code`
+launcher](bin/ide), and the seven organelles beside it. It needs no `code`
 interpreter to run. The smoke test proves that — it runs the bundle with no
 `code` on the machine and no module cache — before it is published.
 

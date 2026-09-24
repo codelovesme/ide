@@ -3,7 +3,9 @@
 | cursor goes and how far each pane had to scroll to keep it in sight.
 |
 | Row 0 is the menu bar, the last row the status bar; between them the
-| body, laid out by `Layout`. Every pane has a title row, then its content.
+| body: every group of tabs where `Layout` puts its slot — a tab strip,
+| then what its active tab shows (the explorer's rows, a file, a
+| terminal). A group not at the left edge has a line down its left side.
 
 | The `strings` and `syntax` organelles, handed over when the ide links them.
 texts = null
@@ -42,18 +44,16 @@ LineSpans { line, spans, left, width } =>
     if at < stop, out += { text = line[at, stop), style = "plain" }
     return Spans { spans = out }
 
-| The explorer: the folder's name, then the tree, scrolled to keep the
-| selection in sight.
-ExplorerView { pane, nodes, sel, top, focused, title } =>
+| The explorer's rows in `pane` (below its tab strip), scrolled to keep the
+| selection in sight. The folder's name is the first row.
+ExplorerRows { pane, nodes, sel, top, focused, title } =>
     h = pane.height - 1
     t = top
     if sel < t, t = sel
     if sel ≥ t + h, t = sel - h + 1
     if t < 0, t = 0
-    title_style = "pane_title"
-    if focused, title_style = "pane_title_focus"
     emit Upper { value = title } to texts get upper
-    out = [{ row = 1 + pane.y, col = pane.x, spans = [{ text = " EXPLORER: " + upper.value, width = pane.width, style = title_style }] }]
+    out = [{ row = 1 + pane.y, col = pane.x, spans = [{ text = " " + upper.value, width = pane.width, style = "folder" }] }]
     i = 0
     loop
         if i ≥ h, break
@@ -70,17 +70,23 @@ ExplorerView { pane, nodes, sel, top, focused, title } =>
         i += 1
     return PaneView { overlays = out, top = t, page = h }
 
-| The editor area cut into one column per editor group, left to right —
-| halves for two, as VS Code splits it.
-SplitArea { pane, count } =>
-    if count < 2, return Areas { panes = [pane] }
-    half = 0
-    loop
-        if (half + 1) * 2 > pane.width, break
-        half += 1
-    return Areas { panes = [pane + { width = half }, pane + { x = pane.x + half, width = pane.width - half }] }
+| A terminal's screen in `pane` (below its tab strip): each row's spans
+| with the terminal's own colours, and its cursor when it has the keys.
+TerminalRows { pane, screen, focused } =>
+    out = []
+    if screen = null, return PaneView { overlays = out }
+    loop i, line over screen.lines
+        if i < pane.height
+            spans = []
+            loop span over line
+                spans += span + { style = "plain" }
+            out += { row = 1 + pane.y + i, col = pane.x, spans = spans }
+    view = PaneView { overlays = out }
+    if focused and screen.cursor_visible
+        view = view + { cursor_row = 1 + pane.y + screen.cursor_row, cursor_col = pane.x + screen.cursor_col }
+    return view
 
-| The tab strip: every open file's name (● when it has unsaved changes),
+| The tab strip: every tab's name (● when a file has unsaved changes),
 | the active one lit, scrolled so the active one is always in sight.
 TabStrip { tabs, active, width, focused } =>
     labels = []
@@ -88,7 +94,7 @@ TabStrip { tabs, active, width, focused } =>
     loop tab over tabs
         emit BaseName { path = tab.path } to this get tab_name
         label = " " + tab_name.name + " "
-        if tab.dirty, label = label + "● "
+        if tab.dirty = true, label = label + "● "
         emit Length { value = label } to core get { value as size }
         labels += label
         sizes += size
@@ -108,19 +114,10 @@ TabStrip { tabs, active, width, focused } =>
         spans += { text = label, style = style }
     return TabSpans { spans = spans }
 
-| An editor group: its tabs, then the active file's lines with numbers,
-| scrolled to keep the cursor in sight, coloured when the file is code.
-| `divider` draws a line down its left edge, between two groups.
-EditorView { pane as area, buffer, tabs, active, focused, divider } =>
-    pane = area
+| A file's lines with numbers in `pane` (below its tab strip), scrolled to
+| keep the cursor in sight, coloured when the file is code.
+EditorView { pane, buffer, focused } =>
     out = []
-    if divider
-        i = 0
-        loop
-            if i ≥ area.height, break
-            out += { row = 1 + area.y + i, col = area.x, spans = [{ text = "│", style = "border" }] }
-            i += 1
-        pane = area + { x = area.x + 1, width = area.width - 1 }
     h = pane.height - 1
     tw = pane.width - gutter
     t = buffer.top
@@ -131,10 +128,6 @@ EditorView { pane as area, buffer, tabs, active, focused, divider } =>
     if buffer.col < l, l = buffer.col
     if buffer.col ≥ l + tw, l = buffer.col - tw + 1
     if l < 0, l = 0
-
-    emit TabStrip { tabs = tabs, active = active, width = pane.width, focused = focused } to this get strip
-    out += { row = 1 + pane.y, col = pane.x, spans = [{ text = "", width = pane.width, style = "pane_title" }] }
-    out += { row = 1 + pane.y, col = pane.x, spans = strip.spans }
 
     coloured = null
     if buffer.path[length - 5, length) = ".code"
@@ -171,6 +164,7 @@ welcome = [
     "  codelovesme ide"
     ""
     "  Ctrl+B          Show the Explorer"
+    "  Ctrl+`          A terminal"
     "  Ctrl+K Ctrl+O   Open a Folder"
     "  Alt+F           File menu"
     "  Ctrl+Q          Exit"
@@ -204,16 +198,56 @@ StatusBar { width, row, message, prompt, buffer } =>
         { text = right, width = 34, align = "right", style = style }
     ] }] }
 
-| Everything. `state` is the ide gene's state, whole.
-Frame { state } =>
-    body = state.rows - 2
+| Where every group goes: `Layout` over the groups' slots. Answers the
+| placed groups (`id` is the group's index), or none — the welcome pane.
+Placement { state } =>
     panes = []
-    if state.explorer, panes += { id = "explorer", slot = state.explorer_slot }
-    emit Length { value = state.groups } to core get { value as group_count }
-    if group_count > 0, panes += { id = "editor", slot = "c" }
-    if group_count = 0 and not state.explorer, panes += { id = "welcome", slot = "c" }
-    emit Layout { width = state.cols, height = body, panes = panes, side = state.side_width, edge = state.panel_height } to this get placed
+    loop i, group over state.groups
+        panes += { id = i, slot = group.slot }
+    emit Length { value = panes } to core get { value as count }
+    if count = 0, panes = [{ id = -1, slot = "c" }]
+    emit Layout { width = state.cols, height = state.rows - 2, panes = panes, sizes = state.sizes } to this get placed
+    return Placement { placed = placed.panes }
 
+| One group in its place: the line down its left edge (unless it is at the
+| screen's), its tab strip, and what the active tab shows.
+GroupView { area, group, index, state, screens } =>
+    out = []
+    pane = area
+    if area.x > 0
+        i = 0
+        loop
+            if i ≥ area.height, break
+            out += { row = 1 + area.y + i, col = area.x, spans = [{ text = "│", style = "border" }] }
+            i += 1
+        pane = area + { x = area.x + 1, width = area.width - 1 }
+    focused = index = state.current and state.focus ≠ "none"
+    emit TabStrip { tabs = group.tabs, active = group.active, width = pane.width, focused = focused } to this get strip
+    out += { row = 1 + pane.y, col = pane.x, spans = [{ text = "", width = pane.width, style = "pane_title" }] }
+    out += { row = 1 + pane.y, col = pane.x, spans = strip.spans }
+    view = group.tabs[group.active]
+    content = pane + { y = pane.y + 1, height = pane.height - 1 }
+    result = GroupDrawn { overlays = out, scroll = null, tree = null, page = null, cursor_row = null, cursor_col = null }
+    if view.kind = "explorer"
+        emit BaseName { path = state.folder } to this get folder_name
+        emit ExplorerRows { pane = content, nodes = state.tree, sel = state.tree_sel, top = state.tree_top, focused = focused, title = folder_name.name } to this get rows
+        result = result + { overlays = out + rows.overlays, tree = { top = rows.top, page = rows.page } }
+    if view.kind = "file"
+        buffer = view
+        if index = state.current and state.file ≠ null, buffer = state.file
+        | EditorView starts its lines a row down: the strip's row is that row.
+        emit EditorView { pane = pane, buffer = buffer, focused = focused } to this get rows
+        result = result + { overlays = out + rows.overlays, scroll = { group = index, top = rows.top, left = rows.left }, page = rows.page }
+        if focused, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
+    if view.kind = "terminal"
+        emit TerminalRows { pane = content, screen = screens["$view.id"], focused = focused } to this get rows
+        result = result + { overlays = out + rows.overlays }
+        if rows.cursor_row ≠ null, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
+    return result
+
+| Everything. `state` is the ide gene's state, whole; `placement` from
+| `Placement`, and `screens` the terminals' screens by id.
+Frame { state, placement, screens } =>
     emit BaseName { path = state.folder } to this get folder_name
     title = "ide — " + folder_name.name
     if state.file ≠ null
@@ -227,27 +261,21 @@ Frame { state } =>
     page = 10
     cursor_row = null, cursor_col = null
     views = []
-    loop pane over placed.panes
-        if pane.id = "explorer"
-            emit ExplorerView { pane = pane, nodes = state.tree, sel = state.tree_sel, top = state.tree_top, focused = state.focus = "tree", title = folder_name.name } to this get view
-            overlays = overlays + view.overlays
-            tree_top = view.top
-            tree_page = view.page
-        if pane.id = "editor"
-            emit SplitArea { pane = pane, count = group_count } to this get areas
-            loop gi, area over areas.panes
-                group = state.groups[gi]
-                focused = state.focus = "editor" and gi = state.current
-                emit EditorView { pane = area, buffer = group.tabs[group.active], tabs = group.tabs, active = group.active, focused = focused, divider = gi > 0 } to this get view
-                overlays = overlays + view.overlays
-                views += { top = view.top, left = view.left }
-                if gi = state.current, page = view.page
-                if focused
-                    cursor_row = view.cursor_row
-                    cursor_col = view.cursor_col
-        if pane.id = "welcome"
-            emit WelcomeView { pane = pane } to this get view
-            overlays = overlays + view.overlays
+    loop area over placement.placed
+        if area.id < 0
+            emit WelcomeView { pane = area } to this get welcome_view
+            overlays = overlays + welcome_view.overlays
+        if area.id ≥ 0
+            emit GroupView { area = area, group = state.groups[area.id], index = area.id, state = state, screens = screens } to this get drawn
+            overlays = overlays + drawn.overlays
+            if drawn.scroll ≠ null, views += drawn.scroll
+            if drawn.tree ≠ null
+                tree_top = drawn.tree.top
+                tree_page = drawn.tree.page
+            if area.id = state.current and drawn.page ≠ null, page = drawn.page
+            if drawn.cursor_row ≠ null
+                cursor_row = drawn.cursor_row
+                cursor_col = drawn.cursor_col
 
     emit StatusBar { width = state.cols, row = state.rows - 1, message = state.message, prompt = state.prompt, buffer = state.file } to this get status
     overlays = overlays + status.overlays

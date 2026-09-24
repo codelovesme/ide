@@ -2,12 +2,15 @@
 |
 | This is the one gene that holds state: a gene's top level is its
 | handlers' whole world, so everything that changes lives here and every
-| other gene answers particles (layout, editor, tree, keys, menu, render).
+| other gene answers particles (layout, editor, tree, tabs, keys, menu,
+| settings, render).
 |
 | A key arrives from `tty` as `Key { name, text }`. It goes, first match:
 | to the prompt if one is open, to the menu if one is open, to a command if
-| it is bound (keys.gene.code), else to the focused pane. Then the screen
-| is drawn again. Anything that fails lands in the status bar, not silence.
+| it is bound (keys.gene.code), else to what the focused tab shows — the
+| explorer's rows, a file, or a terminal's shell (which gets most keys, see
+| `HandleKey`). Then the screen is drawn again. Anything that fails lands
+| in the status bar, not silence.
 
 folder = ""
 cols = 80
@@ -21,10 +24,13 @@ tree_sel = 0
 tree_top = 0
 tree_page = 20
 
-| The open files, in editor groups (see tabs.gene.code), and the group
-| with the focus.
+| Everything open, as tabs in groups, each group in a slot (see
+| tabs.gene.code), and the group with the focus.
 groups = []
 current = 0
+
+| The explorer's tab, and the slot it goes back to when shown again.
+explorer_view = { kind = "explorer", path = "Explorer", store = "view" }
 
 | The file the focused group shows, taken out of its tab while it is worked
 | on: `{ path, store, lines, row, col, want, top, left, dirty, readonly }`.
@@ -35,12 +41,13 @@ undo = []
 redo = []
 last_edit = ""
 
-focus = "tree"
+| What has the keys: the focused tab's kind — "tree" (the explorer),
+| "editor" (a file), "terminal", or "none" when nothing is open.
+focus = "none"
 menu = null
 prompt = null
 message = ""
 chord = ""
-explorer = true
 explorer_slot = "l"
 
 max_undo = 200
@@ -58,12 +65,19 @@ prefs = null
 | The user's settings (see settings.gene.code), and where they are kept.
 settings = null
 settings_dir = ""
-side_width = 30
-panel_height = 10
+| The side tracks' sizes (see layout.gene.code), from settings.
+sizes = { left = 30, right = 40, top = 10, bottom = 12 }
 | The key table (see keys.gene.code): the defaults and keybindings.json.
 keytable = null
 
-| Links the six organelles from the folder `from`, relative to where the program
+| Terminals: the pty organelle, how many have been opened (for their
+| names), the size each was last told, and which commands still run while
+| one has the keys (settings: terminal.integrated.commandsToSkipShell).
+shells = null
+terminals_opened = 0
+terminal_sizes = {}
+
+| Links the seven organelles from the folder `from`, relative to where the program
 | was started: `.` in a release bundle (bin/ide starts it there), and
 | `organelles` in a checkout (tools/organelles.sh puts them there).
 Organelles { from } =>
@@ -74,7 +88,8 @@ Organelles { from } =>
     link from + "/tty.so" as tty_at
     link from + "/json.so" as json_at
     link from + "/fs.so" as prefs_at
-    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at }
+    link from + "/pty.so" as pty_at
+    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at, pty = pty_at }
 
 | Links them, and hands each gene the ones it uses.
 UseOrganelles { from } =>
@@ -85,6 +100,7 @@ UseOrganelles { from } =>
     texts = linked.strings
     term = linked.tty
     prefs = linked.prefs
+    shells = linked.pty
     emit SettingsUses { json = linked.json } to this
     emit KeysUses { json = linked.json, strings = linked.strings } to this
     emit EditorUses { texts = linked.strings } to this
@@ -111,6 +127,7 @@ EuglenaHasBeenBorn { cell_name } =>
     emit SettingsAt { dir = config + "/codelovesme-ide" } to this
     emit OpenFolder { path = start_in } to this get opened
     if opened ∈ Failed, return opened
+    if settings["workbench.sideBar.visible"], emit ShowExplorer { focused = true } to this
     emit Start {} to term get started
     if started ∈ Exception, return Failed { reason = started.message }
     cols = started.cols
@@ -133,6 +150,30 @@ Key { name, text } =>
     emit Render to this
     return handled
 
+| A terminal's screen changed (pushed by the pty organelle): draw again.
+TerminalOutput { id } =>
+    if running, emit Render to this
+    return Drawn
+
+| A terminal's shell ended: its tab closes, as in VS Code.
+TerminalExited { id, code } =>
+    emit FindTerminal { id = id } to this get where
+    if where.group ≥ 0
+        emit Stash to this
+        emit CloseAt { groups = groups, current = current, group = where.group, tab = where.tab } to this get closed
+        groups = closed.groups
+        current = closed.current
+        emit Unstash to this
+    if running, emit Render to this
+    return Closed
+
+| Where the terminal `id` is: its group and tab, or -1s.
+FindTerminal { id } =>
+    loop gi, group over groups
+        loop ti, tab over group.tabs
+            if tab.kind = "terminal" and tab.id = id, return Place { group = gi, tab = ti }
+    return Place { group = -1, tab = -1 }
+
 HandleKey { name, text } =>
     if prompt ≠ null
         emit PromptKey { name = name, text = text } to this
@@ -142,6 +183,21 @@ HandleKey { name, text } =>
         menu = chosen.open
         if chosen.command ≠ null, emit Run { command = chosen.command } to this
         return Handled
+    | A terminal gets every key but the few commands that skip the shell,
+    | so Ctrl+C, Ctrl+E, Ctrl+W… are the shell's, as in VS Code.
+    if focus = "terminal"
+        emit Keymap { name = name, pending = "", table = keytable } to this get for_shell
+        skip = settings["terminal.integrated.commandsToSkipShell"]
+        runs = false
+        if for_shell.command ≠ null
+            loop allowed over skip
+                if allowed = for_shell.command, runs = true
+        if runs
+            emit Run { command = for_shell.command } to this
+            return Handled
+        emit Active { groups = groups, current = current } to this get shown
+        emit Type { id = shown.buffer.id, name = name, text = text } to shells
+        return Typed
     emit Keymap { name = name, pending = chord, table = keytable } to this get bound
     chord = bound.pending
     if chord ≠ ""
@@ -154,13 +210,15 @@ HandleKey { name, text } =>
     if bound.chord ≠ ""
         message = "The key combination (" + bound.chord + ") is not a command."
         return Handled
-    if focus = "tree" and not explorer and file ≠ null, focus = "editor"
     if focus = "tree"
         emit TreeKey { name = name } to this
         return Handled
     if focus = "editor" and file ≠ null
         emit EditorKey { name = name, text = text } to this
     return Handled
+
+slot_names = ["tl", "t", "tr", "l", "c", "r", "bl", "b", "br"]
+slot_known = { tl = true, t = true, tr = true, l = true, c = true, r = true, bl = true, b = true, br = true }
 
 | A command, from a key or a menu item.
 Run { command } =>
@@ -180,46 +238,195 @@ Run { command } =>
         groups = split_up.groups
         current = split_up.current
         emit Unstash to this
-        focus = "editor"
-    if command = "focus.group2", emit FocusGroup { index = 1 } to this
+    if command = "view.moveTab"
+        prompt = { kind = "move", label = "Move the tab to (l r t b c tl tr bl br): ", text = "" }
+    if command[0, 13) = "view.moveTab."
+        emit MoveCurrent { into = command[13, length) } to this
+    if command[0, 10) = "view.edge."
+        emit ResizeEdge { direction = command[10, length) } to this
     if command = "file.openFolder"
         prompt = { kind = "open_folder", label = "Open folder: ", text = folder + "/" }
     if command = "view.explorer"
-        explorer = not explorer
-        if not explorer and focus = "tree" and file ≠ null, focus = "editor"
-        if explorer and file = null, focus = "tree"
-        emit StoreSetting { key = "workbench.sideBar.visible", value = explorer } to this
-    if command = "view.explorerLeft", emit StoreSetting { key = "workbench.sideBar.location", value = "left" } to this
-    if command = "view.explorerRight", emit StoreSetting { key = "workbench.sideBar.location", value = "right" } to this
-    if command = "view.wider", emit StoreSetting { key = "workbench.sideBar.width", value = side_width + 2 } to this
-    if command = "view.narrower" and side_width > 10, emit StoreSetting { key = "workbench.sideBar.width", value = side_width - 2 } to this
+        emit FindView { groups = groups, path = explorer_view.path, store = explorer_view.store } to this get shown_at
+        if shown_at.group ≥ 0
+            emit HideExplorer to this
+            return Ran
+        emit ShowExplorer { focused = true } to this
+    if command = "view.explorerLeft", emit PlaceExplorer { slot = "l" } to this
+    if command = "view.explorerRight", emit PlaceExplorer { slot = "r" } to this
     if command = "settings.open", emit OpenPrefsFile { name = "settings.json" } to this
     if command = "keybindings.open", emit OpenPrefsFile { name = "keybindings.json" } to this
-    if command = "focus.explorer"
-        explorer = true
-        focus = "tree"
-    if command = "focus.editor", emit FocusGroup { index = 0 } to this
-    | F6: the explorer, then each editor group, then round again.
-    if command = "focus.next"
-        emit Length { value = groups } to core get { value as open_groups }
-        if focus = "tree"
-            emit FocusGroup { index = 0 } to this
-            return Ran
-        if current + 1 < open_groups
-            emit FocusGroup { index = current + 1 } to this
-            return Ran
-        if explorer
-            focus = "tree"
-            return Ran
-        emit FocusGroup { index = 0 } to this
+    if command = "focus.explorer", emit ShowExplorer { focused = true } to this
+    if command = "focus.editor", emit FocusSlot { slot = "c" } to this
+    if command = "focus.group2", emit FocusSlot { slot = "r" } to this
+    if command = "focus.next", emit FocusNext to this
+    if command = "terminal.toggle", emit ToggleTerminal to this
+    if command = "terminal.new", emit NewTerminal { slot = "" } to this
     if command = "menu.file", menu = { index = 0, item = 0 }
     if command = "menu.view", menu = { index = 1, item = 0 }
     if command = "menu.help", menu = { index = 2, item = 0 }
     if command = "edit.undo" and focus = "editor", emit Undo to this
     if command = "edit.redo" and focus = "editor", emit Redo to this
     if command = "help.keys", emit ShowShortcuts to this
-    if command = "help.about", message = "codelovesme ide 0.1 — a terminal IDE for code, built on euglena"
+    if command = "help.about", message = "codelovesme ide — a terminal IDE for code, built on euglena"
     return Ran
+
+| The focused tab moved to the group in `into`. The explorer remembers a
+| side it is moved to.
+MoveCurrent { into } =>
+    if slot_known[into] ≠ true
+        message = "Error: no place called \"" + into + "\" — l r t b c tl tr bl br"
+        return Failed
+    emit Active { groups = groups, current = current } to this get moving
+    emit Stash to this
+    emit MoveTab { groups = groups, current = current, into = into } to this get moved
+    groups = moved.groups
+    current = moved.current
+    emit Unstash to this
+    if moving.buffer ≠ null and moving.buffer.kind = "explorer"
+        explorer_slot = into
+        if into = "l", emit StoreSetting { key = "workbench.sideBar.location", value = "left" } to this
+        if into = "r", emit StoreSetting { key = "workbench.sideBar.location", value = "right" } to this
+    return Moved
+
+| The explorer shown — its tab again if it is open, else a new one in the
+| slot it was last in — and, when `focused`, given the keys.
+ShowExplorer { focused } =>
+    emit FindView { groups = groups, path = explorer_view.path, store = explorer_view.store } to this get where
+    if where.group ≥ 0
+        if focused, emit Reveal { group = where.group, tab = where.tab } to this
+        return Shown
+    keep = current
+    emit Show { buffer = explorer_view, slot = explorer_slot } to this
+    if not focused, emit FocusGroupAt { index = keep } to this
+    if settings["workbench.sideBar.visible"] ≠ true, emit StoreSetting { key = "workbench.sideBar.visible", value = true } to this
+    return Shown
+
+HideExplorer =>
+    emit FindView { groups = groups, path = explorer_view.path, store = explorer_view.store } to this get where
+    if where.group < 0, return Nothing
+    emit Stash to this
+    emit CloseAt { groups = groups, current = current, group = where.group, tab = where.tab } to this get closed
+    groups = closed.groups
+    current = closed.current
+    emit Unstash to this
+    emit StoreSetting { key = "workbench.sideBar.visible", value = false } to this
+    return Hidden
+
+| View > Explorer on the Left / Right: moved there, and remembered.
+PlaceExplorer { slot } =>
+    explorer_slot = slot
+    location = "left"
+    if slot = "r", location = "right"
+    emit StoreSetting { key = "workbench.sideBar.location", value = location } to this
+    emit FindView { groups = groups, path = explorer_view.path, store = explorer_view.store } to this get where
+    if where.group < 0, return Placed
+    emit Reveal { group = where.group, tab = where.tab } to this
+    emit MoveCurrent { into = slot } to this
+    return Placed
+
+| The tab at (`group`, `tab`) shown and focused.
+Reveal { group, tab } =>
+    emit Stash to this
+    held = groups[group] + { active = tab }
+    groups = groups[0, group) + [held] + groups(group, length)
+    current = group
+    emit Unstash to this
+    return Revealed
+
+FocusGroupAt { index } =>
+    emit Length { value = groups } to core get { value as open_groups }
+    if index < 0 or index ≥ open_groups, return Nothing
+    emit Stash to this
+    current = index
+    emit Unstash to this
+    return Focused
+
+| The group in `slot` focused, if there is one.
+FocusSlot { slot } =>
+    emit GroupAt { groups = groups, slot = slot } to this get at
+    if at.index < 0, return Nothing
+    emit FocusGroupAt { index = at.index } to this
+    return Focused
+
+| F6: every group in slot order — top row, middle row, bottom — round again.
+FocusNext =>
+    order = []
+    loop slot over slot_names
+        emit GroupAt { groups = groups, slot = slot } to this get at
+        if at.index ≥ 0, order += at.index
+    emit Length { value = order } to core get { value as count }
+    if count = 0, return Nothing
+    next = order[0]
+    loop i, index over order
+        if index = current and i + 1 < count, next = order[i + 1]
+    emit FocusGroupAt { index = next } to this
+    return Focused
+
+| Ctrl+K and an arrow: the edge of the focused group's side track moved
+| that way — a group on the left grows with →, one at the bottom with ↑.
+ResizeEdge { direction } =>
+    group = groups[current]
+    if group = null, return Nothing
+    slot = group.slot
+    left_side = slot = "l" or slot = "tl" or slot = "bl"
+    right_side = slot = "r" or slot = "tr" or slot = "br"
+    top_side = slot = "t" or slot = "tl" or slot = "tr"
+    bottom_side = slot = "b" or slot = "bl" or slot = "br"
+    | Which side track it is, and whether the arrow widens it (1) or not (-1).
+    key = ""
+    if left_side, key = "left"
+    if right_side, key = "right"
+    if (direction = "up" or direction = "down") and top_side, key = "top"
+    if (direction = "up" or direction = "down") and bottom_side, key = "bottom"
+    if (direction = "left" or direction = "right") and not left_side and not right_side, key = ""
+    if (direction = "up" or direction = "down") and not top_side and not bottom_side, key = ""
+    grows = { left = "right", right = "left", top = "down", bottom = "up" }
+    change = -2
+    if key ≠ "" and grows[key] = direction, change = 2
+    if key = ""
+        message = "The center grows as the sides shrink — resize a side instead"
+        return Nothing
+    size = sizes[key] + change
+    if size < 3, size = 3
+    emit StoreSetting { key = "workbench.layout." + key, value = size } to this
+    return Resized
+
+| Ctrl+`: a terminal — the first one if there is none (at the bottom); the
+| keys back to the files if a terminal has them; else to the terminal.
+ToggleTerminal =>
+    emit Terminals { groups = groups } to this get open_terminals
+    emit Length { value = open_terminals.ids } to core get { value as count }
+    if count = 0
+        emit NewTerminal { slot = "b" } to this
+        return Toggled
+    if focus = "terminal"
+        emit FocusSlot { slot = "c" } to this get back
+        if back ∉ Focused, emit FocusNext to this
+        return Toggled
+    emit FindTerminal { id = open_terminals.ids[0] } to this get where
+    emit Reveal { group = where.group, tab = where.tab } to this
+    return Toggled
+
+| A new terminal: the shell in the open folder, as a tab in `slot` — or,
+| with `slot` empty, beside the terminal that has the keys, else at the
+| bottom.
+NewTerminal { slot } =>
+    target = slot
+    if target = ""
+        target = "b"
+        if focus = "terminal", target = groups[current].slot
+    open_request = Open { cols = 80, rows = 12, cwd = folder }
+    shell = settings["terminal.integrated.shell"]
+    if shell ≠ "", open_request = open_request + { command = shell }
+    emit open_request to shells get opened
+    if opened ∈ Exception
+        message = "Error: a terminal could not be opened: " + opened.message
+        return Failed
+    terminals_opened += 1
+    view = { kind = "terminal", path = "Terminal " + terminals_opened, store = "terminal", id = opened.id }
+    emit Show { buffer = view, slot = target } to this
+    return Opened
 
 | A key while the status bar is asking something.
 PromptKey { name, text } =>
@@ -227,10 +434,11 @@ PromptKey { name, text } =>
     if name = "escape"
         prompt = null
         return Cancelled
-    if asked.kind = "open_folder"
+    if asked.kind = "open_folder" or asked.kind = "move"
         if name = "enter"
             prompt = null
-            emit OpenFolder { path = asked.text } to this
+            if asked.kind = "open_folder", emit OpenFolder { path = asked.text } to this
+            if asked.kind = "move", emit MoveCurrent { into = asked.text } to this
             return Answered
         if name = "backspace"
             prompt = asked + { text = asked.text[0, length - 1) }
@@ -277,12 +485,20 @@ OpenFolder { path } =>
     tree = kids.nodes
     tree_sel = 0
     tree_top = 0
-    groups = []
+    | The files go; the explorer and the terminals stay where they are.
+    emit Stash to this
+    kept = []
+    loop group over groups
+        tabs = []
+        loop tab over group.tabs
+            if tab.kind ≠ "file", tabs += tab
+        emit Length { value = tabs } to core get { value as left }
+        if left > 0, kept += group + { tabs = tabs, active = 0 }
+    groups = kept
     current = 0
-    file = null
-    undo = []
-    redo = []
-    focus = "tree"
+    emit Unstash to this
+    emit FindView { groups = groups, path = explorer_view.path, store = explorer_view.store } to this get explorer_at
+    if explorer_at.group ≥ 0, emit Reveal { group = explorer_at.group, tab = explorer_at.tab } to this
     return Opened { folder = folder }
 
 TreeKey { name } =>
@@ -318,30 +534,40 @@ TreeKey { name } =>
         tree_sel = up.index
         return Handled
     if not node.is_dir and (name = "enter" or name = "space")
+        keep = current
         emit OpenFile { path = node.path } to this get opened
-        if opened ∈ Opened and name = "enter", focus = "editor"
+        | Space shows the file and leaves the keys in the explorer.
+        if opened ∈ Opened and name = "space", emit FocusGroupAt { index = keep } to this
     return Handled
 
-| A file from the open folder, in its own tab of the focused group — or
-| its tab again, as it was left, if it is open there already.
+| Where a file opens: the focused group when it shows a file, else the
+| center.
+EditorSlot =>
+    emit Active { groups = groups, current = current } to this get shown
+    if shown.buffer ≠ null and shown.buffer.kind = "file", return Slot { slot = groups[current].slot }
+    return Slot { slot = "c" }
+
+| A file from the open folder, in its own tab — or its tab again, wherever
+| it is, as it was left.
 OpenFile { path } =>
     emit Stash to this
-    emit FindTab { groups = groups, current = current, path = path, store = "workspace" } to this get found
-    if found.index ≥ 0
-        emit Show { buffer = groups[current].tabs[found.index] } to this
+    emit FindView { groups = groups, path = path, store = "workspace" } to this get found
+    if found.group ≥ 0
+        emit Reveal { group = found.group, tab = found.tab } to this
         return Opened
     emit ReadFile { path = path } to files get read
     if read ∈ Exception
         message = "Error: " + read.message
         return Failed
     emit Split { value = read.content, separator = "\n" } to texts get split
-    emit Show { buffer = { path = path, store = "workspace", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false } } to this
+    emit EditorSlot to this get into
+    emit Show { buffer = { kind = "file", path = path, store = "workspace", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false }, slot = into.slot } to this
     return Opened
 
-| `buffer` shown in the focused group, in its tab.
-Show { buffer } =>
+| `buffer` shown in the group in `slot`, in its tab, and focused.
+Show { buffer, slot } =>
     emit Stash to this
-    emit OpenTab { groups = groups, current = current, buffer = buffer } to this get opened_tab
+    emit OpenIn { groups = groups, slot = slot, buffer = buffer } to this get opened_tab
     groups = opened_tab.groups
     current = opened_tab.current
     emit Unstash to this
@@ -354,31 +580,30 @@ Stash =>
     groups = put.groups
     return Stashed
 
-| The file the focused group shows, taken out of its tab to be worked on.
+| What the focused group shows decides what has the keys; a file is taken
+| out of its tab to be worked on.
 Unstash =>
     emit Active { groups = groups, current = current } to this get shown
-    file = shown.buffer
+    view = shown.buffer
+    file = null
     undo = []
     redo = []
     last_edit = ""
-    if file ≠ null and file.undo ≠ null, undo = file.undo
-    if file ≠ null and file.redo ≠ null, redo = file.redo
+    focus = "none"
+    if view = null, return Unstashed
+    if view.kind = "explorer", focus = "tree"
+    if view.kind = "terminal", focus = "terminal"
+    if view.kind = "file"
+        focus = "editor"
+        file = view
+        if file.undo ≠ null, undo = file.undo
+        if file.redo ≠ null, redo = file.redo
     return Unstashed
-
-| The focus on editor group `index`, if there is one.
-FocusGroup { index } =>
-    emit Length { value = groups } to core get { value as open_groups }
-    if index ≥ open_groups, return Nothing
-    emit Stash to this
-    current = index
-    emit Unstash to this
-    focus = "editor"
-    return Focused
 
 ShowShortcuts =>
     emit Shortcuts { table = keytable } to this get help
-    emit Show { buffer = { path = "Keyboard Shortcuts", store = "help", lines = help.lines, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = true } } to this
-    focus = "editor"
+    emit EditorSlot to this get into
+    emit Show { buffer = { kind = "file", path = "Keyboard Shortcuts", store = "help", lines = help.lines, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = true }, slot = into.slot } to this
     return Shown
 
 EditorKey { name, text } =>
@@ -466,7 +691,7 @@ SaveAll =>
     emit Stash to this
     loop group over groups
         loop tab over group.tabs
-            if tab.dirty
+            if tab.kind = "file" and tab.dirty
                 emit WriteBuffer { buffer = tab } to this get written
                 if written ∈ Failed
                     message = "Error: " + tab.path + ": " + written.reason
@@ -474,8 +699,13 @@ SaveAll =>
     return Saved
 
 RequestClose =>
-    if file = null, return Nothing
-    if file.dirty
+    emit Active { groups = groups, current = current } to this get shown
+    if shown.buffer = null, return Nothing
+    if shown.buffer.kind = "terminal", emit Close { id = shown.buffer.id } to shells
+    if shown.buffer.kind = "explorer"
+        emit HideExplorer to this
+        return Closed
+    if file ≠ null and file.dirty
         prompt = { kind = "close", label = "Save changes to " + file.path + "? (y / n / Escape) ", text = "" }
         return Asked
     emit CloseFile to this
@@ -488,9 +718,6 @@ CloseFile =>
     groups = closed.groups
     current = closed.current
     emit Unstash to this
-    if file = null
-        focus = "tree"
-        explorer = true
     return Closed
 
 RequestQuit =>
@@ -507,6 +734,9 @@ RequestQuit =>
 
 Quit =>
     running = false
+    emit Terminals { groups = groups } to this get open_terminals
+    loop id over open_terminals.ids
+        emit Close { id = id } to shells
     emit Stop {} to term
     return Quitting
 
@@ -543,12 +773,14 @@ LoadSettings =>
         if read ∉ Exception, text = read.content
     emit ReadSettings { text = text } to this get read_back
     settings = read_back.values
-    explorer = settings["workbench.sideBar.visible"]
-    explorer_slot = "l"
-    if settings["workbench.sideBar.location"] = "right", explorer_slot = "r"
-    side_width = settings["workbench.sideBar.width"]
-    panel_height = settings["workbench.panel.height"]
-    if not explorer and focus = "tree" and file ≠ null, focus = "editor"
+    if settings["workbench.sideBar.location"] = "right" and explorer_slot = "l", explorer_slot = "r"
+    if settings["workbench.sideBar.location"] = "left" and explorer_slot = "r", explorer_slot = "l"
+    sizes = {
+        left = settings["workbench.layout.left"]
+        right = settings["workbench.layout.right"]
+        top = settings["workbench.layout.top"]
+        bottom = settings["workbench.layout.bottom"]
+    }
     if read_back.problem ≠ "", message = "Error: " + read_back.problem
     return read_back
 
@@ -582,8 +814,8 @@ OpenPrefsFile { name } =>
         message = "Error: " + read.message
         return Failed
     emit Split { value = read.content, separator = "\n" } to texts get split
-    emit Show { buffer = { path = name, store = "prefs", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false } } to this
-    focus = "editor"
+    emit EditorSlot to this get into
+    emit Show { buffer = { kind = "file", path = name, store = "prefs", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false }, slot = into.slot } to this
     return Opened
 
 | Everything the screen is drawn from, in one particle.
@@ -603,17 +835,35 @@ State =>
         menu = menu
         prompt = prompt
         message = message
-        explorer = explorer
-        explorer_slot = explorer_slot
-        side_width = side_width
-        panel_height = panel_height
+        sizes = sizes
         keytable = keytable
     }
+
+| The screen of every terminal a group shows, each told first how big it
+| is when that changed.
+TerminalScreens { placed } =>
+    screens = {}
+    loop pane over placed
+        group = groups[pane.id]
+        view = group.tabs[group.active]
+        if view.kind = "terminal"
+            wide = pane.width - 1
+            if pane.x = 0, wide = pane.width
+            high = pane.height - 1
+            size = "" + wide + "x" + high
+            if terminal_sizes["$view.id"] ≠ size and wide > 0 and high > 0
+                emit Resize { id = view.id, cols = wide, rows = high } to shells
+                terminal_sizes = terminal_sizes + { "$view.id" = size }
+            emit Screen { id = view.id } to shells get screen
+            if screen ∉ Exception, screens = screens + { "$view.id" = screen }
+    return Screens { screens = screens }
 
 Render =>
     if not running, return Skipped
     emit State to this get state
-    emit Frame { state = state } to this get screen
+    emit Placement { state = state } to this get placement
+    emit TerminalScreens { placed = placement.placed } to this get terminal_screens
+    emit Frame { state = state, placement = placement, screens = terminal_screens.screens } to this get screen
     if screen ∈ Exception
         emit Draw { rows = [[{ text = " Error: the screen could not be drawn: " + screen.message, style = "status_warn" }]] } to term
         return Failed
@@ -621,11 +871,12 @@ Render =>
     tree_page = screen.tree_page
     editor_page = screen.page
     | Each group keeps how far its file was scrolled.
-    loop i, view over screen.views
-        if i = current and file ≠ null, file = file + { top = view.top, left = view.left }
+    loop scrolled_view over screen.views
+        i = scrolled_view.group
+        if i = current and file ≠ null, file = file + { top = scrolled_view.top, left = scrolled_view.left }
         if i ≠ current
             shown = groups[i].tabs[groups[i].active]
-            emit PutActive { groups = groups, current = i, buffer = shown + { top = view.top, left = view.left } } to this get scrolled
+            emit PutActive { groups = groups, current = i, buffer = shown + { top = scrolled_view.top, left = scrolled_view.left } } to this get scrolled
             groups = scrolled.groups
     emit Draw { overlays = screen.overlays, cursor_row = screen.cursor_row, cursor_col = screen.cursor_col } to term
     return Rendered

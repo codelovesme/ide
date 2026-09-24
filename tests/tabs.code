@@ -1,58 +1,78 @@
-| Tabs and editor groups: opening finds a file's own tab, stepping goes
-| round, closing the last tab of a group closes the group, and a split
-| opens a second group and then only moves between the two.
+| Views in groups, groups in slots: opening finds a view's own tab, a group
+| is made where there is none, closing the last tab of a group closes it,
+| moving a tab carries it to another slot, and any kind of view is a tab.
 
 link "../src/tabs.gene.code"
 
-a = { path = "a.code", store = "workspace", dirty = false }
-b = { path = "b.code", store = "workspace", dirty = true }
-c = { path = "c.code", store = "workspace", dirty = false }
+a = { kind = "file", path = "a.code", store = "workspace", dirty = false }
+b = { kind = "file", path = "b.code", store = "workspace", dirty = true }
+explorer = { kind = "explorer", path = "Explorer", store = "view" }
+shell = { kind = "terminal", path = "Terminal 1", store = "terminal", id = 7 }
 
-emit OpenTab { groups = [], current = 0, buffer = a } to this get one
-assert one.groups = [{ tabs = [a], active = 0 }]
-emit OpenTab { groups = one.groups, current = 0, buffer = b } to this get two
-assert two.groups = [{ tabs = [a, b], active = 1 }]
+| The explorer on the left, files in the center.
+emit OpenIn { groups = [], slot = "l", buffer = explorer } to this get left
+assert left.groups = [{ slot = "l", tabs = [explorer], active = 0 }]
+assert left.current = 0
+emit OpenIn { groups = left.groups, slot = "c", buffer = a } to this get one
+emit OpenIn { groups = one.groups, slot = "c", buffer = b } to this get two
+assert two.groups[1] = { slot = "c", tabs = [a, b], active = 1 }
+assert two.current = 1
+| An open view gets its tab back.
+emit OpenIn { groups = two.groups, slot = "c", buffer = a + { dirty = true } } to this get again
+assert again.groups[1] = { slot = "c", tabs = [a, b], active = 0 }
+emit GroupAt { groups = again.groups, slot = "l" } to this get where
+assert where.index = 0
+emit FindView { groups = again.groups, path = "Explorer", store = "view" } to this get found
+assert found = { _class = "Place", group = 0, tab = 0 }
 
-| A new tab goes after the active one; an open file gets its tab back.
-emit StepTab { groups = two.groups, current = 0, step = 1 } to this get round
+| A terminal at the bottom, then moved into the center as a tab.
+emit OpenIn { groups = again.groups, slot = "b", buffer = shell } to this get with_shell
+assert with_shell.groups[2] = { slot = "b", tabs = [shell], active = 0 }
+emit MoveTab { groups = with_shell.groups, current = 2, into = "c" } to this get moved
+emit Length { value = moved.groups } to core get { value as after_move }
+assert after_move = 2
+assert moved.groups[1] = { slot = "c", tabs = [a, shell, b], active = 1 }
+assert moved.current = 1
+| The explorer moved into the center too: the left closes.
+emit MoveTab { groups = moved.groups, current = 0, into = "c" } to this get all_center
+assert all_center.groups = [{ slot = "c", tabs = [a, shell, explorer, b], active = 2 }]
+assert all_center.current = 0
+| Moving to where it is does nothing.
+emit MoveTab { groups = all_center.groups, current = 0, into = "c" } to this get stay
+assert stay.groups = all_center.groups
+
+| Stepping goes round.
+emit StepTab { groups = all_center.groups, current = 0, step = 1 } to this get stepped
+assert stepped.groups[0].active = 3
+emit StepTab { groups = stepped.groups, current = 0, step = 1 } to this get round
 assert round.groups[0].active = 0
-emit OpenTab { groups = round.groups, current = 0, buffer = c } to this get three
-assert three.groups = [{ tabs = [a, c, b], active = 1 }]
-emit OpenTab { groups = three.groups, current = 0, buffer = { path = "b.code", store = "workspace", dirty = false } } to this get again
-assert again.groups = [{ tabs = [a, c, b], active = 2 }]
-| The same path in another store is another file.
-emit FindTab { groups = again.groups, current = 0, path = "b.code", store = "prefs" } to this get elsewhere
-assert elsewhere.index = -1
 
-emit StepTab { groups = again.groups, current = 0, step = -1 } to this get back
-assert back.groups[0].active = 1
+| Closing: the active tab, then the last tab closes the group and the
+| center's group takes the focus.
+emit CloseTab { groups = [{ slot = "l", tabs = [explorer], active = 0 }, { slot = "c", tabs = [a, b], active = 1 }], current = 0 } to this get no_left
+assert no_left.groups = [{ slot = "c", tabs = [a, b], active = 1 }]
+assert no_left.current = 0
+emit CloseTab { groups = no_left.groups, current = 0 } to this get one_left
+assert one_left.groups = [{ slot = "c", tabs = [a], active = 0 }]
+| Closing a tab somewhere else — a terminal that ended — keeps the focus.
+groups3 = [{ slot = "l", tabs = [explorer], active = 0 }, { slot = "c", tabs = [a, b], active = 1 }, { slot = "b", tabs = [shell], active = 0 }]
+emit CloseAt { groups = groups3, current = 1, group = 2, tab = 0 } to this get shell_gone
+assert shell_gone.groups = [{ slot = "l", tabs = [explorer], active = 0 }, { slot = "c", tabs = [a, b], active = 1 }]
+assert shell_gone.current = 1
+emit CloseAt { groups = groups3, current = 2, group = 1, tab = 0 } to this get a_gone
+assert a_gone.groups[1] = { slot = "c", tabs = [b], active = 0 }
+assert a_gone.current = 2
+emit CloseAt { groups = groups3, current = 2, group = 0, tab = 0 } to this get left_gone
+assert left_gone.current = 1
 
-| What the group shows, and changing it in place.
-emit Active { groups = back.groups, current = 0 } to this get shown
-assert shown.buffer = c
-emit PutActive { groups = back.groups, current = 0, buffer = c + { dirty = true } } to this get edited
-assert edited.groups[0].tabs[1].dirty
-
-| Closing the active tab shows its neighbour; closing the last one closes
-| the group.
-emit CloseTab { groups = [{ tabs = [a, c, b], active = 2 }], current = 0 } to this get closed_last
-assert closed_last.groups = [{ tabs = [a, c], active = 1 }]
-emit CloseTab { groups = [{ tabs = [a], active = 0 }], current = 0 } to this get none
-assert none.groups = []
-
-| A split opens a second group with the file, focused; with two, it only
-| moves the focus. Closing the right group's last tab leaves the left.
-emit SplitGroups { groups = [{ tabs = [a, b], active = 1 }], current = 0, buffer = b } to this get split
-assert split.groups = [{ tabs = [a, b], active = 1 }, { tabs = [b], active = 0 }]
+| Split Editor opens the file again on the right.
+emit SplitGroups { groups = [{ slot = "c", tabs = [a], active = 0 }], current = 0, buffer = a } to this get split
+assert split.groups = [{ slot = "c", tabs = [a], active = 0 }, { slot = "r", tabs = [a], active = 0 }]
 assert split.current = 1
-emit SplitGroups { groups = split.groups, current = 1, buffer = b } to this get moved
-assert moved.current = 0
-emit Length { value = moved.groups } to core get { value as still_two }
-assert still_two = 2
-emit CloseTab { groups = split.groups, current = 1 } to this get merged
-assert merged.groups = [{ tabs = [a, b], active = 1 }]
-assert merged.current = 0
 
-emit Unsaved { groups = split.groups } to this get unsaved
-assert unsaved.count = 2
+| What is unsaved counts files only; the terminals, by id.
+emit Unsaved { groups = all_center.groups } to this get unsaved
+assert unsaved.count = 1
 assert unsaved.first = "b.code"
+emit Terminals { groups = all_center.groups } to this get terminals
+assert terminals.ids = [7]
