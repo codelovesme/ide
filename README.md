@@ -36,18 +36,34 @@ where — `l r t b c tl tr bl br` — and takes the tab there, beside whatever
 is in that slot already; commands `view.moveTab.<slot>` do it in one key
 (keybindings.json). So the explorer can be a tab in the center, a terminal
 can sit on the right, two files can share a group or stand side by side.
-The explorer is one tab like the rest: Ctrl+B takes it away and brings it
-back where it was.
+The explorer is one tab like the rest.
+
+### Pane keys
+
+| | |
+|---|---|
+| Ctrl+B | the Explorer |
+| Ctrl+J (or Ctrl+\`) | the terminal |
+| Ctrl+L | the AI chat |
+| Ctrl+E | the files |
+
+Each works the same way: if the pane is not shown, it is opened and given
+the keys; if it is shown, it is given the keys; if it already has them, it
+is put away. Terminals put away keep running and files keep their unsaved
+edits and undo — the key brings them back where they were (so does opening
+a file, or a new terminal). The pane keys work from inside a terminal too.
+Ctrl+J needs a terminal that tells it apart from Enter (kitty, foot,
+WezTerm, Ghostty, Alacritty); elsewhere Ctrl+\` does the same.
 
 ### The terminal
 
-Ctrl+\` (View > Terminal) opens one at the bottom, in the open folder, and
-moves the keys between it and the files; View > New Terminal (or Ctrl+K T)
+Ctrl+J / Ctrl+\` (View > Terminal) opens one at the bottom, in the open
+folder (see Pane keys); View > New Terminal (or Ctrl+K T)
 adds another. It is your shell (`$SHELL`, or `terminal.integrated.shell`),
 on a real pseudo-terminal, with its colours. While it has the keys, every
 key goes to the shell — Ctrl+C, Ctrl+E, Ctrl+W are the shell's — except the
 commands listed in `terminal.integrated.commandsToSkipShell` (F6, Ctrl+Tab,
-the menus, Ctrl+Q, Ctrl+\` …). `exit` closes its tab. Most terminals send
+the menus, Ctrl+Q, the pane keys …). `exit` closes its tab. Most terminals send
 Ctrl+\` as Ctrl+Space, which is bound too. Not yet: scrollback, the mouse.
 
 ### The AI chat
@@ -81,8 +97,8 @@ the project in `.ide/memory.md`, read with the instructions every time.
 attaches more of that. Enter asks, Alt+Enter is a new line, PgUp/PgDn
 scroll, Ctrl+C stops the answer, Escape gives the keys back to the files,
 Ctrl+W closes the tab (the conversation stays for next time), View > New
-AI Chat starts over. From a terminal: Ctrl+\` back to the files, then
-Ctrl+L (the shell keeps Ctrl+L to clear its screen).
+AI Chat starts over. Ctrl+L works from a terminal too (so there it no
+longer clears the shell's screen — `clear` does).
 
 **The model is yours to choose**, in settings.json (Settings > AI Model…
 writes the entries in for you):
@@ -144,7 +160,7 @@ meanwhile. What you are looking at still goes with each question; they
 read `CLAUDE.md` / `AGENTS.md` themselves, and the conversation carries
 on until View > New AI Chat.
 
-Shift+Tab in the chat (or Settings > AI: Ask ↔ Edit) switches the mode,
+Alt+E (or Settings > AI: Ask ↔ Edit) switches the mode,
 shown on the line over the input:
 
 - **Ask** — it only reads (Claude in plan mode, Codex in a read-only
@@ -205,10 +221,10 @@ the editor (center); the grid is ready for more.
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |
 | Alt+← / Alt+→ | Go Back / Go Forward: where the cursor has been — another file, or a jump of 10 lines or more (View menu too) |
-| Ctrl+Tab (or Ctrl+PgDn) | Next tab, round and round (Ctrl+PgUp goes back) — some terminals (GNOME's) send Ctrl+Tab as plain Tab; Ctrl+PgDn works there |
+| Ctrl+Tab / Shift+Tab | Next / previous tab, round and round — GNOME's terminals send Ctrl+Tab as a plain Tab, so there only Shift+Tab arrives. In a terminal tab Shift+Tab is the shell's |
 | Ctrl+\\ | Split Editor: the file again, in a second editor on the right |
-| Ctrl+B | Show / hide the Explorer |
-| Ctrl+Shift+E (or Ctrl+E, Ctrl+0) / Ctrl+1 / Ctrl+2 | Focus the Explorer / the first / the second editor |
+| Ctrl+B / Ctrl+J / Ctrl+L / Ctrl+E | The Explorer / the terminal / the AI chat / the files: open and focus; focus; put away (see Pane keys) |
+| Ctrl+0 / Ctrl+1 / Ctrl+2 | Focus the Explorer / the first / the second editor |
 | F6 | Explorer, then each editor, round again |
 | Alt+F Alt+V Alt+S Alt+H, F10 | Menus: arrows, Enter, Escape |
 | Ctrl+Z / Ctrl+Y | Undo / redo (typing is one step per run) |
@@ -216,16 +232,14 @@ the editor (center); the grid is ready for more.
 | Ctrl+, | Settings (settings.json) |
 | Ctrl+K and an arrow | Move the focused side's edge (the left grows with →, the bottom with ↑) |
 | Ctrl+K M | Move the tab to another place |
-| Ctrl+\` (Ctrl+Space) / Ctrl+K T | The terminal / a new terminal |
-| Ctrl+L (Ctrl+Alt+I) | The AI chat: open it, or the keys to and from it |
+| Ctrl+K T | A new terminal |
 | Alt+M | The AI, its model and its effort |
 
 In the editor: arrows, Home (first non-space, then column 0), End,
-PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab and Shift+Tab
-indent by four spaces (code refuses tabs); Enter keeps the indentation and
+PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab indents by
+four spaces and Ctrl+K Shift+Tab takes a level back (code refuses tabs); Enter keeps the indentation and
 adds a level after a block header (`… =>`, `if …`, `loop …` without a
-comma). Most terminals send Ctrl+Shift+E as Ctrl+E, so that works too.
-Ctrl+1 needs a terminal that tells it apart from 1 (kitty, foot, WezTerm,
+comma). Ctrl+1 needs a terminal that tells it apart from 1 (kitty, foot, WezTerm,
 xterm, tmux with `extended-keys`); F6 always works.
 
 ## Settings

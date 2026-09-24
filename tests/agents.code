@@ -106,7 +106,7 @@ emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code
 emit StoreSetting { key = "ai.provider", value = "fake" } to this
 emit ChatNotice to this
 emit State to this get labelled
-assert labelled.chat_label = "Claude Code · Ask (Shift+Tab) · Alt+M: switch"
+assert labelled.chat_label = "Claude Code · Ask (Alt+E) · Alt+M: switch"
 assert labelled.ai_status = "Claude Code · Ask"
 
 | The model picker (Alt+M): the AIs, the models, the efforts, side by
@@ -228,7 +228,7 @@ assert resumed.yes
 | Edit: it changes a file and makes one; the chat says so, Show AI Changes
 | opens their diffs, Undo AI Changes puts them back.
 emit HandleKey { name = "ctrl+l", text = "" } to this
-emit HandleKey { name = "shift+tab", text = "" } to this
+emit HandleKey { name = "alt+e", text = "" } to this
 emit State to this get edit_mode
 assert edit_mode.settings["ai.agent.mode"] = "edit"
 emit AgentRun { question = "change it" } to this get edit_run
@@ -257,7 +257,7 @@ assert said_missing.yes
 
 | Ctrl+C stops a running agent.
 emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh" } } } to this
-emit HandleKey { name = "shift+tab", text = "" } to this
+emit HandleKey { name = "alt+e", text = "" } to this
 emit AskAbout { question = "slow one" } to this
 emit HandleKey { name = "ctrl+c", text = "" } to this
 emit State to this get stopped

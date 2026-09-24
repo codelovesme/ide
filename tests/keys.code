@@ -22,6 +22,8 @@ assert table.labels["view.edge.right"] = "Ctrl+K →"
 assert table.labels["terminal.toggle"] = "Ctrl+`"
 assert table.keys["ctrl+tab"] = "tab.next"
 assert table.keys["ctrl+shift+tab"] = null
+assert table.keys["shift+tab"] = "tab.previous" and table.keys["ctrl+tab"] = "tab.next"
+assert table.keys["ctrl+pagedown"] = null and table.keys["ctrl+pageup"] = null
 assert table.labels["tab.next"] = "Ctrl+Tab"
 emit Keymap { name = "ctrl+s", pending = "", table = table } to this get save
 assert save.command = "file.save"
@@ -60,5 +62,5 @@ assert broken.keys["ctrl+s"] = "file.save"
 emit Shortcuts { table = mine } to this get list
 found = false
 loop line over list.lines
-    if line = "  Ctrl+Shift+B" + "             " + "Show / hide the Explorer   (view.explorer)", found = true
+    if line = "  Ctrl+Shift+B" + "             " + "Explorer: show it and focus it; put it away when focused   (view.explorer)", found = true
 assert found

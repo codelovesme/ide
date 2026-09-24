@@ -131,9 +131,9 @@ emit HandleKey { name = "ctrl+y", text = "" } to this
 emit State to this get redone
 assert redone.file.lines[0] = "xy| hi"
 
-| Ctrl+E moves the keys to the explorer, where the arrows move the
-| selection, not the cursor; F6 goes on to the file.
-emit HandleKey { name = "ctrl+e", text = "" } to this
+| Ctrl+B moves the keys to the explorer (it is shown), where the arrows
+| move the selection, not the cursor; F6 goes on to the file.
+emit HandleKey { name = "ctrl+b", text = "" } to this
 emit State to this get in_tree
 assert in_tree.focus = "tree"
 emit HandleKey { name = "up", text = "" } to this
@@ -166,14 +166,14 @@ loop o over screen.overlays
             kinds += span.style
 assert kinds = ["line_number", "plain", "class", "plain", "variable", "plain", "operator", "plain"]
 
-| Tabs: a second file opens beside the first; Ctrl+PgUp / PgDn switch;
+| Tabs: a second file opens beside the first; Shift+Tab / Ctrl+Tab switch;
 | edits stay with their tab.
 emit OpenFile { path = "src/notes.md" } to this
 emit HandleKey { name = "q", text = "q" } to this
-emit HandleKey { name = "ctrl+pageup", text = "" } to this
+emit HandleKey { name = "shift+tab", text = "" } to this
 emit State to this get first_tab
 assert first_tab.file.path = "hello.code"
-emit HandleKey { name = "ctrl+pagedown", text = "" } to this
+emit HandleKey { name = "ctrl+tab", text = "" } to this
 emit State to this get second_tab
 assert second_tab.file.lines[0] = "qnotes"
 emit Framed to this get tabbed
@@ -192,7 +192,7 @@ emit WhereNow to this get moved_right
 assert moved_right.groups = ["l:explorer", "c:file", "r:file"]
 emit State to this get after_move
 assert after_move.file.path = "src/notes.md"
-emit HandleKey { name = "ctrl+e", text = "" } to this
+emit HandleKey { name = "ctrl+b", text = "" } to this
 emit Run { command = "view.moveTab.c" } to this
 emit WhereNow to this get explorer_center
 assert explorer_center.groups = ["c:explorer", "r:file"]
@@ -237,7 +237,7 @@ assert with_terminal.groups = ["c:file", "r:file", "l:explorer", "b:terminal"]
 emit State to this get in_terminal
 assert in_terminal.focus = "terminal"
 terminal_id = in_terminal.groups[3].tabs[0].id
-emit HandleKey { name = "ctrl+e", text = "" } to this
+emit HandleKey { name = "ctrl+w", text = "" } to this
 emit State to this get still_terminal
 assert still_terminal.focus = "terminal"
 emit HandleKey { name = "f6", text = "" } to this
@@ -247,14 +247,41 @@ assert left_terminal.focus ≠ "terminal"
 emit HandleKey { name = "ctrl+`", text = "" } to this
 emit State to this get back_in_terminal
 assert back_in_terminal.focus = "terminal"
+| Ctrl+J with the terminal focused puts it away, its shell still running;
+| Ctrl+J brings it back where it was, with the keys.
+emit HandleKey { name = "ctrl+j", text = "" } to this
+emit WhereNow to this get terminal_away
+assert terminal_away.groups = ["c:file", "r:file", "l:explorer"]
+emit State to this get after_away
+assert after_away.focus ≠ "terminal"
+emit HandleKey { name = "ctrl+j", text = "" } to this
+emit WhereNow to this get terminal_back
+assert terminal_back.groups = ["c:file", "r:file", "l:explorer", "b:terminal"]
+emit State to this get terminal_back_state
+assert terminal_back_state.focus = "terminal" and terminal_back_state.groups[3].tabs[0].id = terminal_id
+| Ctrl+E: the files get the keys; again, they are put away (the edited
+| one too, edits kept); again, back.
+emit HandleKey { name = "ctrl+e", text = "" } to this
+emit State to this get in_files
+assert in_files.focus = "editor"
+edited_before = in_files.file
+emit HandleKey { name = "ctrl+e", text = "" } to this
+emit WhereNow to this get files_away
+assert files_away.groups = ["l:explorer", "b:terminal"]
+emit HandleKey { name = "ctrl+e", text = "" } to this
+emit State to this get files_back
+assert files_back.focus = "editor" and files_back.file.path = edited_before.path and files_back.file.lines = edited_before.lines
+emit WhereNow to this get files_back_where
+assert files_back_where.groups = ["l:explorer", "b:terminal", "c:file", "r:file"]
+emit HandleKey { name = "ctrl+j", text = "" } to this
 | Moved into the center, as a tab beside the files.
 emit Run { command = "view.moveTab.c" } to this
 emit WhereNow to this get terminal_center
-assert terminal_center.groups = ["c:terminal", "r:file", "l:explorer"]
+assert terminal_center.groups = ["l:explorer", "c:terminal", "r:file"]
 | A terminal whose shell ended closes its tab.
 emit TerminalExited { id = terminal_id, code = 0 } to this
 emit WhereNow to this get terminal_gone
-assert terminal_gone.groups = ["c:file", "r:file", "l:explorer"]
+assert terminal_gone.groups = ["l:explorer", "c:file", "r:file"]
 emit Close { id = terminal_id } to shells
 
 | Closing: an edited file asks; n closes it unsaved.
@@ -264,7 +291,7 @@ emit State to this get asked
 assert asked.prompt.kind = "close"
 emit HandleKey { name = "n", text = "n" } to this
 emit WhereNow to this get right_closed
-assert right_closed.groups = ["c:file", "l:explorer"]
+assert right_closed.groups = ["l:explorer", "c:file"]
 
 | Quitting with an unsaved file asks; Escape keeps it.
 emit FocusSlot { slot = "c" } to this
@@ -341,10 +368,9 @@ emit SetLines { lines = ["[", "  { \"key\": \"ctrl+g\", \"command\": \"view.expl
 emit HandleKey { name = "ctrl+s", text = "" } to this
 emit State to this get bindings_saved
 assert bindings_saved.message = "Keyboard shortcuts saved and applied"
-emit WhereNow to this get before_g
 emit HandleKey { name = "ctrl+g", text = "" } to this
-emit WhereNow to this get after_g
-assert after_g.groups ≠ before_g.groups
+emit State to this get after_g
+assert after_g.focus = "tree"
 
 | The AI chat: Ctrl+L opens it on the right, with the keys.
 emit HandleKey { name = "ctrl+g", text = "" } to this

@@ -22,6 +22,7 @@ menus = [
             { label = "Explorer on the Left", command = "view.explorerLeft" }
             { label = "Explorer on the Right", command = "view.explorerRight" }
             { label = "Terminal", command = "terminal.toggle" }
+            { label = "Editor", command = "editor.toggle" }
             { label = "New Terminal", command = "terminal.new" }
             { label = "AI Chat", command = "ai.toggle" }
             { label = "New AI Chat", command = "ai.newChat" }

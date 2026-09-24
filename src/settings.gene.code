@@ -46,7 +46,6 @@ defaults = {
         "terminal.toggle"
         "focus.next"
         "tab.next"
-        "tab.previous"
         "menu.file"
         "menu.view"
         "menu.settings"

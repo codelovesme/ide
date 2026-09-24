@@ -7,7 +7,7 @@
 | and reads what it does as it does it — one JSON event a line — into the
 | chat: its words, and each step it takes, in grey.
 |
-| Two modes, switched with Shift+Tab in the chat:
+| Two modes, switched with Alt+E:
 |
 |   ask   it may only read — Claude in plan mode, Codex in a read-only
 |         sandbox;

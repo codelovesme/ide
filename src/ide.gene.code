@@ -67,6 +67,15 @@ spot_at = -1
 navigating = false
 max_spots = 50
 
+| Panes put away by their key (Ctrl+J, Ctrl+E): terminals and files, each
+| `{ slot, view, active }`, kept whole — shells still running, edits and
+| undo kept — until the key brings them back. (The explorer and the chat
+| need no keeping: they are drawn from state that stays.)
+hidden_panes = { terminal = [], file = [] }
+| The pane keys run from inside a terminal too, whatever
+| terminal.integrated.commandsToSkipShell says.
+pane_commands = { "view.explorer" = true, "terminal.toggle" = true, "ai.toggle" = true, "editor.toggle" = true }
+
 | The organelles. They are linked while the program runs, not when it is
 | built — a built program would otherwise carry the full path each one had
 | on the machine that built it. See `Organelles`.
@@ -209,6 +218,10 @@ TerminalOutput { id } =>
 
 | A terminal's shell ended: its tab closes, as in VS Code.
 TerminalExited { id, code } =>
+    still_hidden = []
+    loop kept over hidden_panes.terminal
+        if kept.view.id ≠ id, still_hidden += kept
+    hidden_panes = hidden_panes + { terminal = still_hidden }
     if chat.agent ≠ null and id = chat.agent.pty
         emit AgentFinished to this
         if running, emit Render to this
@@ -249,6 +262,7 @@ HandleKey { name, text } =>
         emit Keymap { name = name, pending = "", table = keytable } to this get for_shell
         skip = settings["terminal.integrated.commandsToSkipShell"]
         runs = false
+        if for_shell.command ≠ null and pane_commands[for_shell.command] = true, runs = true
         if for_shell.command ≠ null
             loop allowed over skip
                 if allowed = for_shell.command, runs = true
@@ -313,12 +327,7 @@ Run { command } =>
     if command = "file.new", emit NewFile to this
     if command = "file.openFolder"
         prompt = { kind = "open_folder", label = "Open folder: ", text = folder + "/" }
-    if command = "view.explorer"
-        emit FindView { groups = groups, path = explorer_view.path, store = explorer_view.store } to this get shown_at
-        if shown_at.group ≥ 0
-            emit HideExplorer to this
-            return Ran
-        emit ShowExplorer { focused = true } to this
+    if command = "view.explorer", emit TogglePane { kind = "explorer" } to this
     if command = "view.explorerLeft", emit PlaceExplorer { slot = "l" } to this
     if command = "view.explorerRight", emit PlaceExplorer { slot = "r" } to this
     if command = "settings.open", emit OpenPrefsFile { name = "settings.json" } to this
@@ -327,15 +336,17 @@ Run { command } =>
     if command = "focus.editor", emit FocusSlot { slot = "c" } to this
     if command = "focus.group2", emit FocusSlot { slot = "r" } to this
     if command = "focus.next", emit FocusNext to this
-    if command = "terminal.toggle", emit ToggleTerminal to this
+    if command = "terminal.toggle", emit TogglePane { kind = "terminal" } to this
+    if command = "editor.toggle", emit TogglePane { kind = "file" } to this
     if command = "terminal.new", emit NewTerminal { slot = "" } to this
     if command = "menu.file", menu = { index = 0, item = 0 }
     if command = "menu.view", menu = { index = 1, item = 0 }
     if command = "menu.settings", menu = { index = 2, item = 0 }
     if command = "menu.help", menu = { index = 3, item = 0 }
+    if command = "edit.outdent" and focus = "editor" and file ≠ null, emit EditorKey { name = "shift+tab", text = "" } to this
     if command = "edit.undo" and focus = "editor", emit Undo to this
     if command = "edit.redo" and focus = "editor", emit Redo to this
-    if command = "ai.toggle", emit ToggleChat to this
+    if command = "ai.toggle", emit TogglePane { kind = "chat" } to this
     if command = "ai.configure", emit ConfigureAi to this
     if command = "ai.newChat"
         emit DropProposal to this
@@ -502,6 +513,7 @@ ToggleTerminal =>
 | with `slot` empty, beside the terminal that has the keys, else at the
 | bottom.
 NewTerminal { slot } =>
+    emit RestorePane { kind = "terminal" } to this
     target = slot
     if target = ""
         target = "b"
@@ -649,6 +661,7 @@ EditorSlot =>
 | A file from the open folder, in its own tab — or its tab again, wherever
 | it is, as it was left.
 OpenFile { path } =>
+    emit RestorePane { kind = "file" } to this
     emit Stash to this
     emit FindView { groups = groups, path = path, store = "workspace" } to this get found
     if found.group ≥ 0
@@ -809,7 +822,8 @@ SaveFile =>
 | Every file with unsaved changes written — before exit, when asked.
 SaveAll =>
     emit Stash to this
-    loop group over groups
+    emit WithHidden to this get everything
+    loop group over everything.groups
         loop tab over group.tabs
             if tab.kind = "file" and tab.dirty
                 emit WriteBuffer { buffer = tab } to this get written
@@ -842,7 +856,8 @@ CloseFile =>
 
 RequestQuit =>
     emit Stash to this
-    emit Unsaved { groups = groups } to this get unsaved
+    emit WithHidden to this get everything
+    emit Unsaved { groups = everything.groups } to this get unsaved
     if unsaved.count = 1
         prompt = { kind = "quit", label = "Save changes to " + unsaved.first + " before exit? (y / n / Escape) ", text = "" }
         return Asked
@@ -854,7 +869,8 @@ RequestQuit =>
 
 Quit =>
     running = false
-    emit Terminals { groups = groups } to this get open_terminals
+    emit WithHidden to this get everything
+    emit Terminals { groups = everything.groups } to this get open_terminals
     loop id over open_terminals.ids
         emit Close { id = id } to shells
     emit Stop {} to term
@@ -1062,7 +1078,7 @@ ChatNotice =>
         ai_status = provider.title
         if provider.model ≠ "", ai_status = ai_status + " · " + shown_model
         if provider.effort ≠ "", ai_status = ai_status + " · " + provider.effort
-        chat_label = ai_status + " · " + mode + " (Shift+Tab) · Alt+M: switch"
+        chat_label = ai_status + " · " + mode + " (Alt+E) · Alt+M: switch"
         ai_status = ai_status + " · " + mode
     if provider.problem = "" and provider.runner = "api"
         ai_status = provider.name
@@ -1079,9 +1095,6 @@ ChatKey { name, text } =>
         return Handled
     if name = "ctrl+c"
         emit Run { command = "ai.cancel" } to this
-        return Handled
-    if name = "shift+tab"
-        emit ToggleAgentMode to this
         return Handled
     emit ChatInput { input = chat.input, name = name, text = text, page = chat_page } to this get typed
     scroll = chat.scroll + typed.scroll
@@ -1935,7 +1948,7 @@ ShowAiChanges =>
         emit Show { buffer = view, slot = into.slot } to this
     return Shown
 
-| Shift+Tab in the chat: ask ↔ edit, remembered in settings.
+| Alt+E: ask ↔ edit, remembered in settings.
 ToggleAgentMode =>
     mode = "edit"
     if settings["ai.agent.mode"] = "edit", mode = "ask"
@@ -2215,3 +2228,101 @@ GoSpot { step } =>
         file = file + { row = row, col = spot.col, want = spot.col }
     navigating = false
     return Went
+
+
+| ── Pane keys ──────────────────────────────────────────────────────────
+|
+| Ctrl+B the explorer, Ctrl+J the terminal, Ctrl+L the AI chat, Ctrl+E
+| the files: shown and given the keys if they are not; given the keys if
+| they are shown; put away if they have the keys.
+
+| The pane of `kind` ("explorer", "terminal", "chat", "file") toggled.
+TogglePane { kind } =>
+    emit Active { groups = groups, current = current } to this get shown
+    if shown.buffer ≠ null and shown.buffer.kind = kind
+        emit HidePane { kind = kind } to this
+        return Hidden
+    | Shown somewhere: the keys to it (the active tab of that kind first).
+    where = null
+    loop gi, group over groups
+        active_view = group.tabs[group.active]
+        if where = null and active_view.kind = kind, where = { group = gi, tab = group.active }
+    loop gi, group over groups
+        loop ti, tab over group.tabs
+            if where = null and tab.kind = kind, where = { group = gi, tab = ti }
+    if where ≠ null
+        emit Reveal { group = where.group, tab = where.tab } to this
+        return Focused
+    if kind = "terminal" or kind = "file"
+        emit Length { value = hidden_panes[kind] } to core get { value as kept }
+        if kept > 0
+            emit RestorePane { kind = kind } to this
+            return Restored
+    if kind = "explorer", emit ShowExplorer { focused = true } to this
+    if kind = "chat", emit ShowChat to this
+    if kind = "terminal", emit NewTerminal { slot = "b" } to this
+    if kind = "file", message = "No file is open — Ctrl+N makes one, the Explorer opens one"
+    return Shown
+
+| The pane of `kind` put away: the explorer and the chat closed (they come
+| back as they were), terminals and files kept in `hidden_panes`.
+HidePane { kind } =>
+    if kind = "explorer"
+        emit HideExplorer to this
+        return Hidden
+    emit Stash to this
+    kept = hidden_panes[kind]
+    if kept = null, kept = []
+    left = []
+    loop gi, group over groups
+        tabs = []
+        active = 0
+        loop ti, tab over group.tabs
+            if tab.kind = kind and kind ≠ "chat"
+                kept += { slot = group.slot, view = tab, active = gi = current and ti = group.active }
+            if tab.kind ≠ kind
+                if ti = group.active
+                    emit Length { value = tabs } to core get { value as at }
+                    active = at
+                tabs += tab
+        emit Length { value = tabs } to core get { value as count }
+        if count > 0, left += group + { tabs = tabs, active = active }
+    groups = left
+    if kind ≠ "chat", hidden_panes = hidden_panes + { "$kind" = kept }
+    emit Refocus { groups = groups } to this get next
+    current = next.index
+    emit Unstash to this
+    return Hidden
+
+| Terminals or files put away brought back, each to where it was, the one
+| that had the keys given them again.
+RestorePane { kind } =>
+    kept = hidden_panes[kind]
+    if kept = null, return Nothing
+    emit Length { value = kept } to core get { value as count }
+    if count = 0, return Nothing
+    hidden_panes = hidden_panes + { "$kind" = [] }
+    emit Stash to this
+    focus_view = kept[0].view
+    loop item over kept
+        emit OpenIn { groups = groups, slot = item.slot, buffer = item.view } to this get opened_back
+        groups = opened_back.groups
+        if item.active, focus_view = item.view
+    emit FindView { groups = groups, path = focus_view.path, store = focus_view.store } to this get at
+    if at.group ≥ 0
+        held = groups[at.group] + { active = at.tab }
+        groups = groups[0, at.group) + [held] + groups(at.group, length)
+        current = at.group
+    emit Unstash to this
+    return Restored
+
+| `groups` and the panes put away, as one list of groups: what quitting
+| must save and close.
+WithHidden =>
+    away = hidden_panes.terminal + hidden_panes.file
+    emit Length { value = away } to core get { value as count }
+    if count = 0, return All { groups = groups }
+    views = []
+    loop item over away
+        views += item.view
+    return All { groups = groups + [{ slot = "hidden", tabs = views, active = 0 }] }

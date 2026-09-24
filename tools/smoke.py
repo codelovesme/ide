@@ -51,9 +51,9 @@ s.keys(b"yo ", 0.8)
 check("●" in s.screen.row(1), "typing marks the file dirty")
 s.keys(b"\x13", 0.8)
 check(open(folder + "/src/hello.code").read().startswith("yo | hi"), "ctrl+s saves")
-s.keys(b"\x05", 0.6)
+s.keys(b"\x02", 0.6)                        # ctrl+b: the explorer is shown — the keys to it
 s.keys(b"\x1b[B\r", 1.0)
-check("notes.md" in s.screen.row(1), "ctrl+e (ctrl+shift+e in most terminals) goes to the explorer; down, enter opens the next file")
+check("notes.md" in s.screen.row(1), "ctrl+b goes to the explorer; down, enter opens the next file")
 check(s.screen.row(1)[31:].startswith(" hello.code  notes.md "), "each open file has a tab: " + s.screen.row(1)[31:56])
 s.keys(b"\x1b[9;5u", 0.8)
 check(s.screen.row(0).rstrip().endswith("src/hello.code"), "ctrl+tab (as terminals that tell it apart send it) goes to the next tab")
@@ -73,14 +73,14 @@ s.keys(b"\x1b", 0.6)
 s.keys(b"\x1bs", 0.6)
 check("Settings (JSON)" in s.screen.row(1) and "Ctrl+," in s.screen.row(1) and "Keyboard Shortcuts (JSON)" in s.screen.row(2), "alt+s opens the Settings menu")
 s.keys(b"\x1b", 0.6)
-s.keys(b"\x02", 0.6)
-check("Explorer" not in s.screen.row(1), "ctrl+b hides the explorer")
-s.keys(b"\x02", 0.6)
+s.keys(b"\x02\x02", 0.8)                    # ctrl+b: the keys to it; again: put away
+check("Explorer" not in s.screen.row(1), "ctrl+b twice puts the explorer away")
+s.keys(b"\x02", 0.6)                        # and back, with the keys
 s.keys(b"\x0b\x1b[C", 0.8)
 check(s.screen.row(1)[33:].startswith(" hello.code "), "ctrl+k → makes the explorer wider: " + s.screen.row(1)[28:44])
 settings = open(config + "/codelovesme-ide/settings.json").read()
 check('"workbench.layout.left": 32' in settings, "and settings.json remembers it")
-s.keys(b"\x05\x1b[H", 0.6)                 # the explorer, its first row (src)
+s.keys(b"\x1b[H", 0.6)                     # in the explorer: its first row (src)
 s.keys(b"\x0e", 0.6)                       # ctrl+n
 check("New file in src/:" in s.screen.row(39), "ctrl+n asks for a name, in the folder picked in the explorer")
 s.keys(b"made.code\r", 1.0)
@@ -134,11 +134,15 @@ s.keys(b"\x03", 0.8)
 s.keys(b"echo after-interrupt\r", 1.5)
 check("after-interrupt" in bottom().replace("echo after-interrupt", ""), "ctrl+c reaches the shell")
 s.keys(b"\x1bv", 0.6)                       # View menu (works from a terminal)
-s.keys(b"\x1b[B" * 9 + b"\r", 0.6)          # Move Tab…
+s.keys(b"\x1b[B" * 10 + b"\r", 0.6)         # Move Tab…
 s.keys(b"r\r", 1.5)
 right_half = "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
 check(" Terminal 1 " in right_half and "hello-ide" in right_half, "move tab: the terminal goes to the right, shell and all")
-s.keys(b"\x00", 0.8)                        # the keys back to the files
+s.keys(b"\x00", 0.8)                        # ctrl+` with the terminal focused: put away
+check(not any(" Terminal 1 " in s.screen.row(r) for r in range(1, 39)), "the terminal key puts a focused terminal away")
+s.keys(b"\x00", 0.8)
+check(any(" Terminal 1 " in s.screen.row(r) for r in range(1, 39)), "and brings it back, shell and all")
+s.keys(b"\x05", 0.8)                        # ctrl+e: the keys to the files
 s.resize(90, 20, 1.2)
 check("Ln 1" in s.screen.row(19), "redraws at a new size")
 s.keys(b"x\x11", 0.8)

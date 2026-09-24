@@ -32,20 +32,19 @@ defaults = [
     { key = "ctrl+`", command = "terminal.toggle" }
     { key = "ctrl+space", command = "terminal.toggle" }
     { key = "ctrl+k t", command = "terminal.new" }
-    | Most terminals send ctrl+shift+e as ctrl+e — the same key to the program.
-    { key = "ctrl+shift+e", command = "focus.explorer" }
-    { key = "ctrl+e", command = "focus.explorer" }
+    | Pane keys: shown and focused, focused, or put away (TogglePane).
+    { key = "ctrl+e", command = "editor.toggle" }
+    { key = "ctrl+j", command = "terminal.toggle" }
     { key = "ctrl+0", command = "focus.explorer" }
     { key = "ctrl+1", command = "focus.editor" }
     { key = "ctrl+2", command = "focus.group2" }
     { key = "f6", command = "focus.next" }
     { key = "shift+f6", command = "focus.next" }
     { key = "ctrl+\\", command = "editor.split" }
-    | Many terminals send ctrl+tab as a plain tab; ctrl+pagedown / pageup
-    | always arrive, so they stay as the second way.
+    | Ctrl+Tab next, Shift+Tab previous. (GNOME's terminals send Ctrl+Tab
+    | as a plain Tab; Shift+Tab arrives everywhere.)
     { key = "ctrl+tab", command = "tab.next" }
-    { key = "ctrl+pagedown", command = "tab.next" }
-    { key = "ctrl+pageup", command = "tab.previous" }
+    { key = "shift+tab", command = "tab.previous" }
     | VS Code's Go Back / Go Forward.
     { key = "alt+left", command = "nav.back" }
     { key = "alt+right", command = "nav.forward" }
@@ -63,6 +62,8 @@ defaults = [
     { key = "ctrl+alt+i", command = "ai.toggle" }
     { key = "ctrl+k d", command = "ai.showChanges" }
     { key = "alt+m", command = "ai.switchModel" }
+    { key = "alt+e", command = "ai.toggleMode" }
+    { key = "ctrl+k shift+tab", command = "edit.outdent" }
 ]
 
 | Every command a key can run, with what it does — the only names
@@ -75,7 +76,8 @@ commands = [
     { id = "app.quit", title = "Exit" }
     { id = "settings.open", title = "Settings (settings.json)" }
     { id = "keybindings.open", title = "Keyboard Shortcuts (keybindings.json)" }
-    { id = "view.explorer", title = "Show / hide the Explorer" }
+    { id = "view.explorer", title = "Explorer: show it and focus it; put it away when focused" }
+    { id = "editor.toggle", title = "Files: focus them; put them away when focused (and back)" }
     { id = "view.explorerLeft", title = "Explorer on the left" }
     { id = "view.explorerRight", title = "Explorer on the right" }
     { id = "view.edge.right", title = "Move the focused side's edge right" }
@@ -92,7 +94,7 @@ commands = [
     { id = "view.moveTab.tr", title = "Move the tab to the top right" }
     { id = "view.moveTab.bl", title = "Move the tab to the bottom left" }
     { id = "view.moveTab.br", title = "Move the tab to the bottom right" }
-    { id = "terminal.toggle", title = "Terminal: open one, or move the keys to and from it" }
+    { id = "terminal.toggle", title = "Terminal: open one and focus it; put it away when focused (and back)" }
     { id = "terminal.new", title = "New terminal" }
     { id = "focus.explorer", title = "Focus the Explorer" }
     { id = "focus.editor", title = "Focus the center" }
@@ -101,6 +103,7 @@ commands = [
     { id = "editor.split", title = "Split Editor: this file again, on the right" }
     { id = "tab.next", title = "Next tab" }
     { id = "tab.previous", title = "Previous tab" }
+    { id = "edit.outdent", title = "Take the line a level of indentation back" }
     { id = "nav.back", title = "Go Back: where the cursor was before" }
     { id = "nav.forward", title = "Go Forward" }
     { id = "edit.undo", title = "Undo" }
@@ -109,7 +112,7 @@ commands = [
     { id = "menu.view", title = "View menu" }
     { id = "menu.settings", title = "Settings menu" }
     { id = "menu.help", title = "Help menu" }
-    { id = "ai.toggle", title = "AI Chat: open it, or move the keys to and from it" }
+    { id = "ai.toggle", title = "AI Chat: open it and focus it; close it when focused" }
     { id = "ai.newChat", title = "AI Chat: start a new conversation" }
     { id = "ai.cancel", title = "AI Chat: stop the model's answer" }
     { id = "ai.configure", title = "AI Model… (settings.json)" }
@@ -289,7 +292,7 @@ Shortcuts { table } =>
         "  Terminal: every key goes to the shell, except the commands in"
         "  terminal.integrated.commandsToSkipShell (settings.json)."
         "  Editor: arrows, Home, End, PgUp, PgDn, Ctrl+Home / End, Ctrl+Left / Right,"
-        "  Tab / Shift+Tab indent by four spaces."
+        "  Tab indents by four spaces; Ctrl+K Shift+Tab takes a level back."
         "  Menus: arrows, Enter, Escape."
     ]
     return ShortcutLines { lines = lines }
