@@ -59,6 +59,7 @@ defaults = [
     | Cursor's key for its chat, and VS Code's for Copilot's.
     { key = "ctrl+l", command = "ai.toggle" }
     { key = "ctrl+alt+i", command = "ai.toggle" }
+    { key = "ctrl+k d", command = "ai.showChanges" }
 ]
 
 | Every command a key can run, with what it does — the only names
@@ -108,6 +109,9 @@ commands = [
     { id = "ai.cancel", title = "AI Chat: stop the model's answer" }
     { id = "ai.configure", title = "AI Model… (settings.json)" }
     { id = "ai.undoTurn", title = "AI Chat: undo the changes it made since the last question" }
+    { id = "ai.showChanges", title = "AI Chat: show what the agent changed since the last question" }
+    { id = "ai.toggleMode", title = "AI Chat: ask ↔ edit, for Claude Code and Codex" }
+    { id = "ai.switchModel", title = "AI Chat: switch the model (local, claude, codex, …)" }
     { id = "help.keys", title = "This list" }
     { id = "help.about", title = "About" }
 ]

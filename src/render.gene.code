@@ -131,7 +131,7 @@ TurnLines { turn, width } =>
 | The AI chat in `pane` (below its tab strip): the conversation, the
 | newest at the bottom (`scroll` lines up from there), and the input box
 | under a rule, growing to six lines.
-ChatRows { pane, chat, notice, focused } =>
+ChatRows { pane, chat, notice, label, focused } =>
     width = pane.width - 1
     out = []
     emit Wrap { text = chat.input, width = width - 3 } to this get typed
@@ -148,6 +148,7 @@ ChatRows { pane, chat, notice, focused } =>
     if chat.busy
         lines = [{ text = "  … thinking (step " + (chat.steps + 1) + ")", style = "dim" }]
         if chat.pending ≠ null, lines = [{ text = "  … waiting for your answer", style = "plain", fg = [230, 190, 90] }]
+        if chat.agent ≠ null, lines = [{ text = "  … " + chat.agent.title + " is working (" + chat.steps + " steps) — Ctrl+C stops it", style = "dim" }]
     emit Length { value = chat.turns } to core get { value as turn_count }
     i = turn_count - 1
     loop
@@ -182,12 +183,13 @@ ChatRows { pane, chat, notice, focused } =>
 
     rule_row = 1 + pane.y + room
     rule = ""
-    k = 0
+    if label ≠ "", rule = "─ " + label + " "
+    emit Length { value = rule } to core get { value as k }
     loop
         if k ≥ pane.width, break
         rule = rule + "─"
         k += 1
-    out += { row = rule_row, col = pane.x, spans = [{ text = rule, style = "border" }] }
+    out += { row = rule_row, col = pane.x, spans = [{ text = rule, width = pane.width, style = "border" }] }
     cursor_row = null, cursor_col = null
     loop j, line over shown_typed
         lead = "   "
@@ -205,11 +207,16 @@ ChatRows { pane, chat, notice, focused } =>
 DiffRows { pane, view, focused } =>
     what = " Proposed change to " + view.target
     if view.created, what = " Proposed new file " + view.target
+    keys = "a accept · r reject "
+    if view.reviewed = true
+        what = " Changed by the AI: " + view.target
+        if view.created, what = " Made by the AI: " + view.target
+        keys = "Esc closes "
     head_style = "selected"
     if focused, head_style = "selected_focus"
     out = [{ row = 1 + pane.y, col = pane.x, spans = [
         { text = what + "  (−" + view.removed + " +" + view.added + ")", width = pane.width - 26, style = head_style }
-        { text = "a accept · r reject ", width = 26, align = "right", style = head_style }
+        { text = keys, width = 26, align = "right", style = head_style }
     ] }]
     h = pane.height - 1
     emit Length { value = view.diff } to core get { value as count }
@@ -386,7 +393,7 @@ GroupView { area, group, index, state, screens } =>
         emit DiffRows { pane = content, view = view, focused = focused } to this get rows
         result = result + { overlays = out + rows.overlays }
     if view.kind = "chat"
-        emit ChatRows { pane = content, chat = state.chat, notice = state.chat_notice, focused = focused } to this get rows
+        emit ChatRows { pane = content, chat = state.chat, notice = state.chat_notice, label = state.chat_label, focused = focused } to this get rows
         result = result + { overlays = out + rows.overlays, chat = rows.chat }
         if rows.cursor_row ≠ null, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
     if view.kind = "terminal"

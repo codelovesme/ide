@@ -17,9 +17,13 @@ defaults = {
     "ai.provider" = "local"
     "ai.providers" = {
         local = { type = "openai-compatible", endpoint = "", model = "", apiKeyEnv = "", contextTokens = 32768 }
+        claude = { type = "claude-code", command = "claude", model = "" }
+        codex = { type = "codex", command = "codex", model = "" }
     }
     "ai.chat.location" = "r"
     "ai.maxSteps" = 12
+    "ai.agent.mode" = "ask"
+    "ai.agent.allowCommands" = []
     "terminal.integrated.commandsToSkipShell" = [
         "terminal.toggle"
         "focus.next"
@@ -108,6 +112,16 @@ ReadSettings { text } =>
     if good_steps, good_steps = steps ≥ 1 and steps ≤ 50
     if good_steps, values = values + { "ai.maxSteps" = steps }
     if steps ≠ null and not good_steps, wrong += "ai.maxSteps (1 to 50)"
+    agent_mode = given["ai.agent.mode"]
+    if agent_mode = "ask" or agent_mode = "edit", values = values + { "ai.agent.mode" = agent_mode }
+    if agent_mode ≠ null and agent_mode ≠ "ask" and agent_mode ≠ "edit", wrong += "ai.agent.mode (\"ask\" or \"edit\")"
+    allow = given["ai.agent.allowCommands"]
+    good_allow = allow ∈ Array
+    if good_allow
+        loop one over allow
+            if one ∉ String, good_allow = false
+    if good_allow, values = values + { "ai.agent.allowCommands" = allow }
+    if allow ≠ null and not good_allow, wrong += "ai.agent.allowCommands (a list, e.g. [\"Bash(cargo test:*)\"])"
     problem = ""
     loop i, what over wrong
         if i = 0, problem = "settings.json: using the default for " + what

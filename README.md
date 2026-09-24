@@ -100,6 +100,37 @@ writes the entries in for you):
 }
 ```
 
+**Or Claude Code / Codex behind the same chat.** With `"ai.provider":
+"claude"` or `"codex"` (or Settings > AI: Switch Model…) the chat runs
+the `claude` or `codex` program you have installed and signed in to —
+your own subscription, no API key, no per-question bill — out of sight,
+and shows its steps and answers as they come; the ide keeps working
+meanwhile. What you are looking at still goes with each question; they
+read `CLAUDE.md` / `AGENTS.md` themselves, and the conversation carries
+on until View > New AI Chat.
+
+Shift+Tab in the chat (or Settings > AI: Ask ↔ Edit) switches the mode,
+shown on the line over the input:
+
+- **Ask** — it only reads (Claude in plan mode, Codex in a read-only
+  sandbox).
+- **Edit** — it changes files itself. After, the chat names what it
+  changed; View > Show AI Changes (Ctrl+K D) opens each as a red / green
+  diff, and View > Undo AI Changes puts them all back. That needs the
+  folder to be a git repository (the ide takes a snapshot with `git stash
+  create`, which touches nothing). Claude runs no commands but those in
+  `"ai.agent.allowCommands"` (e.g. `["Bash(cargo test:*)"]`); Codex runs
+  them inside its workspace sandbox.
+
+```json
+"ai.providers": {
+  "claude": { "type": "claude-code", "command": "claude", "model": "" },
+  "codex":  { "type": "codex", "command": "codex", "model": "" }
+},
+"ai.agent.mode": "ask",
+"ai.agent.allowCommands": []
+```
+
 `openai-compatible` is anything that serves `/v1/chat/completions` —
 LocalAI, Ollama (`http://localhost:11434`), llama.cpp's server, vLLM, LM
 Studio. A key never goes in the file: `apiKeyEnv` names the environment
@@ -224,6 +255,7 @@ Enter, Ctrl+I is Tab, Ctrl+M is Enter.)
 | `chatbox` | the AI chat's input box, the model's replies read, text wrapped |
 | `context` | what the model is told: what is on screen, the instructions, the project map, the tools |
 | `llm` | which model, from settings: provider types and the particles each takes |
+| `agents` | Claude Code and Codex: the command that runs each, and their events read into the chat |
 
 Everything but `ide` is pure: a particle in, a particle out. State lives in
 one gene because a gene's top level is its handlers' whole world. A handler
@@ -274,7 +306,12 @@ chat asked, stepping through a tool to its answer, its changes rejected,
 accepted and undone, a command run — against a port that
 never answers, so the replies the test hands in are the only ones),
 [tests/chat.code](tests/chat.code) (replies read, the input box, wrapping,
-the project map, providers from settings), all without a terminal.
+the project map, providers from settings),
+[tests/agents.code](tests/agents.code) (Claude Code's and Codex's events,
+recorded from real runs in tests/fixtures, and the ide running
+[a stand-in agent](tests/fake-agent.sh): asked, continued, editing, its
+changes shown and undone, a missing program, stopped), all without a
+terminal.
 
 In a real terminal: `python3 tools/smoke.py` (from a checkout) or
 `python3 tools/smoke.py <bundle>/ide` — a pty, keys pressed, the screen read

@@ -1,0 +1,184 @@
+| Agents — Claude Code and Codex behind the AI chat. Pure.
+|
+| A provider of type `claude-code` or `codex` is not a model the ide talks
+| to but a coding agent it runs: the `claude` or `codex` program, headless,
+| signed in with the user's own subscription. The ide starts it in a hidden
+| terminal (so it never waits on it), hands it the question on its input,
+| and reads what it does as it does it — one JSON event a line — into the
+| chat: its words, and each step it takes, in grey.
+|
+| Two modes, switched with Shift+Tab in the chat:
+|
+|   ask   it may only read — Claude in plan mode, Codex in a read-only
+|         sandbox;
+|   edit  it changes files itself — Claude accepting its edits (commands
+|         only those in `ai.agent.allowCommands`), Codex in its
+|         workspace-write sandbox. The ide shows what changed after, and can
+|         put it back (ide.gene.code, UndoAiChanges).
+
+parser = null
+texts = null
+
+AgentsUses { json, strings }  =>
+    parser = json
+    texts = strings
+    return Using
+
+| `text` quoted for sh: in single quotes, a quote inside as '\''.
+Quoted { text } =>
+    emit Length { value = text } to core get { value as size }
+    out = "'"
+    i = 0
+    loop
+        if i ≥ size, break
+        c = text[i]
+        if c = "'", c = "'\\''"
+        out = out + c
+        i += 1
+    return Text { text = out + "'" }
+
+| The shell line that runs `provider`'s agent in `mode` on the question in
+| `prompt_file`, continuing `session` when it is not "", writing its
+| events to stdout and its errors to `err_file`.
+AgentCommand { provider, mode, session, prompt_file, err_file, allow } =>
+    emit Quoted { text = provider.command } to this get program
+    emit Quoted { text = prompt_file } to this get prompt_at
+    emit Quoted { text = err_file } to this get err_at
+    line = program.text
+    if provider.type = "claude-code"
+        line = line + " -p --output-format stream-json --verbose --permission-prompts none"
+        if mode = "edit", line = line + " --permission-mode acceptEdits"
+        if mode ≠ "edit", line = line + " --permission-mode plan"
+        if provider.model ≠ ""
+            emit Quoted { text = provider.model } to this get model
+            line = line + " --model " + model.text
+        if session ≠ ""
+            emit Quoted { text = session } to this get resumed
+            line = line + " --resume " + resumed.text
+        if mode = "edit"
+            loop allowed over allow
+                emit Quoted { text = allowed } to this get tool
+                line = line + " --allowedTools " + tool.text
+    if provider.type = "codex"
+        line = line + " exec"
+        if session ≠ "", line = line + " resume"
+        line = line + " --json --skip-git-repo-check"
+        sandbox = "read-only"
+        if mode = "edit", sandbox = "workspace-write"
+        line = line + " -c sandbox_mode=\"" + sandbox + "\""
+        if provider.model ≠ ""
+            emit Quoted { text = provider.model } to this get model
+            line = line + " -m " + model.text
+        if session ≠ ""
+            emit Quoted { text = session } to this get resumed
+            line = line + " " + resumed.text
+        line = line + " -"
+    return Text { text = line + " < " + prompt_at.text + " 2> " + err_at.text }
+
+| `path` relative to `folder` when it is inside it.
+Relative { path, folder } =>
+    emit Length { value = folder } to core get { value as size }
+    if path ∈ String and folder ≠ "" and path[0, size + 1) = folder + "/", return Text { text = path[size + 1, length) }
+    return Text { text = path }
+
+| A shell command as Codex reports it — `/bin/bash -lc '…'` — without
+| the wrapper, on one line.
+Unwrapped { command } =>
+    out = command
+    if out[0, 14) = "/bin/bash -lc "
+        out = out[14, length)
+        emit Length { value = out } to core get { value as size }
+        first = out[0]
+        if size ≥ 2 and (first = "'" or first = "\"") and out[size - 1] = first, out = out[1, size - 1)
+    emit Split { value = out, separator = "\n" } to texts get lines
+    emit Length { value = lines.value } to core get { value as count }
+    if count > 1, return Text { text = lines.value[0] + " …" }
+    return Text { text = out }
+
+| A step Claude Code takes, as the chat shows it.
+ClaudeStep { name, input, folder } =>
+    path = input["file_path"]
+    if path = null, path = input["path"]
+    emit Relative { path = path, folder = folder } to this get rel
+    if name = "Read", return Text { text = "read " + rel.text }
+    if name = "Edit" or name = "MultiEdit", return Text { text = "edited " + rel.text }
+    if name = "Write", return Text { text = "wrote " + rel.text }
+    pattern = input["pattern"]
+    if pattern ∉ String, pattern = ""
+    if name = "Grep", return Text { text = "searched for \"" + pattern + "\"" }
+    if name = "Glob", return Text { text = "looked for " + pattern }
+    if name = "Bash"
+        emit Unwrapped { command = input["command"] } to this get command
+        return Text { text = "\$ " + command.text }
+    if name = "WebSearch", return Text { text = "searched the web: " + input["query"] }
+    if name = "WebFetch", return Text { text = "fetched " + input["url"] }
+    if name = "TodoWrite", return Text { text = "made a plan" }
+    return Text { text = name }
+
+| New event lines (`lines`, one JSON object each) from an agent of `type`
+| (`claude-code` or `codex`): the turns to show, the session to continue,
+| whether it has finished, and what went wrong if it did.
+AgentEvents { lines, type, folder } =>
+    turns = []
+    session = ""
+    done = false
+    error = ""
+    loop line over lines
+        if line = "", continue
+        emit Parse { text = line } to parser get parsed
+        if parsed ∈ Exception, continue
+        event = parsed.value
+        if event ∉ Object, continue
+        kind = event["type"]
+        if type = "claude-code"
+            if kind = "system" and event["session_id"] ∈ String, session = event["session_id"]
+            if kind = "assistant" and event["message"] ∈ Object and event["message"]["content"] ∈ Array
+                loop part over event["message"]["content"]
+                    if part["type"] = "text" and part["text"] ∈ String and part["text"] ≠ ""
+                        turns += { role = "assistant", text = part["text"] }
+                    if part["type"] = "tool_use"
+                        input = part["input"]
+                        if input ∉ Object, input = {}
+                        emit ClaudeStep { name = part["name"], input = input, folder = folder } to this get step
+                        turns += { role = "tool", text = step.text }
+            if kind = "result"
+                done = true
+                if event["session_id"] ∈ String, session = event["session_id"]
+                if event["is_error"] = true
+                    error = "Claude Code stopped"
+                    if event["result"] ∈ String, error = error + ": " + event["result"]
+                denied = event["permission_denials"]
+                if denied ∈ Array
+                    loop one over denied
+                        what = one["tool_name"]
+                        if one["tool_input"] ∈ Object and one["tool_input"]["command"] ∈ String
+                            emit Unwrapped { command = one["tool_input"]["command"] } to this get command
+                            what = command.text
+                        turns += { role = "tool", text = "not allowed: " + what + " (settings: ai.agent.allowCommands)" }
+        if type = "codex"
+            if kind = "thread.started" and event["thread_id"] ∈ String, session = event["thread_id"]
+            item = event["item"]
+            if kind = "item.completed" and item ∈ Object
+                what = item["type"]
+                if what = "agent_message" and item["text"] ∈ String, turns += { role = "assistant", text = item["text"] }
+                if what = "command_execution"
+                    emit Unwrapped { command = item["command"] } to this get command
+                    text = "ran: " + command.text
+                    if item["exit_code"] ∈ Number and item["exit_code"] ≠ 0, text = text + " (exit code " + item["exit_code"] + ")"
+                    turns += { role = "tool", text = text }
+                if what = "file_change" and item["changes"] ∈ Array
+                    loop change over item["changes"]
+                        emit Relative { path = change["path"], folder = folder } to this get rel
+                        turns += { role = "tool", text = "changed " + rel.text }
+                if what = "web_search", turns += { role = "tool", text = "searched the web" }
+                if what = "mcp_tool_call", turns += { role = "tool", text = "used " + item["tool"] }
+                if what = "error" and item["message"] ∈ String, turns += { role = "error", text = item["message"] }
+            if kind = "turn.completed", done = true
+            if kind = "turn.failed"
+                done = true
+                error = "Codex stopped"
+                if event["error"] ∈ Object and event["error"]["message"] ∈ String, error = error + ": " + event["error"]["message"]
+            if kind = "error" and event["message"] ∈ String
+                done = true
+                error = "Codex: " + event["message"]
+    return AgentUpdate { turns = turns, session = session, done = done, error = error }

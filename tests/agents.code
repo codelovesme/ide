@@ -1,0 +1,176 @@
+| Claude Code and Codex behind the chat: the shell line that runs each,
+| and their events — recorded from real runs (tests/fixtures) — read into
+| the chat's turns.
+
+link "../src/agents.gene.code"
+link "../src/chatbox.gene.code"
+link "../src/context.gene.code"
+link "../src/editor.gene.code"
+link "../src/ide.gene.code"
+link "../src/keys.gene.code"
+link "../src/layout.gene.code"
+link "../src/llm.gene.code"
+link "../src/menu.gene.code"
+link "../src/render.gene.code"
+link "../src/settings.gene.code"
+link "../src/tabs.gene.code"
+link "../src/tree.gene.code"
+
+emit UseOrganelles { from = "organelles" } to this get lib
+assert lib ∈ Linked
+fixtures = lib.prefs
+strings_lib = lib.strings
+emit Config { base_path = "tests/fixtures" } to fixtures
+
+| Whether `part` is somewhere in `text`.
+Contains { text, part } =>
+    emit Length { value = text } to core get { value as size }
+    emit Length { value = part } to core get { value as want }
+    i = 0
+    loop
+        if i + want > size, break
+        if text[i, i + want) = part, return Is { yes = true }
+        i += 1
+    return Is { yes = false }
+
+| The fixture `name`, as lines.
+Recorded { name } =>
+    emit ReadFile { path = name } to fixtures get read
+    emit Split { value = read.content, separator = "\n" } to strings_lib get split
+    return Lines { lines = split.value }
+
+| The shell lines.
+claude = { type = "claude-code", command = "claude", model = "" }
+emit AgentCommand { provider = claude, mode = "ask", session = "", prompt_file = "/r/prompt.txt", err_file = "/r/err.txt", allow = [] } to this get ask_line
+assert ask_line.text = "'claude' -p --output-format stream-json --verbose --permission-prompts none --permission-mode plan < '/r/prompt.txt' 2> '/r/err.txt'"
+emit AgentCommand { provider = claude + { model = "sonnet" }, mode = "edit", session = "abc", prompt_file = "/r/it's.txt", err_file = "/r/err.txt", allow = ["Bash(cargo test:*)"] } to this get edit_line
+assert edit_line.text = "'claude' -p --output-format stream-json --verbose --permission-prompts none --permission-mode acceptEdits --model 'sonnet' --resume 'abc' --allowedTools 'Bash(cargo test:*)' < '/r/it'\\''s.txt' 2> '/r/err.txt'"
+codex = { type = "codex", command = "codex", model = "" }
+emit AgentCommand { provider = codex, mode = "ask", session = "", prompt_file = "/r/p", err_file = "/r/e", allow = [] } to this get codex_line
+assert codex_line.text = "'codex' exec --json --skip-git-repo-check -c sandbox_mode=\"read-only\" - < '/r/p' 2> '/r/e'"
+emit AgentCommand { provider = codex, mode = "edit", session = "t-1", prompt_file = "/r/p", err_file = "/r/e", allow = [] } to this get codex_resume
+assert codex_resume.text = "'codex' exec resume --json --skip-git-repo-check -c sandbox_mode=\"workspace-write\" 't-1' - < '/r/p' 2> '/r/e'"
+
+| Claude Code, asked: a step, the answer, its session, done.
+emit Recorded { name = "claude-ask.jsonl" } to this get claude_ask
+emit AgentEvents { lines = claude_ask.lines, type = "claude-code", folder = "/work/proj" } to this get asked
+assert asked.done and asked.error = ""
+assert asked.session = "c14fd3b1-6c0c-4fde-834f-e761e523c277"
+assert asked.turns[0].role = "tool"
+assert asked.turns[1].role = "assistant"
+| Claude Code, editing: read, edited (relative), a command it may not run.
+emit Recorded { name = "claude-edit.jsonl" } to this get claude_edit
+emit AgentEvents { lines = claude_edit.lines, type = "claude-code", folder = "/work/proj" } to this get edited
+assert edited.turns[0].text = "read calc.py"
+assert edited.turns[1].text = "edited calc.py"
+emit Length { value = edited.turns } to core get { value as edit_count }
+assert edited.turns[edit_count - 1].text = "not allowed: python3 -c \"from calc import average; print(average([]))\" (settings: ai.agent.allowCommands)"
+| Codex, asked, then editing.
+emit Recorded { name = "codex-ask.jsonl" } to this get codex_ask
+emit AgentEvents { lines = codex_ask.lines, type = "codex", folder = "/work/proj" } to this get codex_asked
+assert codex_asked.done and codex_asked.session = "01a0d34d-f586-77e2-bd23-850d24a37e83"
+assert codex_asked.turns[1].text = "ran: rg -n -C 3 \"average\" calc.py"
+assert codex_asked.turns[2].text = "`average` returns the arithmetic mean of a list of numeric values."
+emit Recorded { name = "codex-edit.jsonl" } to this get codex_edit
+emit AgentEvents { lines = codex_edit.lines, type = "codex", folder = "/work/proj" } to this get codex_edited
+changed_seen = false
+loop turn over codex_edited.turns
+    if turn.text = "changed calc.py", changed_seen = true
+assert changed_seen and codex_edited.done
+| A half-written line (the agent still writing) is skipped, not an error.
+emit AgentEvents { lines = ["{\"type\": \"thread.sta"], type = "codex", folder = "" } to this get partial
+assert partial.turns = [] and not partial.done
+
+| The ide running an agent: a stand-in (tests/fake-agent.sh) as Claude
+| Code, on a folder that is a git repository.
+procs_lib = lib.process
+agent_fs = lib.fs
+emit Config { base_path = ".test-agents" } to agent_fs get agent_folder
+agent_root = agent_folder.base_path
+emit WriteFile { path = "hello.code", content = "Greet { who } =>\n    return Hi\n" } to agent_fs
+emit Run { command = "sh", args = ["-c", "git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -qm start"], cwd = agent_root } to procs_lib get made_repo
+assert made_repo.success
+emit Config { base_path = ".test-agents-config" } to fixtures
+emit SettingsAt { dir = ".test-agents-config" } to this
+emit OpenFolder { path = agent_root } to this
+emit Run { command = "pwd", cwd = "tests" } to procs_lib get tests_dir
+emit Trim { value = tests_dir.stdout } to strings_lib get tests_at
+emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh" } } } to this
+emit StoreSetting { key = "ai.provider", value = "fake" } to this
+emit ChatNotice to this
+emit State to this get labelled
+assert labelled.chat_label = "Claude Code · Ask (Shift+Tab)"
+
+| The agent's run, waited for, and its end handed in (as the pty would).
+AgentRun { question } =>
+    emit AskAbout { question = question } to this
+    emit Run { command = "sleep", args = ["1"] } to procs_lib
+    emit AgentFinished to this
+    emit State to this get after
+    return after
+
+| Ask: its steps and answer in the chat, its session kept, and the
+| question written with what is on screen.
+emit AskAbout { question = "what is this?" } to this
+emit State to this get running_agent
+assert running_agent.chat.busy and running_agent.chat.agent ≠ null
+emit Run { command = "sleep", args = ["1"] } to procs_lib
+emit AgentFinished to this
+emit State to this get answered
+assert not answered.chat.busy and answered.chat.agent = null
+assert answered.chat.turns[1].text = "read hello.code"
+assert answered.chat.turns[2].text = "It greets."
+assert answered.chat.session = "fake-session"
+emit ReadFile { path = "runs/prompt.txt" } to fixtures get prompt_sent
+emit Contains { text = prompt_sent.content, part = "# The question\nwhat is this?" } to this get has_question
+assert has_question.yes
+emit Contains { text = prompt_sent.content, part = "Ask mode" } to this get says_ask
+assert says_ask.yes
+| The next question continues the session.
+emit AgentRun { question = "and then?" } to this get second
+emit Run { command = "sh", args = ["-c", "cat \"\${TMPDIR:-/tmp}/ide-fake-agent-args\""] } to procs_lib get args_seen
+emit Contains { text = args_seen.stdout, part = "--permission-mode plan --resume fake-session" } to this get resumed
+assert resumed.yes
+
+| Edit: it changes a file and makes one; the chat says so, Show AI Changes
+| opens their diffs, Undo AI Changes puts them back.
+emit HandleKey { name = "ctrl+l", text = "" } to this
+emit HandleKey { name = "shift+tab", text = "" } to this
+emit State to this get edit_mode
+assert edit_mode.settings["ai.agent.mode"] = "edit"
+emit AgentRun { question = "change it" } to this get edit_run
+assert edit_run.chat.changed.modified = ["hello.code"] and edit_run.chat.changed.created = ["new.txt"]
+emit Length { value = edit_run.chat.turns } to core get { value as edited_count }
+emit Contains { text = edit_run.chat.turns[edited_count - 1].text, part = "changed hello.code,new.txt" } to this get said_changed
+assert said_changed.yes
+emit Run { command = "ai.showChanges" } to this
+emit State to this get showing
+emit Active { groups = showing.groups, current = showing.current } to this get shown_diff
+assert shown_diff.buffer.kind = "diff" and shown_diff.buffer.reviewed
+emit HandleKey { name = "escape", text = "" } to this
+emit HandleKey { name = "escape", text = "" } to this
+emit Run { command = "ai.undoTurn" } to this
+emit ReadFile { path = "hello.code" } to agent_fs get put_back
+assert put_back.content = "Greet { who } =>\n    return Hi\n"
+emit Exists { path = "new.txt" } to agent_fs get new_gone
+assert not new_gone.is_file
+
+| A program that is not there: the chat says why.
+emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = "/nowhere/claude" } } } to this
+emit AgentRun { question = "hello?" } to this get missing
+emit Length { value = missing.chat.turns } to core get { value as missing_count }
+emit Contains { text = missing.chat.turns[missing_count - 1].text, part = "stopped without an answer" } to this get said_missing
+assert said_missing.yes
+
+| Ctrl+C stops a running agent.
+emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh" } } } to this
+emit HandleKey { name = "shift+tab", text = "" } to this
+emit AskAbout { question = "slow one" } to this
+emit HandleKey { name = "ctrl+c", text = "" } to this
+emit State to this get stopped
+assert stopped.chat.agent = null and not stopped.chat.busy
+emit Length { value = stopped.chat.turns } to core get { value as stopped_count }
+assert stopped.chat.turns[stopped_count - 1].text = "Stopped."
+
+emit RemoveDir { path = "." } to fixtures
+emit Run { command = "rm", args = ["-rf", agent_root] } to procs_lib

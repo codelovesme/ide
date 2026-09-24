@@ -25,6 +25,7 @@ menus = [
             { label = "New Terminal", command = "terminal.new" }
             { label = "AI Chat", command = "ai.toggle" }
             { label = "New AI Chat", command = "ai.newChat" }
+            { label = "Show AI Changes", command = "ai.showChanges" }
             { label = "Undo AI Changes", command = "ai.undoTurn" }
             { label = "Move Tab…", command = "view.moveTab" }
             { label = "Split Editor", command = "editor.split" }
@@ -42,6 +43,8 @@ menus = [
             { label = "Keyboard Shortcuts (JSON)", command = "keybindings.open" }
             { label = "Keyboard Shortcuts", command = "help.keys" }
             { label = "AI Model…", command = "ai.configure" }
+            { label = "AI: Switch Model…", command = "ai.switchModel" }
+            { label = "AI: Ask ↔ Edit", command = "ai.toggleMode" }
         ]
     }
     {

@@ -27,6 +27,8 @@ else:
 config = tempfile.mkdtemp(prefix="ide-smoke-config-")
 os.makedirs(config + "/codelovesme-ide")
 open(config + "/codelovesme-ide/keybindings.json", "w").write('[ { "key": "ctrl+g", "command": "view.explorer" } ]\n')
+# The local model has no endpoint; "fake" stands in for Claude Code.
+open(config + "/codelovesme-ide/settings.json", "w").write('{ "ai.providers": { "local": { "type": "openai-compatible", "endpoint": "" }, "fake": { "type": "claude-code", "command": "%s/tests/fake-agent.sh" } } }\n' % app)
 s = Session(argv, cwd, {"IDE_FOLDER": folder, "TERM": "xterm-256color", "XDG_CONFIG_HOME": config})
 failures = []
 def check(ok, what):
@@ -92,6 +94,23 @@ s.keys(b"\x0c", 0.8)                      # ctrl+l again gives the chat the keys
 s.keys(b"\x17", 0.8)                      # and ctrl+w closes its tab
 check(not any(" AI Chat " in s.screen.row(r) for r in range(1, 39)), "ctrl+w closes the chat")
 
+# An agent behind the chat (the stand-in for Claude Code): switched to from
+# the Settings menu; the ide keeps answering keys while it works.
+s.keys(b"\x1bs" + b"\x1b[B" * 4 + b"\r", 0.6)    # Settings > AI: Switch Model…
+check("AI model (" in s.screen.row(39), "settings > AI: switch model asks which")
+s.keys(b"fake\r", 0.8)
+s.keys(b"\x0c", 0.8)
+check(any("Claude Code · Ask" in s.screen.row(r) for r in range(1, 39)), "the chat names the agent and its mode")
+s.keys(b"slow one\r", 1.5)
+check(any("Claude Code is working" in s.screen.row(r) for r in range(1, 39)), "the agent works out of sight")
+s.keys(b"abc", 0.8)
+check(any("› abc" in s.screen.row(r) for r in range(1, 39)), "and the ide still takes keys meanwhile")
+s.keys(b"\x03", 1.0)
+check(any("Stopped." in s.screen.row(r) for r in range(1, 39)), "ctrl+c stops it")
+s.keys(b"\x15what is it?\r", 0.5)
+check(s.wait_for("It greets.", 10), "its steps and answer arrive in the chat")
+s.keys(b"\x17", 0.8)
+
 # The integrated terminal.
 s.keys(b"\x00", 1.5)   # ctrl+` — what most terminals send for it
 bottom = lambda: "\n".join(s.screen.row(r) for r in range(28, 39))
@@ -106,7 +125,7 @@ s.keys(b"\x03", 0.8)
 s.keys(b"echo after-interrupt\r", 1.5)
 check("after-interrupt" in bottom().replace("echo after-interrupt", ""), "ctrl+c reaches the shell")
 s.keys(b"\x1bv", 0.6)                       # View menu (works from a terminal)
-s.keys(b"\x1b[B" * 8 + b"\r", 0.6)          # Move Tab…
+s.keys(b"\x1b[B" * 9 + b"\r", 0.6)          # Move Tab…
 s.keys(b"r\r", 1.5)
 right_half = "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
 check(" Terminal 1 " in right_half and "hello-ide" in right_half, "move tab: the terminal goes to the right, shell and all")

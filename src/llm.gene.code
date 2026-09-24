@@ -9,17 +9,33 @@
 |     }
 |
 | `ai.provider` picks one of `ai.providers`. Its `type` says how to talk to
-| it; each type is one organelle and the particles it takes. Today there is
-| one type, `openai-compatible` — the `localai` organelle, which speaks
-| `/v1/chat/completions`: LocalAI, Ollama, llama.cpp's server, vLLM, LM
-| Studio. Another kind of provider (Anthropic, …) is another entry in
-| `types` and in the two handlers below; nothing else changes.
+| it:
+|
+|   openai-compatible  a model over `/v1/chat/completions` (the `localai`
+|                      organelle): LocalAI, Ollama, llama.cpp's server,
+|                      vLLM, LM Studio, OpenAI's own API. The ide is the
+|                      agent: its context, its tools, its approvals.
+|   claude-code, codex a coding agent the ide runs — `claude` or `codex`,
+|                      headless, on the user's own subscription
+|                      (agents.gene.code). `claude` and `codex` need no
+|                      entry in `ai.providers` to be picked.
+|
+| Another kind of provider is another entry in `types`; nothing else
+| changes.
 |
 | A key is never written in settings.json: `apiKeyEnv` names the
 | environment variable that holds it.
 
 types = {
-    "openai-compatible" = { organelle = "localai" }
+    "openai-compatible" = { runner = "api", organelle = "localai" }
+    "claude-code" = { runner = "cli", title = "Claude Code" }
+    "codex" = { runner = "cli", title = "Codex" }
+}
+
+| The agents, ready to pick by name without an entry of their own.
+known = {
+    claude = { type = "claude-code", command = "claude", model = "" }
+    codex = { type = "codex", command = "codex", model = "" }
 }
 
 default_context = 32768
@@ -32,17 +48,24 @@ ProviderFor { settings } =>
     all = settings["ai.providers"]
     given = null
     if all ∈ Object and name ∈ String, given = all[name]
+    if (given = null or given ∉ Object) and name ∈ String, given = known[name]
     if given = null or given ∉ Object
         return Provider { name = name, problem = "No AI model is set up: Settings > AI Model… and give \"ai.providers\" an endpoint" }
     kind = given["type"]
     if kind = null, kind = "openai-compatible"
     if types[kind] = null
-        return Provider { name = name, problem = "ai.providers." + name + ": no provider type \"" + kind + "\" — use \"openai-compatible\"" }
+        return Provider { name = name, problem = "ai.providers." + name + ": no provider type \"" + kind + "\" — use \"openai-compatible\", \"claude-code\" or \"codex\"" }
+    model = given["model"]
+    if model ∉ String, model = ""
+    if types[kind].runner = "cli"
+        command = given["command"]
+        if command ∉ String or command = ""
+            command = "claude"
+            if kind = "codex", command = "codex"
+        return Provider { name = name, type = kind, runner = "cli", title = types[kind].title, command = command, model = model, context_tokens = 200000, max_tokens = 8000, problem = "" }
     endpoint = given["endpoint"]
     if endpoint = null or endpoint ∉ String or endpoint = ""
         return Provider { name = name, problem = "No AI model is set up: Settings > AI Model… and set ai.providers." + name + ".endpoint (e.g. http://localhost:8080)" }
-    model = given["model"]
-    if model ∉ String, model = ""
     key_env = given["apiKeyEnv"]
     if key_env ∉ String, key_env = ""
     context = given["contextTokens"]
@@ -52,6 +75,8 @@ ProviderFor { settings } =>
     return Provider {
         name = name
         type = kind
+        runner = "api"
+        title = name
         organelle = types[kind].organelle
         endpoint = endpoint
         model = model

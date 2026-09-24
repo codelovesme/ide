@@ -79,13 +79,15 @@ keytable = null
 | `models` holds the organelle each provider type uses, `model_key` the
 | setup sent last, so it is sent again only when it changes.
 chat_view = { kind = "chat", path = "AI Chat", store = "view" }
-chat = { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null, pending = null, checkpoints = [] }
+chat = { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null, pending = null, checkpoints = [], agent = null, session = "", session_for = "", snapshot = null, changed = null }
 chat_page = 10
 models = {}
 model_key = ""
 procs = null
-| What the chat says before anything is asked when no model is set up.
+| What the chat says before anything is asked when no model is set up,
+| and the model (and, for an agent, the mode) on the rule over its input.
 chat_notice = ""
+chat_label = ""
 | What "this" means to the chat: the file and the terminal shown last, and
 | the places just edited (`path:line`, latest last).
 last_file = null
@@ -129,6 +131,7 @@ UseOrganelles { from } =>
     models = { localai = linked.localai }
     emit ChatUses { json = linked.json, strings = linked.strings } to this
     emit ContextUses { strings = linked.strings } to this
+    emit AgentsUses { json = linked.json, strings = linked.strings } to this
     emit SettingsUses { json = linked.json } to this
     emit KeysUses { json = linked.json, strings = linked.strings } to this
     emit EditorUses { texts = linked.strings } to this
@@ -180,11 +183,17 @@ Key { name, text } =>
 
 | A terminal's screen changed (pushed by the pty organelle): draw again.
 TerminalOutput { id } =>
+    if chat.agent ≠ null and id = chat.agent.pty
+        emit AgentProgress to this
     if running, emit Render to this
     return Drawn
 
 | A terminal's shell ended: its tab closes, as in VS Code.
 TerminalExited { id, code } =>
+    if chat.agent ≠ null and id = chat.agent.pty
+        emit AgentFinished to this
+        if running, emit Render to this
+        return Finished
     emit FindTerminal { id = id } to this get where
     if where.group ≥ 0
         emit Stash to this
@@ -307,12 +316,24 @@ Run { command } =>
     if command = "ai.configure", emit ConfigureAi to this
     if command = "ai.newChat"
         emit DropProposal to this
-        chat = chat + { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, checkpoints = [] }
+        if chat.agent ≠ null, emit Close { id = chat.agent.pty } to shells
+        chat = chat + { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, checkpoints = [], agent = null, session = "", snapshot = null, changed = null }
         emit ShowChat to this
+    if command = "ai.cancel" and chat.agent ≠ null
+        emit Close { id = chat.agent.pty } to shells
+        emit AgentFinished to this
+        chat = chat + { turns = chat.turns + [{ role = "error", text = "Stopped." }] }
+        return Ran
     if command = "ai.cancel" and chat.busy
         emit DropProposal to this
         chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "error", text = "Stopped." }] }
     if command = "ai.undoTurn", emit UndoAiChanges to this
+    if command = "ai.showChanges", emit ShowAiChanges to this
+    if command = "ai.toggleMode", emit ToggleAgentMode to this
+    if command = "ai.switchModel"
+        emit ProviderNames to this get names
+        emit Join { value = names.names, separator = "," } to texts get listed
+        prompt = { kind = "ai_model", label = "AI model (" + listed.value + "): ", text = "" }
     if command = "help.keys", emit ShowShortcuts to this
     if command = "help.about", message = "codelovesme ide — a terminal IDE for code, built on euglena"
     return Ran
@@ -487,9 +508,10 @@ PromptKey { name, text } =>
     if name = "escape"
         prompt = null
         return Cancelled
-    if asked.kind = "open_folder" or asked.kind = "move" or asked.kind = "new_file"
+    if asked.kind = "open_folder" or asked.kind = "move" or asked.kind = "new_file" or asked.kind = "ai_model"
         if name = "enter"
             prompt = null
+            if asked.kind = "ai_model", emit SwitchModel { name = asked.text } to this
             if asked.kind = "open_folder", emit OpenFolder { path = asked.text } to this
             if asked.kind = "new_file", emit CreateNewFile { dir = asked.dir, name = asked.text } to this
             if asked.kind = "move", emit MoveCurrent { into = asked.text } to this
@@ -915,6 +937,7 @@ State =>
         keytable = keytable
         chat = chat
         chat_notice = chat_notice
+        chat_label = chat_label
         settings = settings
     }
 
@@ -998,6 +1021,14 @@ ConfigureAi =>
 ChatNotice =>
     emit ProviderFor { settings = settings } to this get provider
     chat_notice = provider.problem
+    chat_label = ""
+    if provider.problem = "" and provider.runner = "cli"
+        mode = "Ask"
+        if settings["ai.agent.mode"] = "edit", mode = "Edit"
+        chat_label = provider.title + " · " + mode + " (Shift+Tab)"
+    if provider.problem = "" and provider.runner = "api"
+        chat_label = provider.name
+        if provider.model ≠ "", chat_label = chat_label + " · " + provider.model
     return Noted
 
 | A key in the chat: Escape gives the keys back to the files, Ctrl+C stops
@@ -1009,6 +1040,9 @@ ChatKey { name, text } =>
         return Handled
     if name = "ctrl+c"
         emit Run { command = "ai.cancel" } to this
+        return Handled
+    if name = "shift+tab"
+        emit ToggleAgentMode to this
         return Handled
     emit ChatInput { input = chat.input, name = name, text = text, page = chat_page } to this get typed
     scroll = chat.scroll + typed.scroll
@@ -1032,6 +1066,9 @@ AskAbout { question } =>
     emit Budget { context_tokens = provider.context_tokens, max_tokens = provider.max_tokens } to this get budget
     emit ShownFile to this get shown
     emit GatherContext { question = question, shown = shown.file, budget = budget } to this get gathered
+    if provider.runner = "cli"
+        emit AskAgent { provider = provider, question = question, context = gathered.text } to this get started
+        return started
     emit ProjectKnowledge { shown = shown.file, budget = budget } to this get system
     | Earlier questions keep only their words: what was on screen then is
     | old news, and the room is the conversation's.
@@ -1390,6 +1427,15 @@ Propose { tool, args } =>
 | A key on a proposed change: a / y / Enter accept it, r / n / Escape
 | reject it; the arrows and PgUp/PgDn scroll.
 DiffKey { name } =>
+    emit Active { groups = groups, current = current } to this get looking
+    if looking.buffer ≠ null and looking.buffer.reviewed = true and (name = "escape" or name = "q")
+        emit Stash to this
+        emit CloseTab { groups = groups, current = current } to this get closed_review
+        groups = closed_review.groups
+        current = closed_review.current
+        emit Unstash to this
+        return Handled
+    if looking.buffer ≠ null and looking.buffer.reviewed = true and name ≠ "down" and name ≠ "up" and name ≠ "pagedown" and name ≠ "pageup", return Handled
     if name = "a" or name = "y" or name = "enter"
         emit DecideChange { accepted = true } to this
         return Handled
@@ -1510,6 +1556,9 @@ AnswerRun { yes } =>
 | View > Undo AI Changes: every file the AI changed since the last
 | question, put back as it was (a file it made, removed); open tabs too.
 UndoAiChanges =>
+    if chat.snapshot ≠ null
+        emit UndoAgentChanges to this get agent_undone
+        return agent_undone
     emit Length { value = chat.checkpoints } to core get { value as count }
     if count = 0
         message = "The AI has changed nothing since the last question"
@@ -1621,3 +1670,263 @@ RefreshTree { reveal } =>
     loop at, node over tree
         if node.path = reveal, tree_sel = at
     return Refreshed
+
+
+| ── Claude Code and Codex (agents.gene.code) ───────────────────────────
+
+| The question handed to the agent `provider` names: written to a file,
+| and the agent started on it in a hidden terminal, so the ide keeps
+| going while it works. In edit mode, the folder is snapshotted first
+| (git), so what it changes can be shown and put back.
+AskAgent { provider, question, context } =>
+    mode = settings["ai.agent.mode"]
+    if chat.session_for ≠ provider.name, chat = chat + { session = "", session_for = provider.name }
+    text = context + "\n# The question\n" + question
+    if mode ≠ "edit", text = text + "\n\n(Ask mode: look and answer; change no files.)"
+    emit WriteFile { path = "runs/prompt.txt", content = text } to prefs get wrote
+    if wrote ∈ Exception
+        emit ChatFailed { text = "The question could not be written for the agent: " + wrote.message } to this
+        return Failed
+    emit WriteFile { path = "runs/out.jsonl", content = "" } to prefs
+    chat = chat + { snapshot = null, changed = null }
+    if mode = "edit"
+        emit TakeSnapshot to this get snap
+        if snap ∈ Snapshot, chat = chat + { snapshot = snap }
+        if snap ∉ Snapshot, chat = chat + { turns = chat.turns + [{ role = "error", text = "Not a git repository (or no commit yet): what the agent changes cannot be undone from here." }] }
+    runs = settings_dir + "/runs"
+    emit AgentCommand { provider = provider, mode = mode, session = chat.session, prompt_file = runs + "/prompt.txt", err_file = runs + "/err.txt", allow = settings["ai.agent.allowCommands"] } to this get line
+    emit Quoted { text = runs + "/out.jsonl" } to this get out_at
+    emit Open { cols = 200, rows = 50, cwd = folder, command = "/bin/sh", args = ["-c", line.text + " | tee " + out_at.text] } to shells get opened
+    if opened ∈ Exception
+        emit ChatFailed { text = provider.title + " could not be started: " + opened.message } to this
+        return Failed
+    chat = chat + { busy = true, request = -1, steps = 0, agent = { pty = opened.id, type = provider.type, title = provider.title, seen = 0, done = false, error = "" } }
+    return Asked
+
+| What the agent has written since last time, into the chat.
+AgentProgress =>
+    agent = chat.agent
+    if agent = null, return Nothing
+    emit ReadFile { path = "runs/out.jsonl" } to prefs get out
+    if out ∈ Exception, return Nothing
+    emit Split { value = out.content, separator = "\n" } to texts get split
+    emit Length { value = split.value } to core get { value as count }
+    | The last piece is a line still being written (or "" after the last \n).
+    complete = count - 1
+    if complete ≤ agent.seen, return Nothing
+    emit AgentEvents { lines = split.value[agent.seen, complete), type = agent.type, folder = folder } to this get update
+    steps = chat.steps
+    loop turn over update.turns
+        if turn.role = "tool", steps += 1
+    chat = chat + { turns = chat.turns + update.turns, steps = steps }
+    if update.session ≠ "", chat = chat + { session = update.session }
+    agent = agent + { seen = complete }
+    if update.done, agent = agent + { done = true, error = update.error }
+    chat = chat + { agent = agent }
+    return Progressed
+
+| The agent's program ended (or was stopped): the last of what it wrote,
+| why it failed if it did, and what it changed.
+AgentFinished =>
+    emit AgentProgress to this
+    agent = chat.agent
+    if agent = null, return Nothing
+    chat = chat + { agent = null, busy = false }
+    problem = agent.error
+    if not agent.done and problem = ""
+        emit ReadFile { path = "runs/err.txt" } to prefs get err
+        why = ""
+        if err ∉ Exception
+            emit Trim { value = err.content } to texts get trimmed
+            emit LastLines { text = trimmed.value, count = 8 } to this get last
+            why = last.text
+        problem = agent.title + " stopped without an answer"
+        if why ≠ "", problem = problem + ":\n" + why
+    if problem ≠ "", chat = chat + { turns = chat.turns + [{ role = "error", text = problem }] }
+    emit NoteAgentChanges to this
+    return Finished
+
+| A command in the open folder: its output, and whether it worked.
+InFolder { command, args } =>
+    emit Run { command = command, args = args, cwd = folder } to procs get ran
+    if ran ∈ Exception, return Ran { ok = false, text = "" }
+    emit Trim { value = ran.stdout } to texts get out
+    return Ran { ok = ran.success, text = out.value }
+
+| `text` as its non-empty lines.
+NonEmptyLines { text } =>
+    emit Split { value = text, separator = "\n" } to texts get split
+    out = []
+    loop line over split.value
+        if line ≠ "", out += line
+    return Lines { lines = out }
+
+| The folder as it is now, as a git commit that leaves everything as it
+| is (`git stash create`; HEAD when nothing is changed), and the untracked
+| files there are.
+TakeSnapshot =>
+    emit InFolder { command = "git", args = ["rev-parse", "--is-inside-work-tree"] } to this get inside
+    if not inside.ok, return NoSnapshot
+    emit InFolder { command = "git", args = ["stash", "create"] } to this get stashed
+    commit = stashed.text
+    if commit = ""
+        emit InFolder { command = "git", args = ["rev-parse", "HEAD"] } to this get head
+        if not head.ok, return NoSnapshot
+        commit = head.text
+    emit InFolder { command = "git", args = ["ls-files", "--others", "--exclude-standard"] } to this get untracked
+    emit NonEmptyLines { text = untracked.text } to this get untracked_lines
+    return Snapshot { commit = commit, untracked = untracked_lines.lines }
+
+| What differs from the snapshot now: files changed, and files new.
+AgentChanges =>
+    snap = chat.snapshot
+    if snap = null, return Changes { modified = [], created = [] }
+    emit InFolder { command = "git", args = ["diff", "--name-only", "--relative", snap.commit] } to this get diff
+    emit NonEmptyLines { text = diff.text } to this get modified
+    emit InFolder { command = "git", args = ["ls-files", "--others", "--exclude-standard"] } to this get untracked
+    emit NonEmptyLines { text = untracked.text } to this get now
+    created = []
+    loop path over now.lines
+        was = false
+        loop before over snap.untracked
+            if before = path, was = true
+        if not was, created += path
+    return Changes { modified = modified.lines, created = created }
+
+| After an edit-mode turn: what it changed, said in the chat, and the
+| open tabs of those files read again.
+NoteAgentChanges =>
+    if chat.snapshot = null, return Nothing
+    emit AgentChanges to this get changes
+    chat = chat + { changed = changes }
+    all = changes.modified + changes.created
+    emit Length { value = all } to core get { value as count }
+    if count = 0, return Nothing
+    emit Join { value = all, separator = "," } to texts get listed
+    chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + listed.value + " — View > Show AI Changes (Ctrl+K D) to see, Undo AI Changes to put back" }] }
+    emit ReloadFiles { paths = all } to this
+    return Noted
+
+| The open tabs of `paths` read again from the disk — all but the ones
+| with unsaved edits, which are left and named.
+ReloadFiles { paths } =>
+    emit Stash to this
+    kept_edits = []
+    loop path over paths
+        emit FindView { groups = groups, path = path, store = "workspace" } to this get at
+        if at.group ≥ 0
+            tab = groups[at.group].tabs[at.tab]
+            if tab.dirty = true, kept_edits += path
+            if tab.dirty ≠ true
+                emit Exists { path = path } to files get there
+                if there ∉ Exception and there.is_file
+                    emit ReadFile { path = path } to files get read
+                    emit Split { value = read.content, separator = "\n" } to texts get fresh
+                    emit Length { value = fresh.value } to core get { value as size }
+                    row = tab.row
+                    if row ≥ size, row = size - 1
+                    if row < 0, row = 0
+                    changed_tab = tab + { lines = fresh.value, row = row, col = 0, want = 0 }
+                    held = groups[at.group]
+                    tabs = held.tabs[0, at.tab) + [changed_tab] + held.tabs(at.tab, length)
+                    groups = groups[0, at.group) + [held + { tabs = tabs }] + groups(at.group, length)
+    emit Unstash to this
+    emit Length { value = kept_edits } to core get { value as unsaved }
+    if unsaved > 0
+        emit Join { value = kept_edits, separator = "," } to texts get names
+        chat = chat + { turns = chat.turns + [{ role = "error", text = "Not reloaded, they have unsaved edits here: " + names.value + " — the agent's version is on the disk" }] }
+    return Reloaded
+
+| View > Undo AI Changes after an agent: its changed files as they were
+| in the snapshot, its new files gone, and their tabs read again.
+UndoAgentChanges =>
+    emit AgentChanges to this get changes
+    all = changes.modified + changes.created
+    emit Length { value = all } to core get { value as count }
+    if count = 0
+        message = "The AI has changed nothing since the last question"
+        return Nothing
+    emit Length { value = changes.modified } to core get { value as modified_count }
+    if modified_count > 0
+        emit InFolder { command = "git", args = ["restore", "--source=" + chat.snapshot.commit, "--worktree", "--"] + changes.modified } to this get restored
+        if not restored.ok
+            message = "Error: git could not put the files back"
+            return Failed
+    loop path over changes.created
+        emit DeleteFile { path = path } to files
+    emit ReloadFiles { paths = changes.modified } to this
+    emit Stash to this
+    loop path over changes.created
+        emit FindView { groups = groups, path = path, store = "workspace" } to this get at
+        if at.group ≥ 0
+            emit CloseAt { groups = groups, current = current, group = at.group, tab = at.tab } to this get closed
+            groups = closed.groups
+            current = closed.current
+    emit Unstash to this
+    chat = chat + { snapshot = null, changed = null, turns = chat.turns + [{ role = "tool", text = "undid the AI's changes to " + count + " file(s)" }] }
+    message = "The AI's changes are undone"
+    return Undone
+
+| View > Show AI Changes: each file the agent changed, as a diff against
+| the snapshot, in a tab of its own (Escape closes it).
+ShowAiChanges =>
+    if chat.snapshot = null
+        message = "No AI changes to show (they are kept for the last question, in edit mode, in a git folder)"
+        return Nothing
+    emit AgentChanges to this get changes
+    emit EditorSlot to this get into
+    loop path over changes.modified + changes.created
+        old = []
+        created = true
+        emit InFolder { command = "git", args = ["show", chat.snapshot.commit + ":./" + path] } to this get before
+        if before.ok
+            emit Split { value = before.text, separator = "\n" } to texts get old_lines
+            old = old_lines.value
+            created = false
+        new = []
+        emit Exists { path = path } to files get there
+        if there ∉ Exception and there.is_file
+            emit ReadFile { path = path } to files get read
+            emit Split { value = read.content, separator = "\n" } to texts get new_lines
+            new = new_lines.value
+            emit Length { value = new } to core get { value as size }
+            if size > 0 and new[size - 1] = "", new = new[0, size - 1)
+        emit DiffLines { old = old, new = new, around = 3 } to this get diff
+        view = { kind = "diff", path = path + " Δ", store = "ai-done", target = path, created = created, lines = new, diff = diff.lines, removed = diff.removed, added = diff.added, top = 0, reviewed = true }
+        emit Show { buffer = view, slot = into.slot } to this
+    return Shown
+
+| Shift+Tab in the chat: ask ↔ edit, remembered in settings.
+ToggleAgentMode =>
+    mode = "edit"
+    if settings["ai.agent.mode"] = "edit", mode = "ask"
+    emit StoreSetting { key = "ai.agent.mode", value = mode } to this
+    message = "AI mode: " + mode
+    return Toggled
+
+| The providers to pick from: `ai.providers`' names, and claude and codex.
+ProviderNames =>
+    names = []
+    all = settings["ai.providers"]
+    if all ∈ Object
+        loop key, value over all
+            names += key
+    loop extra over ["claude", "codex"]
+        seen = false
+        loop name over names
+            if name = extra, seen = true
+        if not seen, names += extra
+    return Names { names = names }
+
+| Settings > AI: Switch Model…: `ai.provider` set to `name`, if it is one.
+SwitchModel { name } =>
+    emit Trim { value = name } to texts get trimmed
+    wanted = trimmed.value
+    if wanted = "", return Nothing
+    emit ProviderFor { settings = settings + { "ai.provider" = wanted } } to this get provider
+    if provider.problem ≠ "" and provider.type = null
+        message = "Error: no AI model called \"" + wanted + "\" — add it to ai.providers (Settings > AI Model…)"
+        return Failed
+    emit StoreSetting { key = "ai.provider", value = wanted } to this
+    message = "AI model: " + wanted
+    return Switched
