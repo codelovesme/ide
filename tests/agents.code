@@ -50,13 +50,13 @@ Recorded { name } =>
 claude = { type = "claude-code", command = "claude", model = "" }
 emit AgentCommand { provider = claude, mode = "ask", session = "", prompt_file = "/r/prompt.txt", err_file = "/r/err.txt", allow = [] } to this get ask_line
 assert ask_line.text = "'claude' -p --output-format stream-json --verbose --permission-mode plan < '/r/prompt.txt' 2> '/r/err.txt'"
-emit AgentCommand { provider = claude + { model = "sonnet" }, mode = "edit", session = "abc", prompt_file = "/r/it's.txt", err_file = "/r/err.txt", allow = ["Bash(cargo test:*)"] } to this get edit_line
-assert edit_line.text = "'claude' -p --output-format stream-json --verbose --permission-mode acceptEdits --model 'sonnet' --resume 'abc' --allowedTools 'Bash(cargo test:*)' < '/r/it'\\''s.txt' 2> '/r/err.txt'"
+emit AgentCommand { provider = claude + { model = "sonnet", effort = "high" }, mode = "edit", session = "abc", prompt_file = "/r/it's.txt", err_file = "/r/err.txt", allow = ["Bash(cargo test:*)"] } to this get edit_line
+assert edit_line.text = "'claude' -p --output-format stream-json --verbose --permission-mode acceptEdits --model 'sonnet' --effort 'high' --resume 'abc' --allowedTools 'Bash(cargo test:*)' < '/r/it'\\''s.txt' 2> '/r/err.txt'"
 codex = { type = "codex", command = "codex", model = "" }
 emit AgentCommand { provider = codex, mode = "ask", session = "", prompt_file = "/r/p", err_file = "/r/e", allow = [] } to this get codex_line
 assert codex_line.text = "'codex' exec --json --skip-git-repo-check -c sandbox_mode=\"read-only\" - < '/r/p' 2> '/r/e'"
-emit AgentCommand { provider = codex, mode = "edit", session = "t-1", prompt_file = "/r/p", err_file = "/r/e", allow = [] } to this get codex_resume
-assert codex_resume.text = "'codex' exec resume --json --skip-git-repo-check -c sandbox_mode=\"workspace-write\" 't-1' - < '/r/p' 2> '/r/e'"
+emit AgentCommand { provider = codex + { effort = "xhigh" }, mode = "edit", session = "t-1", prompt_file = "/r/p", err_file = "/r/e", allow = [] } to this get codex_resume
+assert codex_resume.text = "'codex' exec resume --json --skip-git-repo-check -c sandbox_mode=\"workspace-write\" -c 'model_reasoning_effort=\"xhigh\"' 't-1' - < '/r/p' 2> '/r/e'"
 
 | Claude Code, asked: a step, the answer, its session, done.
 emit Recorded { name = "claude-ask.jsonl" } to this get claude_ask
@@ -109,33 +109,55 @@ emit State to this get labelled
 assert labelled.chat_label = "Claude Code · Ask (Shift+Tab) · Alt+M: switch"
 assert labelled.ai_status = "Claude Code · Ask"
 
-| The model picker (Alt+M): every entry — the defaults and the user's —
-| checked; Enter goes to the models, Enter again picks one.
+| The model picker (Alt+M): the AI, its model, its effort — on the model.
+| ←/→ change a row at once; Enter lists a row's choices.
+emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh", models = ["m1", "m2"], efforts = ["low", "high"] } } } to this
 emit HandleKey { name = "alt+m", text = "" } to this
 emit State to this get picking
-assert picking.picker.level = "providers"
-chosen_row = picking.picker.items[picking.picker.index]
-assert chosen_row.value = "fake" and chosen_row.ready and chosen_row.models = ["m1", "m2"]
-names_listed = []
-loop row over picking.picker.items
-    names_listed += row.value
-assert names_listed = ["local", "claude", "codex", "fake"]
+assert picking.picker.row = 1
+assert picking.picker_rows.held.name = "fake" and picking.picker_rows.held.ready
+assert picking.picker_rows.choices[0] = ["local", "claude", "codex", "fake"]
+assert picking.picker_rows.choices[1] = ["", "m1", "m2"]
+assert picking.picker_rows.choices[2] = ["", "low", "high"]
 emit Framed to this get picker_frame
 assert picker_frame ∈ Screen
-emit HandleKey { name = "enter", text = "" } to this
-emit State to this get picking_model
-assert picking_model.picker.level = "models"
-assert picking_model.picker.items[0].value = "" and picking_model.picker.items[1].value = "m1"
-emit HandleKey { name = "escape", text = "" } to this
-emit State to this get back_up
-assert back_up.picker.level = "providers"
-emit HandleKey { name = "enter", text = "" } to this
+| → on the model: m1, straight away.
+emit HandleKey { name = "right", text = "" } to this
+emit State to this get on_m1
+assert on_m1.settings["ai.providers"]["fake"]["model"] = "m1"
+assert on_m1.ai_status = "Claude Code · m1 · Ask"
+| ↓ to the effort, ← goes round to the last: high.
 emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "left", text = "" } to this
+emit State to this get on_high
+assert on_high.settings["ai.providers"]["fake"]["effort"] = "high"
+assert on_high.ai_status = "Claude Code · m1 · high · Ask"
+| Enter lists the efforts; ↑, Enter picks low.
 emit HandleKey { name = "enter", text = "" } to this
-emit State to this get picked
-assert picked.picker = null
-assert picked.settings["ai.provider"] = "fake" and picked.settings["ai.providers"]["fake"]["model"] = "m1"
-assert picked.ai_status = "Claude Code · m1 · Ask"
+emit State to this get listing
+assert listing.picker.list.items = ["", "low", "high"] and listing.picker.list.index = 2
+emit HandleKey { name = "up", text = "" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get on_low
+assert on_low.picker.list = null and on_low.settings["ai.providers"]["fake"]["effort"] = "low"
+| The AI row: → goes round to local, and its rows are local's.
+emit HandleKey { name = "up", text = "" } to this
+emit HandleKey { name = "up", text = "" } to this
+emit HandleKey { name = "right", text = "" } to this
+emit State to this get on_local
+assert on_local.settings["ai.provider"] = "local" and on_local.picker_rows.held.name = "local"
+assert not on_local.picker_rows.effort_known
+| ← back to fake: its model and effort are as they were left.
+emit HandleKey { name = "left", text = "" } to this
+emit State to this get back_to_fake
+assert back_to_fake.picker_rows.chosen = ["fake", "m1", "low"]
+emit HandleKey { name = "escape", text = "" } to this
+emit State to this get closed_picker
+assert closed_picker.picker = null
+| The run takes the model and effort.
+emit AgentCommand { provider = { type = "claude-code", command = "claude", model = "m1", effort = "low" }, mode = "ask", session = "", prompt_file = "/p", err_file = "/e", allow = [] } to this get with_effort
+emit Contains { text = with_effort.text, part = "--model 'm1' --effort 'low'" } to this get effort_passed
+assert effort_passed.yes
 | A command that is not there is said so, and not picked as ready.
 emit ProviderCheck { provider = { type = "claude-code", runner = "cli", command = "/nowhere/claude", problem = "", models = null } } to this get missing_check
 assert not missing_check.ready and missing_check.note = "/nowhere/claude is not installed"
@@ -171,7 +193,7 @@ assert says_ask.yes
 | The next question continues the session.
 emit AgentRun { question = "and then?" } to this get second
 emit Run { command = "sh", args = ["-c", "cat \"\${TMPDIR:-/tmp}/ide-fake-agent-args\""] } to procs_lib get args_seen
-emit Contains { text = args_seen.stdout, part = "--permission-mode plan --model m1 --resume fake-session" } to this get resumed
+emit Contains { text = args_seen.stdout, part = "--permission-mode plan --model m1 --effort low --resume fake-session" } to this get resumed
 assert resumed.yes
 
 | Edit: it changes a file and makes one; the chat says so, Show AI Changes

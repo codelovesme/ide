@@ -17,10 +17,11 @@ defaults = {
     "ai.provider" = "local"
     "ai.providers" = {
         local = { type = "openai-compatible", endpoint = "", model = "", apiKeyEnv = "", contextTokens = 32768 }
-        | Claude Code cannot list its models: these are the names its --model
-        | takes (edit them here; "" is its own default).
-        claude = { type = "claude-code", command = "claude", model = "", models = ["fable", "opus", "sonnet"] }
-        codex = { type = "codex", command = "codex", model = "" }
+        | Claude Code cannot list its models or efforts: these are the names
+        | its --model and --effort take (edit them here; "" is its own
+        | default). Codex reports both itself.
+        claude = { type = "claude-code", command = "claude", model = "", models = ["fable", "opus", "sonnet"], effort = "", efforts = ["low", "medium", "high", "xhigh", "max"] }
+        codex = { type = "codex", command = "codex", model = "", effort = "" }
     }
     "ai.chat.location" = "r"
     "ai.maxSteps" = 12

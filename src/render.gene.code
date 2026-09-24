@@ -236,39 +236,59 @@ DiffRows { pane, view, focused } =>
         i += 1
     return PaneView { overlays = out, top = top }
 
-| The model picker: a box in the middle of the screen, its title, and its
-| rows — a label, and on the right how it stands (orange when it is not
-| ready).
-PickerView { picker, cols, rows } =>
+| The model picker: a box near the top — the AI, its model, its effort,
+| each `◂ value ▸`, the row being changed lit — and under it, when Enter
+| opened one, the list of a row's choices.
+PickerView { picker, rows, cols, height } =>
     width = cols - 8
-    if width > 96, width = 96
+    if width > 90, width = 90
     col = (cols - width) / 2
     if col < 0, col = 0
-    emit Length { value = picker.items } to core get { value as count }
-    room = rows - 8
-    if room < 1, room = 1
-    top = 0
-    if picker.index ≥ room, top = picker.index - room + 1
-    out = [{ row = 2, col = col, spans = [{ text = " " + picker.title, width = width, style = "menu_active" }] }]
-    i = 0
-    loop
-        if i ≥ room or top + i ≥ count, break
-        item = picker.items[top + i]
+    out = [{ row = 2, col = col, spans = [{ text = " AI — ←/→ change · ↑/↓ row · Enter: list · Esc: done", width = width, style = "menu_active" }] }]
+    labels = ["AI", "Model", "Effort"]
+    loop r, label over labels
+        value = rows.chosen[r]
+        if r = 0, value = rows.held.title
+        if r = 1 and value = "", value = "its default"
+        if r = 2 and value = ""
+            value = "default"
+            if rows.usual_effort ≠ "", value = "default (" + rows.usual_effort + ")"
+        note = ""
+        note_colour = null
+        if r = 0
+            note = rows.held.note
+            if not rows.held.ready, note_colour = [230, 140, 60]
+        if r = 2 and not rows.effort_known
+            note = "not supported"
+            if not rows.held.api, note = "not listed — add \"efforts\": [...] to its entry"
         style = "menu_item"
-        detail_style = "menu_key"
-        if top + i = picker.index
+        note_style = "menu_key"
+        if r = picker.row
             style = "menu_item_active"
-            detail_style = "menu_key_active"
-        | A long detail is cut at its end, keeping what it says about readiness
-        | readable from the left.
-        room_right = width / 2 - 2
-        shown_detail = item.detail
-        emit Length { value = shown_detail } to core get { value as detail_size }
-        if detail_size > room_right and room_right > 1, shown_detail = shown_detail[0, room_right - 1) + "…"
-        detail = { text = shown_detail + "  ", width = width / 2, align = "right", style = detail_style }
-        if item.ready = false, detail = detail + { fg = [230, 140, 60] }
-        out += { row = 3 + i, col = col, spans = [{ text = "  " + item.label, width = width - width / 2, style = style }, detail] }
-        i += 1
+            note_style = "menu_key_active"
+        note_span = { text = note + "  ", width = width - 44, align = "right", style = note_style }
+        if note_colour ≠ null, note_span = note_span + { fg = note_colour }
+        out += { row = 3 + r, col = col, spans = [
+            { text = "  " + label, width = 10, style = style }
+            { text = "◂ " + value + " ▸", width = 34, style = style }
+            note_span
+        ] }
+    if picker.list ≠ null
+        emit Length { value = picker.list.items } to core get { value as count }
+        room = height - 10
+        if room < 1, room = 1
+        top = 0
+        if picker.list.index ≥ room, top = picker.list.index - room + 1
+        i = 0
+        loop
+            if i ≥ room or top + i ≥ count, break
+            item = picker.list.items[top + i]
+            shown = item
+            if item = "", shown = "(default)"
+            style = "menu_item"
+            if top + i = picker.list.index, style = "menu_item_active"
+            out += { row = 6 + i, col = col + 10, spans = [{ text = "  " + shown, width = width - 10, style = style }] }
+            i += 1
     return Overlays { overlays = out }
 
 | The tab strip: every tab's name (● when a file has unsaved changes),
@@ -482,7 +502,7 @@ Frame { state, placement, screens } =>
         cursor_col = status.cursor_col
 
     if state.picker ≠ null
-        emit PickerView { picker = state.picker, cols = state.cols, rows = state.rows } to this get picked
+        emit PickerView { picker = state.picker, rows = state.picker_rows, cols = state.cols, height = state.rows } to this get picked
         overlays = overlays + picked.overlays
         cursor_row = null
 

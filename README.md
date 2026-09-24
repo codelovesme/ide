@@ -100,17 +100,30 @@ writes the entries in for you):
 }
 ```
 
-**Picking the AI: Alt+M** (or Settings > AI: Switch Model…) lists every
-entry in `ai.providers`, each checked as the list opens — ready, not
-installed, not signed in, not reachable, the key refused — with the model
-it is on. Enter shows its models, Enter again picks one. The models are
-the ones it reports itself (a server's `/v1/models`, `codex debug
-models`), or the `"models"` list in its entry, which wins (Claude Code
-cannot list its own, so its entry carries the names its `--model` takes;
-edit them there). The AI in use is on the status bar, and on the line over
-the chat's input. Nothing here is built into the ide: `local`, `claude` and
-`codex` are default entries of `ai.providers`, merged under yours — add
-your own beside them.
+**Picking the AI: Alt+M** (or Settings > AI: Switch Model…) opens three
+rows — the AI, its model, its effort — with the cursor on the model:
+
+```
+ AI       ◂ Claude Code ▸   ready
+ Model    ◂ sonnet ▸
+ Effort   ◂ high ▸
+```
+
+←/→ change the row you are on, at once; ↑/↓ move between rows; Enter
+lists a row's choices (for a long list of models); Escape closes. Each AI
+is checked as it opens — ready, not installed, not signed in, not
+reachable, the key refused — and keeps its own model and effort, so
+switching away and back finds them as they were. The status bar shows
+what is in use (`Claude Code · sonnet · high · Ask`).
+
+Nothing here is built into the ide. The models and efforts are the ones a
+tool reports itself — a server's `/v1/models`; Codex's catalogue, with the
+efforts each model takes and its default — or, where it cannot say, the
+`"models"` / `"efforts"` lists in its entry, which win (Claude Code's entry
+carries the names its `--model` and `--effort` take; edit them there).
+`local`, `claude` and `codex` are default entries of `ai.providers`, merged
+under yours — add your own beside them. The local model takes no effort
+yet (that needs the localai module to pass one on).
 
 **Or Claude Code / Codex behind the same chat.** With `"ai.provider":
 "claude"` or `"codex"` (or Alt+M) the chat runs
@@ -136,8 +149,9 @@ shown on the line over the input:
 
 ```json
 "ai.providers": {
-  "claude": { "type": "claude-code", "command": "claude", "model": "", "models": ["fable", "opus", "sonnet"] },
-  "codex":  { "type": "codex", "command": "codex", "model": "" }
+  "claude": { "type": "claude-code", "command": "claude", "model": "", "models": ["fable", "opus", "sonnet"],
+              "effort": "", "efforts": ["low", "medium", "high", "xhigh", "max"] },
+  "codex":  { "type": "codex", "command": "codex", "model": "", "effort": "" }
 },
 "ai.agent.mode": "ask",
 "ai.agent.allowCommands": []
@@ -192,7 +206,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+K M | Move the tab to another place |
 | Ctrl+\` (Ctrl+Space) / Ctrl+K T | The terminal / a new terminal |
 | Ctrl+L (Ctrl+Alt+I) | The AI chat: open it, or the keys to and from it |
-| Alt+M | Pick the AI and its model |
+| Alt+M | The AI, its model and its effort |
 
 In the editor: arrows, Home (first non-space, then column 0), End,
 PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab and Shift+Tab

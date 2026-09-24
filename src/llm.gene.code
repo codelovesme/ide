@@ -57,12 +57,16 @@ ProviderFor { settings } =>
     if model ∉ String, model = ""
     models = given["models"]
     if models ∉ Array, models = null
+    effort = given["effort"]
+    if effort ∉ String, effort = ""
+    efforts = given["efforts"]
+    if efforts ∉ Array, efforts = null
     if types[kind].runner = "cli"
         command = given["command"]
         if command ∉ String or command = ""
             command = "claude"
             if kind = "codex", command = "codex"
-        return Provider { name = name, type = kind, runner = "cli", title = types[kind].title, command = command, model = model, models = models, context_tokens = 200000, max_tokens = 8000, problem = "" }
+        return Provider { name = name, type = kind, runner = "cli", title = types[kind].title, command = command, model = model, models = models, effort = effort, efforts = efforts, context_tokens = 200000, max_tokens = 8000, problem = "" }
     endpoint = given["endpoint"]
     if endpoint = null or endpoint ∉ String or endpoint = ""
         return Provider { name = name, problem = "No AI model is set up: Settings > AI Model… and set ai.providers." + name + ".endpoint (e.g. http://localhost:8080)" }
@@ -78,6 +82,8 @@ ProviderFor { settings } =>
         runner = "api"
         title = name
         models = models
+        effort = effort
+        efforts = efforts
         organelle = types[kind].organelle
         endpoint = endpoint
         model = model

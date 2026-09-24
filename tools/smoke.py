@@ -96,12 +96,13 @@ check(not any(" AI Chat " in s.screen.row(r) for r in range(1, 39)), "ctrl+w clo
 
 # An agent behind the chat (the stand-in for Claude Code): switched to from
 # the Settings menu; the ide keeps answering keys while it works.
-s.keys(b"\x1bm", 1.5)                      # alt+m: the model picker
+s.keys(b"\x1bm", 1.5)                      # alt+m: the AI, its model, its effort
 screen_text = s.screen.text()
-check("AI — Enter: its models" in screen_text and "(claude)" in screen_text and "(fake)" in screen_text, "alt+m lists every AI, each checked")
-check("not set up" in screen_text, "and says which is not ready")
-s.keys(b"\x1b[B" * 3 + b"\r", 0.8)          # the fake one: its models
-s.keys(b"\r", 0.8)                          # its default
+check("◂ local ▸" in screen_text and "Model" in screen_text and "Effort" in screen_text, "alt+m shows the AI, its model and effort")
+check("not set up" in screen_text, "and says when the AI is not ready")
+s.keys(b"\x1b[A\x1b[D", 1.0)                # ↑ to the AI, ← round to the last: fake
+check("◂ Claude Code ▸" in s.screen.text(), "←/→ switch the AI in place")
+s.keys(b"\x1b", 0.8)
 check("Claude Code · Ask" in s.screen.row(39), "the status bar shows the AI picked")
 s.keys(b"\x0c", 0.8)
 check(any("Claude Code · Ask" in s.screen.row(r) for r in range(1, 39)), "the chat names the agent and its mode")

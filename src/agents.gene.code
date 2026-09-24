@@ -52,6 +52,9 @@ AgentCommand { provider, mode, session, prompt_file, err_file, allow } =>
         if provider.model ≠ ""
             emit Quoted { text = provider.model } to this get model
             line = line + " --model " + model.text
+        if provider.effort ≠ null and provider.effort ≠ ""
+            emit Quoted { text = provider.effort } to this get effort
+            line = line + " --effort " + effort.text
         if session ≠ ""
             emit Quoted { text = session } to this get resumed
             line = line + " --resume " + resumed.text
@@ -66,6 +69,9 @@ AgentCommand { provider, mode, session, prompt_file, err_file, allow } =>
         sandbox = "read-only"
         if mode = "edit", sandbox = "workspace-write"
         line = line + " -c sandbox_mode=\"" + sandbox + "\""
+        if provider.effort ≠ null and provider.effort ≠ ""
+            emit Quoted { text = "model_reasoning_effort=\"" + provider.effort + "\"" } to this get effort
+            line = line + " -c " + effort.text
         if provider.model ≠ ""
             emit Quoted { text = provider.model } to this get model
             line = line + " -m " + model.text
