@@ -46,7 +46,7 @@ AgentCommand { provider, mode, session, prompt_file, err_file, allow } =>
     emit Quoted { text = err_file } to this get err_at
     line = program.text
     if provider.type = "claude-code"
-        line = line + " -p --output-format stream-json --verbose --permission-prompts none"
+        line = line + " -p --output-format stream-json --verbose"
         if mode = "edit", line = line + " --permission-mode acceptEdits"
         if mode ≠ "edit", line = line + " --permission-mode plan"
         if provider.model ≠ ""
