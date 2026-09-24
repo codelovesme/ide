@@ -31,6 +31,23 @@
       "setup": "Config",
       "global": false
     },
+    "http_client": {
+      "name": "http_client",
+      "version": "2.8.3",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "asset": "http_client-linux-x86_64.so",
+      "sha256": "c7ea53e9ed13bd86d79d249f3a5f9a056abc072236ebdfd1cf94770f3d59c67f",
+      "handlers": [
+        "Get",
+        "Post",
+        "Put",
+        "Patch",
+        "Delete",
+        "Head",
+        "Options"
+      ],
+      "global": false
+    },
     "json": {
       "name": "json",
       "version": "2.8.3",

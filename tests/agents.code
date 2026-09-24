@@ -33,6 +33,13 @@ Contains { text, part } =>
         i += 1
     return Is { yes = false }
 
+| A frame, the way Render makes one.
+Framed {} =>
+    emit State to this get state
+    emit Placement { state = state } to this get placement
+    emit Frame { state = state, placement = placement, screens = {} } to this get screen
+    return screen
+
 | The fixture `name`, as lines.
 Recorded { name } =>
     emit ReadFile { path = name } to fixtures get read
@@ -95,11 +102,46 @@ emit SettingsAt { dir = ".test-agents-config" } to this
 emit OpenFolder { path = agent_root } to this
 emit Run { command = "pwd", cwd = "tests" } to procs_lib get tests_dir
 emit Trim { value = tests_dir.stdout } to strings_lib get tests_at
-emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh" } } } to this
+emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh", models = ["m1", "m2"] } } } to this
 emit StoreSetting { key = "ai.provider", value = "fake" } to this
 emit ChatNotice to this
 emit State to this get labelled
-assert labelled.chat_label = "Claude Code · Ask (Shift+Tab)"
+assert labelled.chat_label = "Claude Code · Ask (Shift+Tab) · Alt+M: switch"
+assert labelled.ai_status = "Claude Code · Ask"
+
+| The model picker (Alt+M): every entry — the defaults and the user's —
+| checked; Enter goes to the models, Enter again picks one.
+emit HandleKey { name = "alt+m", text = "" } to this
+emit State to this get picking
+assert picking.picker.level = "providers"
+chosen_row = picking.picker.items[picking.picker.index]
+assert chosen_row.value = "fake" and chosen_row.ready and chosen_row.models = ["m1", "m2"]
+names_listed = []
+loop row over picking.picker.items
+    names_listed += row.value
+assert names_listed = ["local", "claude", "codex", "fake"]
+emit Framed to this get picker_frame
+assert picker_frame ∈ Screen
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get picking_model
+assert picking_model.picker.level = "models"
+assert picking_model.picker.items[0].value = "" and picking_model.picker.items[1].value = "m1"
+emit HandleKey { name = "escape", text = "" } to this
+emit State to this get back_up
+assert back_up.picker.level = "providers"
+emit HandleKey { name = "enter", text = "" } to this
+emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get picked
+assert picked.picker = null
+assert picked.settings["ai.provider"] = "fake" and picked.settings["ai.providers"]["fake"]["model"] = "m1"
+assert picked.ai_status = "Claude Code · m1 · Ask"
+| A command that is not there is said so, and not picked as ready.
+emit ProviderCheck { provider = { type = "claude-code", runner = "cli", command = "/nowhere/claude", problem = "", models = null } } to this get missing_check
+assert not missing_check.ready and missing_check.note = "/nowhere/claude is not installed"
+| A server that is not there: not reachable.
+emit ProviderCheck { provider = { type = "openai-compatible", runner = "api", endpoint = "http://127.0.0.1:9", api_key_env = "", problem = "", models = null } } to this get down_check
+assert not down_check.ready and down_check.note = "not reachable at http://127.0.0.1:9"
 
 | The agent's run, waited for, and its end handed in (as the pty would).
 AgentRun { question } =>
@@ -129,7 +171,7 @@ assert says_ask.yes
 | The next question continues the session.
 emit AgentRun { question = "and then?" } to this get second
 emit Run { command = "sh", args = ["-c", "cat \"\${TMPDIR:-/tmp}/ide-fake-agent-args\""] } to procs_lib get args_seen
-emit Contains { text = args_seen.stdout, part = "--permission-mode plan --resume fake-session" } to this get resumed
+emit Contains { text = args_seen.stdout, part = "--permission-mode plan --model m1 --resume fake-session" } to this get resumed
 assert resumed.yes
 
 | Edit: it changes a file and makes one; the chat says so, Show AI Changes

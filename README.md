@@ -100,8 +100,20 @@ writes the entries in for you):
 }
 ```
 
+**Picking the AI: Alt+M** (or Settings > AI: Switch Model…) lists every
+entry in `ai.providers`, each checked as the list opens — ready, not
+installed, not signed in, not reachable, the key refused — with the model
+it is on. Enter shows its models, Enter again picks one. The models are
+the ones it reports itself (a server's `/v1/models`, `codex debug
+models`), or the `"models"` list in its entry, which wins (Claude Code
+cannot list its own, so its entry carries the names its `--model` takes;
+edit them there). The AI in use is on the status bar, and on the line over
+the chat's input. Nothing here is built into the ide: `local`, `claude` and
+`codex` are default entries of `ai.providers`, merged under yours — add
+your own beside them.
+
 **Or Claude Code / Codex behind the same chat.** With `"ai.provider":
-"claude"` or `"codex"` (or Settings > AI: Switch Model…) the chat runs
+"claude"` or `"codex"` (or Alt+M) the chat runs
 the `claude` or `codex` program you have installed and signed in to —
 your own subscription, no API key, no per-question bill — out of sight,
 and shows its steps and answers as they come; the ide keeps working
@@ -124,7 +136,7 @@ shown on the line over the input:
 
 ```json
 "ai.providers": {
-  "claude": { "type": "claude-code", "command": "claude", "model": "" },
+  "claude": { "type": "claude-code", "command": "claude", "model": "", "models": ["fable", "opus", "sonnet"] },
   "codex":  { "type": "codex", "command": "codex", "model": "" }
 },
 "ai.agent.mode": "ask",
@@ -180,6 +192,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+K M | Move the tab to another place |
 | Ctrl+\` (Ctrl+Space) / Ctrl+K T | The terminal / a new terminal |
 | Ctrl+L (Ctrl+Alt+I) | The AI chat: open it, or the keys to and from it |
+| Alt+M | Pick the AI and its model |
 
 In the editor: arrows, Home (first non-space, then column 0), End,
 PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab and Shift+Tab
@@ -265,7 +278,8 @@ Organelles: `tty` (keys in, a screen out — only changed rows are written),
 `syntax` (spans from code's lexer, still coloured while a file does not
 lex), `fs` (twice: the open folder, and the settings folder), `json`,
 `strings`, `env`, `pty` (the terminals), `localai` (the model, over
-`/v1/chat/completions`), `process` (ripgrep and git for the chat).
+`/v1/chat/completions`), `process` (ripgrep and git for the chat),
+`http_client` (a model server's list of models).
 
 ## Developing
 
@@ -286,7 +300,7 @@ A `v*` tag runs [the release workflow](.github/workflows/release.yml), which
 does exactly the above on a clean machine. Then
 [tools/package.sh](tools/package.sh) builds the ide as a program (`code
 build`) and lays out `ide-<tag>-x86_64-linux.tar.gz`: the program, [its
-launcher](bin/ide), and the nine organelles beside it. It needs no `code`
+launcher](bin/ide), and the ten organelles beside it. It needs no `code`
 interpreter to run. The smoke test proves that — it runs the bundle with no
 `code` on the machine and no module cache — before it is published.
 

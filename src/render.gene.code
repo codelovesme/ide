@@ -236,6 +236,41 @@ DiffRows { pane, view, focused } =>
         i += 1
     return PaneView { overlays = out, top = top }
 
+| The model picker: a box in the middle of the screen, its title, and its
+| rows — a label, and on the right how it stands (orange when it is not
+| ready).
+PickerView { picker, cols, rows } =>
+    width = cols - 8
+    if width > 96, width = 96
+    col = (cols - width) / 2
+    if col < 0, col = 0
+    emit Length { value = picker.items } to core get { value as count }
+    room = rows - 8
+    if room < 1, room = 1
+    top = 0
+    if picker.index ≥ room, top = picker.index - room + 1
+    out = [{ row = 2, col = col, spans = [{ text = " " + picker.title, width = width, style = "menu_active" }] }]
+    i = 0
+    loop
+        if i ≥ room or top + i ≥ count, break
+        item = picker.items[top + i]
+        style = "menu_item"
+        detail_style = "menu_key"
+        if top + i = picker.index
+            style = "menu_item_active"
+            detail_style = "menu_key_active"
+        | A long detail is cut at its end, keeping what it says about readiness
+        | readable from the left.
+        room_right = width / 2 - 2
+        shown_detail = item.detail
+        emit Length { value = shown_detail } to core get { value as detail_size }
+        if detail_size > room_right and room_right > 1, shown_detail = shown_detail[0, room_right - 1) + "…"
+        detail = { text = shown_detail + "  ", width = width / 2, align = "right", style = detail_style }
+        if item.ready = false, detail = detail + { fg = [230, 140, 60] }
+        out += { row = 3 + i, col = col, spans = [{ text = "  " + item.label, width = width - width / 2, style = style }, detail] }
+        i += 1
+    return Overlays { overlays = out }
+
 | The tab strip: every tab's name (● when a file has unsaved changes),
 | the active one lit, scrolled so the active one is always in sight.
 TabStrip { tabs, active, width, focused } =>
@@ -328,7 +363,7 @@ WelcomeView { pane } =>
 
 | The status bar: a prompt being answered, or the last message on the
 | left; where the cursor is and the language on the right.
-StatusBar { width, row, message, prompt, buffer } =>
+StatusBar { width, row, message, prompt, buffer, ai } =>
     if prompt ≠ null
         emit Length { value = prompt.label + prompt.text } to core get { value as typed }
         return Status {
@@ -341,11 +376,15 @@ StatusBar { width, row, message, prompt, buffer } =>
         if buffer.path[length - 5, length) = ".code", language = "code"
         if buffer.path[length - 5, length) = ".json", language = "JSON"
         right = "Ln " + (buffer.row + 1) + ", Col " + (buffer.col + 1) + "    " + language + "  "
+    if ai ≠ null and ai ≠ "", right = ai + "    " + right
+    emit Length { value = right } to core get { value as right_size }
+    right_width = 34
+    if right_size > right_width, right_width = right_size
     style = "status"
     if message[0, 6) = "Error:", style = "status_warn"
     return Status { overlays = [{ row = row, col = 0, spans = [
-        { text = " " + message, width = width - 34, style = style }
-        { text = right, width = 34, align = "right", style = style }
+        { text = " " + message, width = width - right_width, style = style }
+        { text = right, width = right_width, align = "right", style = style }
     ] }] }
 
 | Where every group goes: `Layout` over the groups' slots. Answers the
@@ -436,11 +475,16 @@ Frame { state, placement, screens } =>
                 cursor_row = drawn.cursor_row
                 cursor_col = drawn.cursor_col
 
-    emit StatusBar { width = state.cols, row = state.rows - 1, message = state.message, prompt = state.prompt, buffer = state.file } to this get status
+    emit StatusBar { width = state.cols, row = state.rows - 1, message = state.message, prompt = state.prompt, buffer = state.file, ai = state.ai_status } to this get status
     overlays = overlays + status.overlays
     if state.prompt ≠ null
         cursor_row = state.rows - 1
         cursor_col = status.cursor_col
+
+    if state.picker ≠ null
+        emit PickerView { picker = state.picker, cols = state.cols, rows = state.rows } to this get picked
+        overlays = overlays + picked.overlays
+        cursor_row = null
 
     if state.menu ≠ null
         emit Dropdown { open = state.menu, labels = state.keytable.labels } to this get dropdown

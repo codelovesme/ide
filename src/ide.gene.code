@@ -50,6 +50,8 @@ last_edit = ""
 focus = "none"
 menu = null
 prompt = null
+| The model picker, when it is open (see OpenModelPicker).
+picker = null
 message = ""
 chord = ""
 explorer_slot = "l"
@@ -84,10 +86,15 @@ chat_page = 10
 models = {}
 model_key = ""
 procs = null
+| http_client: a model server's /v1/models, for the picker.
+web = null
+jsons = null
 | What the chat says before anything is asked when no model is set up,
 | and the model (and, for an agent, the mode) on the rule over its input.
 chat_notice = ""
 chat_label = ""
+| The same, short, for the status bar.
+ai_status = ""
 | What "this" means to the chat: the file and the terminal shown last, and
 | the places just edited (`path:line`, latest last).
 last_file = null
@@ -101,7 +108,7 @@ shells = null
 terminals_opened = 0
 terminal_sizes = {}
 
-| Links the nine organelles from the folder `from`, relative to where the program
+| Links the ten organelles from the folder `from`, relative to where the program
 | was started: `.` in a release bundle (bin/ide starts it there), and
 | `organelles` in a checkout (tools/organelles.sh puts them there).
 Organelles { from } =>
@@ -115,7 +122,8 @@ Organelles { from } =>
     link from + "/pty.so" as pty_at
     link from + "/localai.so" as localai_at
     link from + "/process.so" as process_at
-    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at, pty = pty_at, localai = localai_at, process = process_at }
+    link from + "/http_client.so" as http_at
+    return Linked { http = http_at, env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at, pty = pty_at, localai = localai_at, process = process_at }
 
 | Links them, and hands each gene the ones it uses.
 UseOrganelles { from } =>
@@ -128,6 +136,8 @@ UseOrganelles { from } =>
     prefs = linked.prefs
     shells = linked.pty
     procs = linked.process
+    web = linked.http
+    jsons = linked.json
     models = { localai = linked.localai }
     emit ChatUses { json = linked.json, strings = linked.strings } to this
     emit ContextUses { strings = linked.strings } to this
@@ -214,6 +224,9 @@ FindTerminal { id } =>
 HandleKey { name, text } =>
     if prompt ≠ null
         emit PromptKey { name = name, text = text } to this
+        return Handled
+    if picker ≠ null
+        emit PickerKey { name = name } to this
         return Handled
     if menu ≠ null
         emit MenuKey { open = menu, name = name } to this get chosen
@@ -330,10 +343,7 @@ Run { command } =>
     if command = "ai.undoTurn", emit UndoAiChanges to this
     if command = "ai.showChanges", emit ShowAiChanges to this
     if command = "ai.toggleMode", emit ToggleAgentMode to this
-    if command = "ai.switchModel"
-        emit ProviderNames to this get names
-        emit Join { value = names.names, separator = "," } to texts get listed
-        prompt = { kind = "ai_model", label = "AI model (" + listed.value + "): ", text = "" }
+    if command = "ai.switchModel", emit OpenModelPicker to this
     if command = "help.keys", emit ShowShortcuts to this
     if command = "help.about", message = "codelovesme ide — a terminal IDE for code, built on euglena"
     return Ran
@@ -508,10 +518,9 @@ PromptKey { name, text } =>
     if name = "escape"
         prompt = null
         return Cancelled
-    if asked.kind = "open_folder" or asked.kind = "move" or asked.kind = "new_file" or asked.kind = "ai_model"
+    if asked.kind = "open_folder" or asked.kind = "move" or asked.kind = "new_file"
         if name = "enter"
             prompt = null
-            if asked.kind = "ai_model", emit SwitchModel { name = asked.text } to this
             if asked.kind = "open_folder", emit OpenFolder { path = asked.text } to this
             if asked.kind = "new_file", emit CreateNewFile { dir = asked.dir, name = asked.text } to this
             if asked.kind = "move", emit MoveCurrent { into = asked.text } to this
@@ -931,6 +940,7 @@ State =>
         file = file
         focus = focus
         menu = menu
+        picker = picker
         prompt = prompt
         message = message
         sizes = sizes
@@ -938,6 +948,7 @@ State =>
         chat = chat
         chat_notice = chat_notice
         chat_label = chat_label
+        ai_status = ai_status
         settings = settings
     }
 
@@ -1022,13 +1033,18 @@ ChatNotice =>
     emit ProviderFor { settings = settings } to this get provider
     chat_notice = provider.problem
     chat_label = ""
+    ai_status = ""
     if provider.problem = "" and provider.runner = "cli"
         mode = "Ask"
         if settings["ai.agent.mode"] = "edit", mode = "Edit"
-        chat_label = provider.title + " · " + mode + " (Shift+Tab)"
+        ai_status = provider.title
+        if provider.model ≠ "", ai_status = ai_status + " · " + provider.model
+        chat_label = ai_status + " · " + mode + " (Shift+Tab) · Alt+M: switch"
+        ai_status = ai_status + " · " + mode
     if provider.problem = "" and provider.runner = "api"
-        chat_label = provider.name
-        if provider.model ≠ "", chat_label = chat_label + " · " + provider.model
+        ai_status = provider.name
+        if provider.model ≠ "", ai_status = ai_status + " · " + provider.model
+        chat_label = ai_status + " · Alt+M: switch"
     return Noted
 
 | A key in the chat: Escape gives the keys back to the files, Ctrl+C stops
@@ -1904,29 +1920,141 @@ ToggleAgentMode =>
     message = "AI mode: " + mode
     return Toggled
 
-| The providers to pick from: `ai.providers`' names, and claude and codex.
+| The providers to pick from: every `ai.providers` entry (the defaults
+| and the user's, see settings.gene.code).
 ProviderNames =>
     names = []
     all = settings["ai.providers"]
     if all ∈ Object
         loop key, value over all
             names += key
-    loop extra over ["claude", "codex"]
-        seen = false
-        loop name over names
-            if name = extra, seen = true
-        if not seen, names += extra
     return Names { names = names }
 
-| Settings > AI: Switch Model…: `ai.provider` set to `name`, if it is one.
-SwitchModel { name } =>
-    emit Trim { value = name } to texts get trimmed
-    wanted = trimmed.value
-    if wanted = "", return Nothing
-    emit ProviderFor { settings = settings + { "ai.provider" = wanted } } to this get provider
-    if provider.problem ≠ "" and provider.type = null
-        message = "Error: no AI model called \"" + wanted + "\" — add it to ai.providers (Settings > AI Model…)"
-        return Failed
-    emit StoreSetting { key = "ai.provider", value = wanted } to this
-    message = "AI model: " + wanted
-    return Switched
+| http_client speaks first on every request (`Log`); nothing to do here.
+Log { source, level, message as logged } =>
+    return Ignored
+
+| Whether the provider `provider` (from ProviderFor) can be used now, and
+| the models it offers: the ones settings list (`"models"`), else the ones
+| it says it has — a server's /v1/models, `codex debug models`.
+ProviderCheck { provider } =>
+    if provider.problem ≠ ""
+        return Check { ready = false, note = "not set up", models = [] }
+    found = []
+    ready = true
+    note = "ready"
+    if provider.type = "claude-code"
+        emit Run { command = provider.command, args = ["auth", "status"], cwd = folder } to procs get auth
+        if auth ∈ Exception, return Check { ready = false, note = provider.command + " is not installed", models = [] }
+        emit Parse { text = auth.stdout } to jsons get status
+        signed_in = status ∉ Exception and status.value ∈ Object and status.value["loggedIn"] = true
+        if not signed_in
+            ready = false
+            note = "not signed in — run " + provider.command + " once"
+    if provider.type = "codex"
+        emit Run { command = provider.command, args = ["login", "status"], cwd = folder } to procs get login
+        if login ∈ Exception, return Check { ready = false, note = provider.command + " is not installed", models = [] }
+        if not login.success
+            ready = false
+            note = "not signed in — " + provider.command + " login"
+        emit Run { command = provider.command, args = ["debug", "models"], cwd = folder } to procs get catalog
+        if catalog ∉ Exception and catalog.success
+            emit Parse { text = catalog.stdout } to jsons get codex_listed
+            if codex_listed ∉ Exception and codex_listed.value ∈ Object and codex_listed.value["models"] ∈ Array
+                loop one over codex_listed.value["models"]
+                    if one["slug"] ∈ String and one["visibility"] ≠ "hide", found += one["slug"]
+    if provider.runner = "api"
+        root_url = provider.endpoint
+        emit Length { value = root_url } to core get { value as size }
+        if size > 0 and root_url[size - 1] = "/", root_url = root_url[0, size - 1)
+        emit Length { value = root_url } to core get { value as trimmed_size }
+        url = root_url + "/v1/models"
+        if trimmed_size ≥ 3 and root_url[trimmed_size - 3, trimmed_size) = "/v1", url = root_url + "/models"
+        headers = {}
+        if provider.api_key_env ≠ ""
+            emit Get { name = provider.api_key_env, default = "" } to vars get key
+            if key.value ≠ "", headers = { Authorization = "Bearer " + key.value }
+        emit Get { url = url, headers = headers, timeout_seconds = 3 } to web get answer
+        if answer ∈ Exception or not answer.ok
+            ready = false
+            note = "not reachable at " + provider.endpoint
+        if answer ∉ Exception and answer.ok and answer.status = 401
+            ready = false
+            note = "the key was refused (" + provider.api_key_env + ")"
+        if answer ∉ Exception and answer.ok and answer.status = 200
+            emit Parse { text = answer.body } to jsons get api_listed
+            if api_listed ∉ Exception and api_listed.value ∈ Object and api_listed.value["data"] ∈ Array
+                loop one over api_listed.value["data"]
+                    if one["id"] ∈ String, found += one["id"]
+    if provider.models ≠ null
+        found = []
+        loop one over provider.models
+            if one ∈ String, found += one
+    return Check { ready = ready, note = note, models = found }
+
+| Alt+M (or Settings > AI: Switch Model…): every provider, whether it is
+| ready and the model it is on; Enter goes on to its models.
+OpenModelPicker =>
+    emit ProviderNames to this get names
+    items = []
+    at = 0
+    loop i, name over names.names
+        emit ProviderFor { settings = settings + { "ai.provider" = name } } to this get provider
+        emit ProviderCheck { provider = provider } to this get check
+        title = name
+        if provider.title ≠ null, title = provider.title
+        on = "its default"
+        if provider.model ≠ null and provider.model ≠ "", on = provider.model
+        items += { label = title + "  (" + name + ")", detail = check.note + " · " + on, value = name, ready = check.ready, models = check.models, model = provider.model }
+        if name = settings["ai.provider"], at = i
+    picker = { level = "providers", title = "AI — Enter: its models · Esc: close", items = items, index = at, top = 0 }
+    return Opened
+
+| A key in the model picker.
+PickerKey { name } =>
+    emit Length { value = picker.items } to core get { value as count }
+    index = picker.index
+    if name = "down" and index < count - 1, index += 1
+    if name = "up" and index > 0, index = index - 1
+    if name = "home", index = 0
+    if name = "end", index = count - 1
+    if name = "pagedown"
+        index = index + 10
+        if index > count - 1, index = count - 1
+    if name = "pageup"
+        index = index - 10
+        if index < 0, index = 0
+    picker = picker + { index = index }
+    if name = "escape"
+        if picker.level = "models"
+            picker = picker.back
+            return Handled
+        picker = null
+        return Handled
+    if name ≠ "enter", return Handled
+    chosen = picker.items[index]
+    if picker.level = "providers"
+        models = [{ label = "Its default", detail = "", value = "" }]
+        at = 0
+        loop i, one over chosen.models
+            models += { label = one, detail = "", value = one }
+            if one = chosen.model, at = i + 1
+        title = chosen.label + " — a model (Esc: back)"
+        emit Length { value = chosen.models } to core get { value as model_count }
+        if model_count = 0, title = chosen.label + " — lists no models; add \"models\": [...] to its entry in ai.providers"
+        picker = { level = "models", title = title, items = models, index = at, top = 0, provider = chosen.value, ready = chosen.ready, note = chosen.detail, back = picker }
+        return Handled
+    emit PickModel { provider = picker.provider, model = chosen.value, ready = picker.ready } to this
+    picker = null
+    return Handled
+
+| `provider` and its `model` made the ones the chat uses.
+PickModel { provider, model, ready } =>
+    all = settings["ai.providers"]
+    entry = all[provider] + { model = model }
+    emit StoreSetting { key = "ai.providers", value = all + { "$provider" = entry } } to this
+    emit StoreSetting { key = "ai.provider", value = provider } to this
+    emit ChatNotice to this
+    message = "AI: " + ai_status
+    if not ready, message = "Error: AI: " + provider + " is not ready — Alt+M says why"
+    return Picked

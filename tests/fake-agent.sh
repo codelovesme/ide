@@ -3,6 +3,8 @@
 # the same kind of events, at once. It notes its arguments, and in edit
 # mode (acceptEdits) changes hello.code and makes new.txt. A question with
 # "slow" in it waits, to be stopped.
+# `auth status` (the model picker's check) answers signed in.
+if [ "$1 $2" = "auth status" ]; then echo '{"loggedIn": true}'; exit 0; fi
 printf '%s\n' "$*" > "${TMPDIR:-/tmp}/ide-fake-agent-args"
 prompt=$(cat)
 case "$prompt" in *slow*) sleep 30 ;; esac

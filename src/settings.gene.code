@@ -17,7 +17,9 @@ defaults = {
     "ai.provider" = "local"
     "ai.providers" = {
         local = { type = "openai-compatible", endpoint = "", model = "", apiKeyEnv = "", contextTokens = 32768 }
-        claude = { type = "claude-code", command = "claude", model = "" }
+        | Claude Code cannot list its models: these are the names its --model
+        | takes (edit them here; "" is its own default).
+        claude = { type = "claude-code", command = "claude", model = "", models = ["fable", "opus", "sonnet"] }
         codex = { type = "codex", command = "codex", model = "" }
     }
     "ai.chat.location" = "r"
@@ -102,7 +104,9 @@ ReadSettings { text } =>
     if good_providers
         loop key, one over providers
             if one ∉ Object, good_providers = false
-    if good_providers, values = values + { "ai.providers" = providers }
+    | The user's entries over the defaults: an entry they name wins whole,
+    | the others (claude, codex) stay there to pick.
+    if good_providers, values = values + { "ai.providers" = defaults["ai.providers"] + providers }
     if providers ≠ null and not good_providers, wrong += "ai.providers (an object of { \"type\", \"endpoint\", \"model\" … })"
     chat_at = given["ai.chat.location"]
     if chat_at ∈ String and slots[chat_at] = true, values = values + { "ai.chat.location" = chat_at }

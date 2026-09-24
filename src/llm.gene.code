@@ -17,8 +17,13 @@
 |                      agent: its context, its tools, its approvals.
 |   claude-code, codex a coding agent the ide runs — `claude` or `codex`,
 |                      headless, on the user's own subscription
-|                      (agents.gene.code). `claude` and `codex` need no
-|                      entry in `ai.providers` to be picked.
+|                      (agents.gene.code).
+|
+| The entries themselves — which exist, their commands, their model lists
+| — are settings (settings.gene.code's defaults, merged under the user's),
+| never code. What a type can find out for itself (a server's
+| `/v1/models`, `codex debug models`, whether it is signed in) the ide
+| asks when the model picker opens (ide.gene.code, ProviderCheck).
 |
 | Another kind of provider is another entry in `types`; nothing else
 | changes.
@@ -32,12 +37,6 @@ types = {
     "codex" = { runner = "cli", title = "Codex" }
 }
 
-| The agents, ready to pick by name without an entry of their own.
-known = {
-    claude = { type = "claude-code", command = "claude", model = "" }
-    codex = { type = "codex", command = "codex", model = "" }
-}
-
 default_context = 32768
 default_reply = 2048
 
@@ -48,7 +47,6 @@ ProviderFor { settings } =>
     all = settings["ai.providers"]
     given = null
     if all ∈ Object and name ∈ String, given = all[name]
-    if (given = null or given ∉ Object) and name ∈ String, given = known[name]
     if given = null or given ∉ Object
         return Provider { name = name, problem = "No AI model is set up: Settings > AI Model… and give \"ai.providers\" an endpoint" }
     kind = given["type"]
@@ -57,12 +55,14 @@ ProviderFor { settings } =>
         return Provider { name = name, problem = "ai.providers." + name + ": no provider type \"" + kind + "\" — use \"openai-compatible\", \"claude-code\" or \"codex\"" }
     model = given["model"]
     if model ∉ String, model = ""
+    models = given["models"]
+    if models ∉ Array, models = null
     if types[kind].runner = "cli"
         command = given["command"]
         if command ∉ String or command = ""
             command = "claude"
             if kind = "codex", command = "codex"
-        return Provider { name = name, type = kind, runner = "cli", title = types[kind].title, command = command, model = model, context_tokens = 200000, max_tokens = 8000, problem = "" }
+        return Provider { name = name, type = kind, runner = "cli", title = types[kind].title, command = command, model = model, models = models, context_tokens = 200000, max_tokens = 8000, problem = "" }
     endpoint = given["endpoint"]
     if endpoint = null or endpoint ∉ String or endpoint = ""
         return Provider { name = name, problem = "No AI model is set up: Settings > AI Model… and set ai.providers." + name + ".endpoint (e.g. http://localhost:8080)" }
@@ -77,6 +77,7 @@ ProviderFor { settings } =>
         type = kind
         runner = "api"
         title = name
+        models = models
         organelle = types[kind].organelle
         endpoint = endpoint
         model = model
