@@ -62,3 +62,22 @@ assert config.particle ∈ Config and config.particle.api_key = "k" and config.p
 | The project map: files, each with the names it defines.
 emit RepoMap { files = "a.code\nb.md", outline = "a.code:2:Greet { who } =>\na.code:9:Part =>", chars = 1000 } to this get map
 assert map.text = "a.code\n    2: Greet { who } =>\n    9: Part =>\nb.md"
+
+| Edits: the text found once, and the lines that changed.
+emit Occurrences { text = "a b a", part = "a" } to this get twice
+assert twice.count = 2 and twice.at = 0
+emit Occurrences { text = "Greet { who } =>", part = "{ who }" } to this get once
+assert once.count = 1 and once.at = 6
+emit Occurrences { text = "abc", part = "x" } to this get none
+assert none.count = 0
+emit DiffLines { old = ["a", "b", "c", "d"], new = ["a", "B", "B2", "c", "d"], around = 1 } to this get diff
+assert diff.removed = 1 and diff.added = 2
+assert diff.lines = [
+    { sign = " ", text = "a", line = 1 }
+    { sign = "-", text = "b", line = 2 }
+    { sign = "+", text = "B", line = 2 }
+    { sign = "+", text = "B2", line = 3 }
+    { sign = " ", text = "c", line = 4 }
+]
+emit LastLines { text = "1\n2\n3", count = 2 } to this get tail_lines
+assert tail_lines.text = "(1 lines before)…\n2\n3"

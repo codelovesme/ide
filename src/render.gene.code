@@ -147,6 +147,7 @@ ChatRows { pane, chat, notice, focused } =>
     lines = []
     if chat.busy
         lines = [{ text = "  … thinking (step " + (chat.steps + 1) + ")", style = "dim" }]
+        if chat.pending ≠ null, lines = [{ text = "  … waiting for your answer", style = "plain", fg = [230, 190, 90] }]
     emit Length { value = chat.turns } to core get { value as turn_count }
     i = turn_count - 1
     loop
@@ -197,6 +198,36 @@ ChatRows { pane, chat, notice, focused } =>
         cursor_row = rule_row + box
         cursor_col = pane.x + 3 + end_col
     return PaneView { overlays = out, cursor_row = cursor_row, cursor_col = cursor_col, chat = { scroll = scroll, page = room } }
+
+| A change the AI proposes, in `pane` (below its tab strip): what it does
+| on the first row, then the lines — removed in red, added in green, a few
+| unchanged round them — from `view.top`.
+DiffRows { pane, view, focused } =>
+    what = " Proposed change to " + view.target
+    if view.created, what = " Proposed new file " + view.target
+    head_style = "selected"
+    if focused, head_style = "selected_focus"
+    out = [{ row = 1 + pane.y, col = pane.x, spans = [
+        { text = what + "  (−" + view.removed + " +" + view.added + ")", width = pane.width - 26, style = head_style }
+        { text = "a accept · r reject ", width = 26, align = "right", style = head_style }
+    ] }]
+    h = pane.height - 1
+    emit Length { value = view.diff } to core get { value as count }
+    top = view.top
+    if top > count - h, top = count - h
+    if top < 0, top = 0
+    i = 0
+    loop
+        if i ≥ h, break
+        line = view.diff[top + i]
+        if line = null, break
+        number = { text = "" + line.line, width = gutter - 1, align = "right", style = "line_number" }
+        body = { text = line.sign + " " + line.text, width = pane.width - gutter, style = "plain" }
+        if line.sign = "-", body = body + { fg = [241, 100, 100], bg = [58, 30, 30] }
+        if line.sign = "+", body = body + { fg = [130, 210, 150], bg = [30, 52, 36] }
+        out += { row = 2 + pane.y + i, col = pane.x, spans = [number, { text = " ", style = "plain" }, body] }
+        i += 1
+    return PaneView { overlays = out, top = top }
 
 | The tab strip: every tab's name (● when a file has unsaved changes),
 | the active one lit, scrolled so the active one is always in sight.
@@ -351,6 +382,9 @@ GroupView { area, group, index, state, screens } =>
         emit EditorView { pane = pane, buffer = buffer, focused = focused } to this get rows
         result = result + { overlays = out + rows.overlays, scroll = { group = index, top = rows.top, left = rows.left }, page = rows.page }
         if focused, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
+    if view.kind = "diff"
+        emit DiffRows { pane = content, view = view, focused = focused } to this get rows
+        result = result + { overlays = out + rows.overlays }
     if view.kind = "chat"
         emit ChatRows { pane = content, chat = state.chat, notice = state.chat_notice, focused = focused } to this get rows
         result = result + { overlays = out + rows.overlays, chat = rows.chat }

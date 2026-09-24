@@ -60,13 +60,22 @@ words: it is sent what you are looking at, so "this function", "here" and
 - the open file, the lines round the cursor, the other tabs, the places
   you just edited, the terminal's last lines, git's branch and changes;
 - the project's own instructions: `AGENTS.md`, `CLAUDE.md`, `.cursorrules`,
-  `.github/copilot-instructions.md`, `.ide/instructions.md` — at the root
+  `.github/copilot-instructions.md`, `.ide/instructions.md`, `.ide/memory.md` — at the root
   and in each folder down to the open file;
 - a map of the project: every file (ripgrep's list, so `.gitignore` holds),
   and the names each one defines;
 - and tools it uses itself, step by step, each shown in grey: list a
-  folder, read a file, search (ripgrep), find files, git diff. It only
-  reads — it cannot change anything yet.
+  folder, read a file, search (ripgrep), find files, git diff.
+
+**It changes nothing without you.** An edit or a new file it proposes
+opens as a tab of its own — removed lines red, added green — and waits:
+`a` (or Enter) accepts, `r` (or Escape) rejects, and the model is told
+which. An accepted edit goes into the file as one edit (Ctrl+Z in the
+file takes it back) and is saved; View > Undo AI Changes puts back every
+file it changed since your last question. A command it wants to run is
+asked in the status bar (y / n); its output goes back to it. (The ide
+waits while the command runs — keep those short.) It may keep notes about
+the project in `.ide/memory.md`, read with the instructions every time.
 
 `@terminal`, `@git`, `@file`, `@folder` or `@some/path` in a question
 attaches more of that. Enter asks, Alt+Enter is a new line, PgUp/PgDn
@@ -260,7 +269,8 @@ tells it which folder to open.
 the shapes above), [tests/editor.code](tests/editor.code) (the keys on a
 buffer), [tests/ide.code](tests/ide.code) (a folder opened, walked, a file
 edited, undone, saved, the menu, the prompts, a frame drawn, and the AI
-chat asked, stepping through a tool to its answer — against a port that
+chat asked, stepping through a tool to its answer, its changes rejected,
+accepted and undone, a command run — against a port that
 never answers, so the replies the test hands in are the only ones),
 [tests/chat.code](tests/chat.code) (replies read, the input box, wrapping,
 the project map, providers from settings), all without a terminal.
@@ -272,7 +282,6 @@ sends (no tmux or pyte needed).
 
 ## Next
 
-The AI changing files (each change shown as a diff to accept or reject),
-answers that appear as they are written, a meaning-based search index,
+AI answers that appear as they are written, a meaning-based search index,
 suggestions as you type, remote providers. And Ctrl+P, find, the
 clipboard, the mouse, diagnostics from the language server, extensions.

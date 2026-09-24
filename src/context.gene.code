@@ -11,8 +11,9 @@
 |      .github/copilot-instructions.md, .ide/instructions.md, at the root
 |      and in each folder on the way to the open file;
 |   3. a map of the project — its files, and the names each one defines;
-|   4. tools, so the model looks things up itself: list, read, search,
-|      find, git diff.
+|   4. tools, so the model looks things up itself — list, read, search,
+|      find, git diff — and proposes changes: an edit, a new file, a
+|      command to run. Nothing changes until the user says yes.
 |
 | All of it is cut to fit the model's context (`contextTokens`, taken as
 | four characters a token).
@@ -23,7 +24,7 @@ ContextUses { strings } =>
     texts = strings
     return Using
 
-instruction_names = ["AGENTS.md", "CLAUDE.md", ".cursorrules", ".github/copilot-instructions.md", ".ide/instructions.md"]
+instruction_names = ["AGENTS.md", "CLAUDE.md", ".cursorrules", ".github/copilot-instructions.md", ".ide/instructions.md", ".ide/memory.md"]
 nested_names = ["AGENTS.md", "CLAUDE.md"]
 
 | The instruction files to look for with `path` open: the root's, then
@@ -96,6 +97,77 @@ ScreenText { screen, last } =>
     if first < 0, first = 0
     emit Join { value = lines[first, count), separator = "\n" } to texts get joined
     return Text { text = joined.value }
+
+| The last `count` lines of `text` (errors are at the end of a command's
+| output).
+LastLines { text, count } =>
+    emit Split { value = text, separator = "\n" } to texts get split
+    emit Length { value = split.value } to core get { value as total }
+    if total ≤ count, return Text { text = text }
+    emit Join { value = split.value[total - count, total), separator = "\n" } to texts get joined
+    return Text { text = "(" + (total - count) + " lines before)…\n" + joined.value }
+
+| Where `part` is in `text`: how many times, and the first place.
+Occurrences { text, part } =>
+    emit Length { value = text } to core get { value as size }
+    emit Length { value = part } to core get { value as want }
+    if want = 0, return Found { count = 0, at = -1 }
+    lead = part[0]
+    count = 0
+    at = -1
+    i = 0
+    loop
+        if i + want > size, break
+        if text[i] = lead and text[i, i + want) = part
+            if count = 0, at = i
+            count += 1
+            i += want
+            continue
+        i += 1
+    return Found { count = count, at = at }
+
+| The lines that differ between `old` and `new` (lists of lines), with
+| `around` unchanged lines each side: `{ text, sign }` — sign " ", "-" or
+| "+" — and the line number each starts at.
+DiffLines { old, new, around } =>
+    emit Length { value = old } to core get { value as old_count }
+    emit Length { value = new } to core get { value as new_count }
+    same_before = 0
+    loop
+        if same_before ≥ old_count or same_before ≥ new_count, break
+        if old[same_before] ≠ new[same_before], break
+        same_before += 1
+    same_after = 0
+    loop
+        if same_after ≥ old_count - same_before or same_after ≥ new_count - same_before, break
+        if old[old_count - 1 - same_after] ≠ new[new_count - 1 - same_after], break
+        same_after += 1
+    out = []
+    first = same_before - around
+    if first < 0, first = 0
+    i = first
+    loop
+        if i ≥ same_before, break
+        out += { sign = " ", text = old[i], line = i + 1 }
+        i += 1
+    i = same_before
+    loop
+        if i ≥ old_count - same_after, break
+        out += { sign = "-", text = old[i], line = i + 1 }
+        i += 1
+    i = same_before
+    loop
+        if i ≥ new_count - same_after, break
+        out += { sign = "+", text = new[i], line = i + 1 }
+        i += 1
+    i = new_count - same_after
+    stop = i + around
+    if stop > new_count, stop = new_count
+    loop
+        if i ≥ stop, break
+        out += { sign = " ", text = new[i], line = i + 1 }
+        i += 1
+    return Diff { lines = out, removed = old_count - same_after - same_before, added = new_count - same_after - same_before }
 
 | The first `count` lines of `text`, and how many more there were.
 FirstLines { text, count } =>
@@ -185,6 +257,10 @@ tools_text = [
     "- grep {\"pattern\", \"path\"?, \"glob\"?}: a regex search over the files (ripgrep, smart case); up to 60 matches as path:line:text."
     "- find_files {\"name\"}: the files whose path contains `name`."
     "- git_diff {\"path\"?}: the changes not yet committed."
+    "- edit_file {\"path\", \"find\", \"replace\"}: change a file — the one place the exact text `find` is (copy it from read_file, without the line numbers; take enough lines that it is found once) becomes `replace`."
+    "- create_file {\"path\", \"content\"}: a new file."
+    "- run_command {\"command\"}: a shell command, run in the project folder; you get its exit code and output."
+    "The user sees every change and command first, and accepts or rejects it; you are told which."
 ]
 
 | The system message: who the model is, how to reply, the tools, the
@@ -203,7 +279,9 @@ SystemPrompt { folder, instructions, map } =>
         "How to work:"
         "- The user rarely names files. \"What the user is looking at\" (sent with every question) tells you what \"this\", \"here\", \"the error\" and \"this function\" mean."
         "- Look before you answer: search, then read the lines that matter. Never guess about code you have not read. One tool per reply; you will be sent its result."
-        "- Answer short and concrete, citing places as path:line. You cannot change files yet: show a change as a snippet with its file and lines."
+        "- Answer short and concrete, citing places as path:line."
+        "- To change code, use edit_file — small, exact edits, one at a time; read the lines first. Say in the answer what you changed. Change only what was asked."
+        "- Something about the project worth knowing next time (how to build it, a trap) may go in .ide/memory.md."
         "- The project's own instructions below come first; follow them."
     ]
     if instructions ≠ ""

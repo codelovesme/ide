@@ -24,6 +24,7 @@ menus = [
             { label = "New Terminal", command = "terminal.new" }
             { label = "AI Chat", command = "ai.toggle" }
             { label = "New AI Chat", command = "ai.newChat" }
+            { label = "Undo AI Changes", command = "ai.undoTurn" }
             { label = "Move Tab…", command = "view.moveTab" }
             { label = "Split Editor", command = "editor.split" }
             { label = "Next Tab", command = "tab.next" }

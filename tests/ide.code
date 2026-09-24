@@ -412,6 +412,69 @@ assert outside.text = "Not allowed: paths stay inside the project folder."
 emit RunTool { tool = "read_file", args = { path = "hello.code", from = 2, "to" = 2 } } to this get one_line
 assert one_line.text = "hello.code (4 lines), lines 2–2:\n2| Greet { who } =>"
 
+| Changes: the model proposes, the user decides.
+emit AskAbout { question = "say Hello instead" } to this
+emit State to this get edit_asked
+edit_find = "{\"tool\": \"edit_file\", \"args\": {\"path\": \"hello.code\", \"find\": \"return Hi\", \"replace\": \"return Hello\"}}"
+emit ChatResult { content = edit_find, _request_id = edit_asked.chat.request } to this
+emit State to this get proposing
+assert proposing.focus = "diff"
+assert proposing.chat.pending.path = "hello.code"
+assert proposing.chat.request = -1 and proposing.chat.busy
+emit Active { groups = proposing.groups, current = proposing.current } to this get proposal
+assert proposal.buffer.removed = 1 and proposal.buffer.added = 1
+emit Framed to this get diff_frame
+assert diff_frame ∈ Screen
+| Rejected: the tab goes, the file stays, the model is told and asked again.
+emit HandleKey { name = "r", text = "r" } to this
+emit State to this get rejected
+assert rejected.chat.pending = null and rejected.chat.request ≠ -1
+emit Length { value = rejected.chat.messages } to core get { value as rejected_count }
+emit Contains { text = rejected.chat.messages[rejected_count - 1].content, part = "The user rejected" } to this get told_no
+assert told_no.yes
+emit ReadFile { path = "hello.code" } to files get still_hi
+emit Contains { text = still_hi.content, part = "return Hi\n" } to this get kept_hi
+assert kept_hi.yes
+| Accepted: the file changes and is saved, and shows.
+emit ChatResult { content = edit_find, _request_id = rejected.chat.request } to this
+emit HandleKey { name = "a", text = "a" } to this
+emit State to this get accepted
+assert accepted.focus = "editor" and accepted.file.path = "hello.code" and not accepted.file.dirty
+emit ReadFile { path = "hello.code" } to files get now_hello
+emit Contains { text = now_hello.content, part = "return Hello" } to this get changed_hello
+assert changed_hello.yes
+| Not found: the model is told why, and no tab opens.
+emit ChatResult { content = "{\"tool\": \"edit_file\", \"args\": {\"path\": \"hello.code\", \"find\": \"nowhere\", \"replace\": \"x\"}}", _request_id = accepted.chat.request } to this
+emit State to this get not_found
+assert not_found.focus = "editor" and not_found.chat.pending = null
+| A new file, accepted.
+emit ChatResult { content = "{\"tool\": \"create_file\", \"args\": {\"path\": \"docs/new.md\", \"content\": \"# New\"}}", _request_id = not_found.chat.request } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit ReadFile { path = "docs/new.md" } to files get made_new
+assert made_new.content = "# New"
+emit State to this get created
+| A command: asked in the status bar, run on y, its output sent back.
+emit ChatResult { content = "{\"tool\": \"run_command\", \"args\": {\"command\": \"echo ran-\$((20 + 22))\"}}", _request_id = created.chat.request } to this
+emit State to this get asking_run
+assert asking_run.prompt.kind = "ai_run"
+emit HandleKey { name = "y", text = "y" } to this
+emit State to this get ran_it
+emit Length { value = ran_it.chat.messages } to core get { value as ran_count }
+emit Contains { text = ran_it.chat.messages[ran_count - 1].content, part = "ran-42" } to this get output_back
+assert output_back.yes
+| Undo AI Changes: both files as they were before the question.
+emit ChatResult { content = "{\"answer\": \"Done.\"}", _request_id = ran_it.chat.request } to this
+emit Run { command = "ai.undoTurn" } to this
+emit ReadFile { path = "hello.code" } to files get undone_hi
+emit Contains { text = undone_hi.content, part = "return Hi\n" } to this get back_to_hi
+assert back_to_hi.yes
+emit Exists { path = "docs/new.md" } to files get gone_new
+assert not gone_new.is_file
+emit State to this get after_undo
+assert after_undo.file.lines[2] = "    return Hi"
+emit RemoveDir { path = "docs" } to files
+emit Run { command = "ai.toggle" } to this
+
 | Moved, the chat remembers where; Escape gives the keys back.
 emit HandleKey { name = "ctrl+k", text = "" } to this
 emit HandleKey { name = "m", text = "m" } to this

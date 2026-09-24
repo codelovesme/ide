@@ -42,7 +42,8 @@ redo = []
 last_edit = ""
 
 | What has the keys: the focused tab's kind — "tree" (the explorer),
-| "editor" (a file), "terminal", "chat", or "none" when nothing is open.
+| "editor" (a file), "terminal", "chat", "diff" (a change the AI
+| proposes), or "none" when nothing is open.
 focus = "none"
 menu = null
 prompt = null
@@ -75,7 +76,7 @@ keytable = null
 | `models` holds the organelle each provider type uses, `model_key` the
 | setup sent last, so it is sent again only when it changes.
 chat_view = { kind = "chat", path = "AI Chat", store = "view" }
-chat = { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null }
+chat = { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null, pending = null, checkpoints = [] }
 chat_page = 10
 models = {}
 model_key = ""
@@ -240,6 +241,9 @@ HandleKey { name, text } =>
     if focus = "chat"
         emit ChatKey { name = name, text = text } to this
         return Handled
+    if focus = "diff"
+        emit DiffKey { name = name } to this
+        return Handled
     if focus = "editor" and file ≠ null
         emit EditorKey { name = name, text = text } to this
     return Handled
@@ -298,10 +302,13 @@ Run { command } =>
     if command = "ai.toggle", emit ToggleChat to this
     if command = "ai.configure", emit ConfigureAi to this
     if command = "ai.newChat"
-        chat = chat + { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0 }
+        emit DropProposal to this
+        chat = chat + { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, checkpoints = [] }
         emit ShowChat to this
     if command = "ai.cancel" and chat.busy
+        emit DropProposal to this
         chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "error", text = "Stopped." }] }
+    if command = "ai.undoTurn", emit UndoAiChanges to this
     if command = "help.keys", emit ShowShortcuts to this
     if command = "help.about", message = "codelovesme ide — a terminal IDE for code, built on euglena"
     return Ran
@@ -467,6 +474,12 @@ NewTerminal { slot } =>
 | A key while the status bar is asking something.
 PromptKey { name, text } =>
     asked = prompt
+    | A command the AI wants to run: y runs it, n or Escape does not.
+    if asked.kind = "ai_run"
+        if name ≠ "y" and name ≠ "n" and name ≠ "escape", return Typed
+        prompt = null
+        emit AnswerRun { yes = name = "y" } to this
+        return Answered
     if name = "escape"
         prompt = null
         return Cancelled
@@ -629,6 +642,7 @@ Unstash =>
     if view = null, return Unstashed
     if view.kind = "explorer", focus = "tree"
     if view.kind = "chat", focus = "chat"
+    if view.kind = "diff", focus = "diff"
     if view.kind = "terminal"
         focus = "terminal"
         last_terminal = view.id
@@ -1019,7 +1033,7 @@ AskAbout { question } =>
         if m.short ≠ null, earlier += { role = m.role, content = m.short }
         if m.short = null, earlier += m
     asked = { role = "user", content = gathered.text + "\n# The question\n" + question, short = question }
-    chat = chat + { messages = earlier + [asked], steps = 0, system = system.text, budget = budget }
+    chat = chat + { messages = earlier + [asked], steps = 0, system = system.text, budget = budget, checkpoints = [] }
     emit AskModel to this
     return Asked
 
@@ -1196,16 +1210,33 @@ ChatResult { content, _request_id } =>
         emit ChatFailed { text = "The model was still looking after " + max_steps + " steps (settings: ai.maxSteps) — ask again, more narrowly" } to this
         if running, emit Render to this
         return Failed
+    chat = chat + { steps = chat.steps + 1 }
+    changes = reply.tool = "edit_file" or reply.tool = "create_file" or reply.tool = "run_command"
+    if changes
+        emit Propose { tool = reply.tool, args = reply.args } to this get proposed
+        if proposed ∈ Waiting
+            chat = chat + { request = -1 }
+            if running, emit Render to this
+            return Waiting
+        chat = chat + { turns = chat.turns + [{ role = "tool", text = reply.tool + ": " + proposed.text }] }
+        emit ToolDone { tool = reply.tool, text = proposed.text } to this
+        if running, emit Render to this
+        return Stepped
     emit ToolLine { tool = reply.tool, args = reply.args } to this get line
-    chat = chat + { turns = chat.turns + [{ role = "tool", text = line.text }], steps = chat.steps + 1 }
+    chat = chat + { turns = chat.turns + [{ role = "tool", text = line.text }] }
     emit RunTool { tool = reply.tool, args = reply.args } to this get result
-    emit Clip { text = result.text, chars = chat.budget.tool } to this get cut
-    note = "Result of " + reply.tool + ":\n" + cut.text
-    if chat.steps ≥ max_steps, note = note + "\n\nThat was the last step: answer now, with what you have."
-    chat = chat + { messages = chat.messages + [{ role = "user", content = note }] }
-    emit AskModel to this
+    emit ToolDone { tool = reply.tool, text = result.text } to this
     if running, emit Render to this
     return Stepped
+
+| A tool's result back to the model, which is asked again.
+ToolDone { tool, text } =>
+    emit Clip { text = text, chars = chat.budget.tool } to this get cut
+    note = "Result of " + tool + ":\n" + cut.text
+    if chat.steps ≥ settings["ai.maxSteps"], note = note + "\n\nThat was the last step: answer now, with what you have."
+    chat = chat + { messages = chat.messages + [{ role = "user", content = note }] }
+    emit AskModel to this
+    return Sent
 
 | The model could not be reached (the organelle's `later` failure).
 Exception { source, message as failure, _request_id } =>
@@ -1231,16 +1262,9 @@ RunTool { tool, args } =>
     if tool = "read_file"
         emit SafePath { path = args["path"] } to this get safe
         if not safe.ok, return Text { text = "Not allowed: paths stay inside the project folder." }
-        | An open file is read as the editor has it, unsaved changes and all.
-        lines = null
-        emit FindView { groups = groups, path = safe.path, store = "workspace" } to this get open_at
-        if open_at.group ≥ 0, lines = groups[open_at.group].tabs[open_at.tab].lines
-        if file ≠ null and file.store = "workspace" and file.path = safe.path, lines = file.lines
-        if lines = null
-            emit ReadFile { path = safe.path } to files get read
-            if read ∈ Exception, return Text { text = "Error: " + read.message }
-            emit Split { value = read.content, separator = "\n" } to texts get split
-            lines = split.value
+        emit FileLines { path = safe.path } to this get held
+        if held ∈ Text, return held
+        lines = held.lines
         emit Length { value = lines } to core get { value as count }
         from = args["from"]
         if from ∉ Number or from < 1, from = 1
@@ -1291,3 +1315,214 @@ RunTool { tool, args } =>
         if diff.text = "", return Text { text = "No changes (or not a git repository)." }
         return diff
     return Text { text = "There is no tool called \"" + tool + "\". The tools: list_dir, read_file, grep, find_files, git_diff." }
+
+
+| A file's lines as the user has them: an open file as the editor holds
+| it, unsaved changes and all; else from the disk. `Text` when it cannot
+| be read.
+FileLines { path } =>
+    if file ≠ null and file.store = "workspace" and file.path = path, return Lines { lines = file.lines }
+    emit FindView { groups = groups, path = path, store = "workspace" } to this get open_at
+    if open_at.group ≥ 0, return Lines { lines = groups[open_at.group].tabs[open_at.tab].lines }
+    emit ReadFile { path = path } to files get read
+    if read ∈ Exception, return Text { text = "Error: " + read.message }
+    emit Split { value = read.content, separator = "\n" } to texts get split
+    return Lines { lines = split.value }
+
+| ── Changes the AI proposes ────────────────────────────────────────────
+|
+| An edit or a new file opens as a diff tab (kind `diff`) beside the files;
+| a command is asked about in the status bar. The model waits for the
+| answer (`chat.pending`), and is told it.
+
+| `Waiting` when the user has been asked, else `Text`: why it could not be
+| proposed, for the model to try again.
+Propose { tool, args } =>
+    if tool = "run_command"
+        command = args["command"]
+        if command ∉ String or command = "", return Text { text = "run_command needs a \"command\"." }
+        chat = chat + { pending = { tool = tool, command = command } }
+        prompt = { kind = "ai_run", label = "Run for the AI: " + command + "  — y / n ", text = "" }
+        chat = chat + { turns = chat.turns + [{ role = "tool", text = "wants to run: " + command + " (y / n in the status bar)" }] }
+        return Waiting
+    emit SafePath { path = args["path"] } to this get safe
+    if not safe.ok or safe.path = ".", return Text { text = "Not allowed: paths stay inside the project folder." }
+    old = []
+    created = tool = "create_file"
+    new_text = ""
+    if created
+        emit Exists { path = safe.path } to files get there
+        if there ∉ Exception and (there.is_file or there.is_dir), return Text { text = safe.path + " is there already — use edit_file." }
+        new_text = args["content"]
+        if new_text ∉ String, return Text { text = "create_file needs a \"content\"." }
+    if not created
+        find = args["find"]
+        replace = args["replace"]
+        if find ∉ String or find = "" or replace ∉ String, return Text { text = "edit_file needs \"find\" and \"replace\"." }
+        emit FileLines { path = safe.path } to this get held
+        if held ∈ Text, return held
+        old = held.lines
+        emit Join { value = old, separator = "\n" } to texts get joined
+        emit Occurrences { text = joined.value, part = find } to this get where
+        if where.count = 0, return Text { text = "`find` is not in " + safe.path + ". Read the lines again and copy them exactly, without the line numbers." }
+        if where.count > 1, return Text { text = "`find` is in " + safe.path + " " + where.count + " times. Take more lines, so it is found once." }
+        emit Length { value = find } to core get { value as find_size }
+        new_text = joined.value[0, where.at) + replace + joined.value[where.at + find_size, length)
+    emit Split { value = new_text, separator = "\n" } to texts get split
+    emit DiffLines { old = old, new = split.value, around = 3 } to this get diff
+    view = { kind = "diff", path = safe.path + " ±", store = "ai", target = safe.path, created = created, lines = split.value, diff = diff.lines, removed = diff.removed, added = diff.added, top = 0 }
+    emit EditorSlot to this get into
+    emit Show { buffer = view, slot = into.slot } to this
+    chat = chat + { pending = { tool = tool, path = safe.path } }
+    what = "proposes a change to " + safe.path
+    if created, what = "proposes a new file, " + safe.path
+    chat = chat + { turns = chat.turns + [{ role = "tool", text = what + " (−" + diff.removed + " +" + diff.added + ") — a to accept, r to reject, in its tab" }] }
+    message = "The AI proposes a change: a accepts, r rejects"
+    return Waiting
+
+| A key on a proposed change: a / y / Enter accept it, r / n / Escape
+| reject it; the arrows and PgUp/PgDn scroll.
+DiffKey { name } =>
+    if name = "a" or name = "y" or name = "enter"
+        emit DecideChange { accepted = true } to this
+        return Handled
+    if name = "r" or name = "n" or name = "escape"
+        emit DecideChange { accepted = false } to this
+        return Handled
+    step = 0
+    if name = "down", step = 1
+    if name = "up", step = -1
+    if name = "pagedown", step = editor_page
+    if name = "pageup", step = 0 - editor_page
+    if step = 0, return Handled
+    emit Active { groups = groups, current = current } to this get shown
+    top = shown.buffer.top + step
+    if top < 0, top = 0
+    emit PutActive { groups = groups, current = current, buffer = shown.buffer + { top = top } } to this get scrolled
+    groups = scrolled.groups
+    return Handled
+
+| The proposed change's tab closed, if it is open.
+CloseProposal { path } =>
+    emit FindView { groups = groups, path = path + " ±", store = "ai" } to this get at
+    if at.group < 0, return Nothing
+    emit Stash to this
+    emit CloseAt { groups = groups, current = current, group = at.group, tab = at.tab } to this get closed
+    groups = closed.groups
+    current = closed.current
+    emit Unstash to this
+    return Closed
+
+| The AI stopped: what it was waiting on goes.
+DropProposal =>
+    pending = chat.pending
+    if pending = null, return Nothing
+    chat = chat + { pending = null }
+    if pending.tool = "run_command" and prompt ≠ null and prompt.kind = "ai_run", prompt = null
+    if pending.path ≠ null, emit CloseProposal { path = pending.path } to this
+    return Dropped
+
+| The user's answer to a proposed edit or file.
+DecideChange { accepted } =>
+    pending = chat.pending
+    emit Active { groups = groups, current = current } to this get shown
+    view = shown.buffer
+    if pending = null or pending.path = null or view = null or view.kind ≠ "diff" or view.target ≠ pending.path
+        if view ≠ null and view.kind = "diff", emit CloseProposal { path = view.target } to this
+        return Nothing
+    chat = chat + { pending = null }
+    emit CloseProposal { path = pending.path } to this
+    if not accepted
+        chat = chat + { turns = chat.turns + [{ role = "tool", text = "you rejected the change to " + pending.path }] }
+        message = ""
+        emit ToolDone { tool = pending.tool, text = "The user rejected this change. Do not make it; say what you would do instead, or ask." } to this
+        return Rejected
+    emit ApplyChange { view = view } to this get applied
+    if applied ∈ Text
+        chat = chat + { turns = chat.turns + [{ role = "error", text = applied.text }] }
+        emit ToolDone { tool = pending.tool, text = applied.text } to this
+        return Failed
+    chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + pending.path + " (Ctrl+Z in the file undoes it; View > Undo AI Changes undoes them all)" }] }
+    emit ToolDone { tool = pending.tool, text = "The user accepted: " + pending.path + " is changed and saved." } to this
+    return Accepted
+
+| An accepted change made: a new file written, or an open (or opened)
+| file's lines replaced as one edit — Ctrl+Z undoes it — and saved. What
+| the file was first is kept, for Undo AI Changes.
+ApplyChange { view } =>
+    path = view.target
+    kept = false
+    loop point over chat.checkpoints
+        if point.path = path, kept = true
+    if not kept
+        before = null
+        if not view.created
+            emit FileLines { path = path } to this get held
+            if held ∈ Text, return held
+            emit Join { value = held.lines, separator = "\n" } to texts get before_text
+            before = before_text.value
+        chat = chat + { checkpoints = chat.checkpoints + [{ path = path, before = before }] }
+    emit Join { value = view.lines, separator = "\n" } to texts get after_text
+    if view.created
+        emit WriteFile { path = path, content = after_text.value } to files get written
+        if written ∈ Exception, return Text { text = "Error: " + written.message }
+        emit OpenFile { path = path } to this
+        return Applied
+    emit OpenFile { path = path } to this
+    if file = null or file.path ≠ path, return Text { text = "Error: " + path + " could not be opened to change it" }
+    undo += { lines = file.lines, row = file.row, col = file.col }
+    emit Length { value = view.lines } to core get { value as count }
+    row = file.row
+    if row ≥ count, row = count - 1
+    file = file + { lines = view.lines, row = row, col = 0, want = 0, dirty = true }
+    last_edit = ""
+    emit SaveFile to this get saved
+    if saved ∉ Saved, return Text { text = "Error: " + path + " was changed but could not be saved: " + message }
+    return Applied
+
+| The status bar's y / n on a command the AI wants to run.
+AnswerRun { yes } =>
+    pending = chat.pending
+    if pending = null or pending.tool ≠ "run_command", return Nothing
+    chat = chat + { pending = null }
+    if not yes
+        chat = chat + { turns = chat.turns + [{ role = "tool", text = "you said no to: " + pending.command }] }
+        emit ToolDone { tool = "run_command", text = "The user said no to running this. Do not run it; say what it was for, or ask." } to this
+        return Refused
+    emit Run { command = "sh", args = ["-c", pending.command], cwd = folder } to procs get ran
+    output = ""
+    if ran ∈ Exception, output = "Error: " + ran.message
+    if ran ∉ Exception
+        output = "exit code " + ran.code + "\n" + ran.stdout
+        if ran.stderr ≠ "", output = output + "\n" + ran.stderr
+    emit LastLines { text = output, count = 80 } to this get tail_lines
+    chat = chat + { turns = chat.turns + [{ role = "tool", text = "ran: " + pending.command + " — exit code " + ran.code }] }
+    emit ToolDone { tool = "run_command", text = tail_lines.text } to this
+    return Ran
+
+| View > Undo AI Changes: every file the AI changed since the last
+| question, put back as it was (a file it made, removed); open tabs too.
+UndoAiChanges =>
+    emit Length { value = chat.checkpoints } to core get { value as count }
+    if count = 0
+        message = "The AI has changed nothing since the last question"
+        return Nothing
+    emit Stash to this
+    loop point over chat.checkpoints
+        if point.before = null, emit DeleteFile { path = point.path } to files
+        if point.before ≠ null, emit WriteFile { path = point.path, content = point.before } to files
+        emit FindView { groups = groups, path = point.path, store = "workspace" } to this get at
+        if at.group ≥ 0
+            if point.before = null
+                emit CloseAt { groups = groups, current = current, group = at.group, tab = at.tab } to this get closed
+                groups = closed.groups
+                current = closed.current
+            if point.before ≠ null
+                emit Split { value = point.before, separator = "\n" } to texts get restored
+                tab = groups[at.group].tabs[at.tab] + { lines = restored.value, row = 0, col = 0, want = 0, top = 0, dirty = false }
+                emit PutActive { groups = groups[0, at.group) + [groups[at.group] + { active = at.tab }] + groups(at.group, length), current = at.group, buffer = tab } to this get put
+                groups = put.groups
+    emit Unstash to this
+    chat = chat + { checkpoints = [], turns = chat.turns + [{ role = "tool", text = "undid the AI's changes to " + count + " file(s)" }] }
+    message = "The AI's changes are undone"
+    return Undone

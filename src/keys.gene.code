@@ -105,6 +105,7 @@ commands = [
     { id = "ai.newChat", title = "AI Chat: start a new conversation" }
     { id = "ai.cancel", title = "AI Chat: stop the model's answer" }
     { id = "ai.configure", title = "AI Model… (settings.json)" }
+    { id = "ai.undoTurn", title = "AI Chat: undo the changes it made since the last question" }
     { id = "help.keys", title = "This list" }
     { id = "help.about", title = "About" }
 ]
