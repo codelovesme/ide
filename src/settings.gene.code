@@ -14,6 +14,12 @@ defaults = {
     "workbench.layout.top" = 10
     "workbench.layout.bottom" = 12
     "terminal.integrated.shell" = ""
+    "ai.provider" = "local"
+    "ai.providers" = {
+        local = { type = "openai-compatible", endpoint = "", model = "", apiKeyEnv = "", contextTokens = 32768 }
+    }
+    "ai.chat.location" = "r"
+    "ai.maxSteps" = 12
     "terminal.integrated.commandsToSkipShell" = [
         "terminal.toggle"
         "focus.next"
@@ -28,6 +34,8 @@ defaults = {
         "focus.group2"
     ]
 }
+
+slots = { tl = true, t = true, tr = true, l = true, c = true, r = true, bl = true, b = true, br = true }
 
 | The side track sizes, each at least `least`.
 sizes = [
@@ -81,6 +89,25 @@ ReadSettings { text } =>
             if one ∉ String, good_skips = false
     if good_skips, values = values + { "terminal.integrated.commandsToSkipShell" = skips }
     if skips ≠ null and not good_skips, wrong += "terminal.integrated.commandsToSkipShell (a list of command ids)"
+    | The AI chat (see llm.gene.code).
+    provider = given["ai.provider"]
+    if provider ∈ String and provider ≠ "", values = values + { "ai.provider" = provider }
+    if provider ≠ null and (provider ∉ String or provider = ""), wrong += "ai.provider (a name from ai.providers)"
+    providers = given["ai.providers"]
+    good_providers = providers ∈ Object
+    if good_providers
+        loop key, one over providers
+            if one ∉ Object, good_providers = false
+    if good_providers, values = values + { "ai.providers" = providers }
+    if providers ≠ null and not good_providers, wrong += "ai.providers (an object of { \"type\", \"endpoint\", \"model\" … })"
+    chat_at = given["ai.chat.location"]
+    if chat_at ∈ String and slots[chat_at] = true, values = values + { "ai.chat.location" = chat_at }
+    if chat_at ≠ null and not (chat_at ∈ String and slots[chat_at] = true), wrong += "ai.chat.location (l r t b c tl tr bl br)"
+    steps = given["ai.maxSteps"]
+    good_steps = steps ∈ Number
+    if good_steps, good_steps = steps ≥ 1 and steps ≤ 50
+    if good_steps, values = values + { "ai.maxSteps" = steps }
+    if steps ≠ null and not good_steps, wrong += "ai.maxSteps (1 to 50)"
     problem = ""
     loop i, what over wrong
         if i = 0, problem = "settings.json: using the default for " + what

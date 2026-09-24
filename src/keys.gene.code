@@ -55,6 +55,9 @@ defaults = [
     { key = "alt+s", command = "menu.settings" }
     { key = "alt+h", command = "menu.help" }
     { key = "ctrl+k ctrl+s", command = "help.keys" }
+    | Cursor's key for its chat, and VS Code's for Copilot's.
+    { key = "ctrl+l", command = "ai.toggle" }
+    { key = "ctrl+alt+i", command = "ai.toggle" }
 ]
 
 | Every command a key can run, with what it does — the only names
@@ -98,6 +101,10 @@ commands = [
     { id = "menu.view", title = "View menu" }
     { id = "menu.settings", title = "Settings menu" }
     { id = "menu.help", title = "Help menu" }
+    { id = "ai.toggle", title = "AI Chat: open it, or move the keys to and from it" }
+    { id = "ai.newChat", title = "AI Chat: start a new conversation" }
+    { id = "ai.cancel", title = "AI Chat: stop the model's answer" }
+    { id = "ai.configure", title = "AI Model… (settings.json)" }
     { id = "help.keys", title = "This list" }
     { id = "help.about", title = "About" }
 ]

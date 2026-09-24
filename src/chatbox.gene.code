@@ -1,0 +1,147 @@
+| Chat — the AI chat's pieces that need no state. Pure.
+|
+| The chat is a tab like any other (kind `chat`), on the right until it is
+| moved. Its state lives in the ide gene as
+|
+|     { turns, messages, input, busy, request, steps, scroll }
+|
+| `turns` is what is shown — `{ role, text }`, role "user", "assistant",
+| "tool" (a step the model took: "read src/a.code") or "error";
+| `messages` is what the model is sent, `{ role, content }`. The model is
+| asked for one JSON object per reply — a tool to run, or the answer
+| (context.gene.code tells it how); `ReadReply` reads that, forgiving a
+| model that answers in plain words.
+
+parser = null
+texts = null
+
+ChatUses { json, strings } =>
+    parser = json
+    texts = strings
+    return Using
+
+| A key in the chat's input box. `send` is the text to ask about when
+| Enter sent it (else null); `scroll` moves the conversation (lines, up
+| is more).
+ChatInput { input, name, text, page } =>
+    if name = "enter"
+        emit Trim { value = input } to texts get trimmed
+        if trimmed.value = "", return ChatInputResult { input = input, send = null, scroll = 0 }
+        return ChatInputResult { input = "", send = trimmed.value, scroll = 0 }
+    if name = "alt+enter" or name = "shift+enter" or name = "ctrl+enter"
+        return ChatInputResult { input = input + "\n", send = null, scroll = 0 }
+    if name = "backspace"
+        return ChatInputResult { input = input[0, length - 1), send = null, scroll = 0 }
+    if name = "ctrl+u"
+        return ChatInputResult { input = "", send = null, scroll = 0 }
+    if name = "pageup", return ChatInputResult { input = input, send = null, scroll = page }
+    if name = "pagedown", return ChatInputResult { input = input, send = null, scroll = 0 - page }
+    if name = "up", return ChatInputResult { input = input, send = null, scroll = 1 }
+    if name = "down", return ChatInputResult { input = input, send = null, scroll = -1 }
+    if text ≠ "", return ChatInputResult { input = input + text, send = null, scroll = 0 }
+    return ChatInputResult { input = input, send = null, scroll = 0 }
+
+| The first `{` … the last `}` of `text`, or "" when it has none.
+Braced { text } =>
+    emit Length { value = text } to core get { value as size }
+    first = -1
+    i = 0
+    loop
+        if i ≥ size, break
+        if text[i] = "{"
+            first = i
+            break
+        i += 1
+    if first < 0, return Text { text = "" }
+    last = -1
+    i = size - 1
+    loop
+        if i ≤ first, break
+        if text[i] = "}"
+            last = i
+            break
+        i = i - 1
+    if last < 0, return Text { text = "" }
+    return Text { text = text[first, last] }
+
+| A reply from the model: a tool to run (`tool`, `args`), or the answer.
+| A reply that is not the JSON asked for is taken as the answer, whole.
+ReadReply { content } =>
+    emit Braced { text = content } to this get braced
+    if braced.text ≠ ""
+        emit Parse { text = braced.text } to parser get parsed
+        if parsed ∉ Exception and parsed.value ∈ Object
+            reply = parsed.value
+            if reply["tool"] ∈ String and reply["tool"] ≠ ""
+                args = reply["args"]
+                if args ∉ Object, args = {}
+                return Reply { tool = reply["tool"], args = args, answer = null }
+            if reply["answer"] ∈ String, return Reply { tool = null, args = null, answer = reply["answer"] }
+    emit Trim { value = content } to texts get trimmed
+    return Reply { tool = null, args = null, answer = trimmed.value }
+
+| A tool step, as the chat shows it.
+ToolLine { tool, args } =>
+    path = args["path"]
+    if path ∉ String or path = "", path = "."
+    if tool = "read_file"
+        range = ""
+        if args["from"] ∈ Number, range = " " + args["from"] + "–"
+        if args["to"] ∈ Number, range = range + args["to"]
+        return Text { text = "read " + path + range }
+    if tool = "list_dir", return Text { text = "listed " + path }
+    if tool = "grep", return Text { text = "searched for \"" + args["pattern"] + "\"" }
+    if tool = "find_files", return Text { text = "looked for files named \"" + args["name"] + "\"" }
+    if tool = "git_diff", return Text { text = "looked at the git diff" }
+    return Text { text = tool }
+
+| The `@` words of a question: `@terminal`, `@git`, `@file`, `@folder`,
+| or a path (`@src/a.code`).
+Mentions { input } =>
+    emit Split { value = input, separator = "\n" } to texts get lines
+    found = []
+    loop line over lines.value
+        emit Split { value = line, separator = " " } to texts get words
+        loop word over words.value
+            if word[0] = "@"
+                emit Length { value = word } to core get { value as size }
+                if size > 1
+                    name = word[1, length)
+                    last = name[size - 2]
+                    if last = "," or last = "." or last = "?" or last = "!" or last = ":", name = name[0, length - 1)
+                    if name ≠ "", found += name
+    return Found { mentions = found }
+
+| `text` as lines of at most `width` — broken between words where it can,
+| its own line breaks kept.
+Wrap { text, width } =>
+    out = []
+    if width < 1, return Lines { lines = out }
+    emit Split { value = text, separator = "\n" } to texts get paragraphs
+    loop paragraph over paragraphs.value
+        emit Split { value = paragraph, separator = " " } to texts get words
+        line = ""
+        used = 0
+        loop word over words.value
+            emit Length { value = word } to core get { value as size }
+            if used > 0 and used + 1 + size > width
+                out += line
+                line = ""
+                used = 0
+            if used > 0
+                line = line + " "
+                used += 1
+            | A word longer than the line is cut into lines of its own.
+            rest = word
+            loop
+                if used + size ≤ width, break
+                room = width - used
+                out += line + rest[0, room)
+                rest = rest[room, length)
+                size = size - room
+                line = ""
+                used = 0
+            line = line + rest
+            used += size
+        out += line
+    return Lines { lines = out }

@@ -3,10 +3,13 @@
 | opened in tabs, edited, undone, saved; tabs moved anywhere; a terminal;
 | the menu, the prompts, settings and keybindings; frames drawn from it all.
 
+link "../src/chatbox.gene.code"
+link "../src/context.gene.code"
 link "../src/editor.gene.code"
 link "../src/ide.gene.code"
 link "../src/keys.gene.code"
 link "../src/layout.gene.code"
+link "../src/llm.gene.code"
 link "../src/menu.gene.code"
 link "../src/render.gene.code"
 link "../src/settings.gene.code"
@@ -29,6 +32,17 @@ RowTexts { screen, row } =>
                 if span.text ≠ "", texts += span.text
     return Texts { texts = texts }
 
+| Whether `part` is somewhere in `text`.
+Contains { text, part } =>
+    emit Length { value = text } to core get { value as size }
+    emit Length { value = part } to core get { value as want }
+    i = 0
+    loop
+        if i + want > size, break
+        if text[i, i + want) = part, return Is { yes = true }
+        i += 1
+    return Is { yes = false }
+
 | The slot each group is in, and the kind of its active tab.
 WhereNow {} =>
     emit State to this get state
@@ -45,6 +59,8 @@ files = lib.fs
 prefs_fs = lib.prefs
 json_lib = lib.json
 shells = lib.pty
+strings_lib = lib.strings
+procs_lib = lib.process
 
 | Settings kept where the tests run, starting from none.
 emit Config { base_path = ".test-config" } to prefs_fs
@@ -319,6 +335,95 @@ emit WhereNow to this get before_g
 emit HandleKey { name = "ctrl+g", text = "" } to this
 emit WhereNow to this get after_g
 assert after_g.groups ≠ before_g.groups
+
+| The AI chat: Ctrl+L opens it on the right, with the keys.
+emit HandleKey { name = "ctrl+g", text = "" } to this
+emit OpenFile { path = "hello.code" } to this
+emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "ctrl+l", text = "" } to this
+emit WhereNow to this get with_chat
+emit State to this get chatting
+assert chatting.focus = "chat"
+assert with_chat.groups[chatting.current] = "r:chat"
+| With no model set up, asking says how to set one up.
+emit HandleKey { name = "h", text = "h" } to this
+emit HandleKey { name = "i", text = "i" } to this
+emit State to this get typed_hi
+assert typed_hi.chat.input = "hi"
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get unset
+assert unset.chat.turns[0].text = "hi"
+assert unset.chat.turns[1].role = "error"
+assert unset.chat.input = ""
+emit Framed to this get unset_frame
+assert unset_frame ∈ Screen
+
+| A model set up (settings.json), and the project's own instructions.
+emit WriteFile { path = "AGENTS.md", content = "Indent with four spaces." } to files
+| The model: a port that takes the request and never answers, so the
+| replies below are the only ones that come.
+emit Spawn { id = "silent-model", command = "python3", args = ["-c", "import socket, time\ns = socket.socket()\ns.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\ns.bind(('127.0.0.1', 47811))\ns.listen(8)\ntime.sleep(120)"] } to procs_lib
+emit Run { command = "sleep", args = ["0.5"] } to procs_lib
+emit StoreSetting { key = "ai.providers", value = { local = { endpoint = "http://127.0.0.1:47811", model = "test-model" } } } to this
+emit Run { command = "ai.newChat" } to this
+emit State to this get new_chat
+assert new_chat.chat.turns = []
+emit AskAbout { question = "what does this do? see @hello.code" } to this
+emit State to this get question_state
+assert question_state.chat.busy
+first_request = question_state.chat.request
+first_content = question_state.chat.messages[0].content
+assert question_state.chat.system ≠ ""
+| The system message has the instructions and the map; the question what
+| was on screen, and the file it mentions.
+emit Contains { text = question_state.chat.system, part = "Indent with four spaces." } to this get by_instructions
+assert by_instructions.yes
+emit Contains { text = question_state.chat.system, part = "Greet { who } =>" } to this get by_map
+assert by_map.yes
+emit Contains { text = first_content, part = "Open file: hello.code" } to this get by_file
+assert by_file.yes
+emit Contains { text = first_content, part = "# Attached: @hello.code" } to this get by_mention
+assert by_mention.yes
+
+| The model asks to search; the search runs and goes back to it.
+emit ChatResult { content = "{\"tool\": \"grep\", \"args\": {\"pattern\": \"Greet\"}}", _request_id = first_request } to this
+emit State to this get stepped
+assert stepped.chat.turns[1].role = "tool"
+assert stepped.chat.turns[1].text = "searched for \"Greet\""
+assert stepped.chat.busy and stepped.chat.request ≠ first_request
+emit Length { value = stepped.chat.messages } to core get { value as sent_count }
+result_note = stepped.chat.messages[sent_count - 1].content
+emit Contains { text = result_note, part = "hello.code:2:Greet" } to this get by_match
+assert by_match.yes
+| A reply to an old question is ignored; the answer ends the turn.
+emit ChatResult { content = "{\"answer\": \"stale\"}", _request_id = first_request } to this
+emit ChatResult { content = "{\"answer\": \"It greets.\"}", _request_id = stepped.chat.request } to this
+emit State to this get answered
+assert not answered.chat.busy
+assert answered.chat.turns[2].text = "It greets."
+emit Length { value = answered.chat.turns } to core get { value as shown_turns }
+assert shown_turns = 3
+emit Framed to this get answered_frame
+assert answered_frame ∈ Screen
+
+| Tools stay inside the folder.
+emit RunTool { tool = "read_file", args = { path = "../etc/passwd" } } to this get outside
+assert outside.text = "Not allowed: paths stay inside the project folder."
+emit RunTool { tool = "read_file", args = { path = "hello.code", from = 2, "to" = 2 } } to this get one_line
+assert one_line.text = "hello.code (4 lines), lines 2–2:\n2| Greet { who } =>"
+
+| Moved, the chat remembers where; Escape gives the keys back.
+emit HandleKey { name = "ctrl+k", text = "" } to this
+emit HandleKey { name = "m", text = "m" } to this
+emit HandleKey { name = "b", text = "b" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get chat_settings
+assert chat_settings.settings["ai.chat.location"] = "b"
+emit HandleKey { name = "escape", text = "" } to this
+emit State to this get back_to_files
+assert back_to_files.focus ≠ "chat"
+emit DeleteFile { path = "AGENTS.md" } to files
+emit Kill { id = "silent-model" } to procs_lib
 
 emit RemoveDir { path = "." } to prefs_fs
 emit RemoveDir { path = "." } to files

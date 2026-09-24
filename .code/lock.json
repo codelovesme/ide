@@ -43,6 +43,40 @@
       ],
       "global": false
     },
+    "localai": {
+      "name": "localai",
+      "version": "2.8.3",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "asset": "localai-linux-x86_64.so",
+      "sha256": "b36f0e1ea956fa7e577d49fb44757fc82b395e891ef552b01e6c87064e8fc39e",
+      "handlers": [
+        "Config",
+        "Chat",
+        "ChatJson",
+        "Transcribe",
+        "TranscribeWithOptions",
+        "Speak"
+      ],
+      "setup": "Config",
+      "global": false
+    },
+    "process": {
+      "name": "process",
+      "version": "2.8.3",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "asset": "process-linux-x86_64.so",
+      "sha256": "08d4763bee3dd9a88cb81531f836a76d2c8569c2650fe3fe16700c521e20cbde",
+      "handlers": [
+        "Run",
+        "Spawn",
+        "Status",
+        "Wait",
+        "WaitFor",
+        "Kill",
+        "List"
+      ],
+      "global": false
+    },
     "pty": {
       "name": "pty",
       "version": "2.8.3",

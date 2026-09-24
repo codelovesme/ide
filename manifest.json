@@ -5,6 +5,8 @@
     "env": "env",
     "fs": "fs",
     "json": "json",
+    "localai": "localai",
+    "process": "process",
     "pty": "pty",
     "strings": "strings",
     "syntax": "syntax",

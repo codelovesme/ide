@@ -1,0 +1,64 @@
+| The chat's pure pieces: the input box, the model's replies read, the
+| @ words, text wrapped; and the provider picked from settings.
+
+link "../src/chatbox.gene.code"
+link "../src/llm.gene.code"
+link "../src/ide.gene.code"
+link "../src/editor.gene.code"
+link "../src/keys.gene.code"
+link "../src/layout.gene.code"
+link "../src/menu.gene.code"
+link "../src/render.gene.code"
+link "../src/settings.gene.code"
+link "../src/tabs.gene.code"
+link "../src/tree.gene.code"
+link "../src/context.gene.code"
+
+emit UseOrganelles { from = "organelles" } to this get lib
+assert lib ∈ Linked
+
+| The input box.
+emit ChatInput { input = "wh", name = "y", text = "y", page = 10 } to this get typed
+assert typed.input = "why" and typed.send = null
+emit ChatInput { input = "why", name = "alt+enter", text = "", page = 10 } to this get two_lines
+assert two_lines.input = "why\n"
+emit ChatInput { input = "  why  ", name = "enter", text = "", page = 10 } to this get sent
+assert sent.send = "why" and sent.input = ""
+emit ChatInput { input = "   ", name = "enter", text = "", page = 10 } to this get empty
+assert empty.send = null
+emit ChatInput { input = "", name = "pageup", text = "", page = 10 } to this get up
+assert up.scroll = 10
+
+| Replies: a tool, an answer, JSON in a fence, and plain words.
+emit ReadReply { content = "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.code\", \"from\": 1, \"to\": 20}}" } to this get tool
+assert tool.tool = "read_file" and tool.args.path = "a.code"
+emit ReadReply { content = "Sure.\n```json\n{\"answer\": \"It moves the tab.\"}\n```" } to this get fenced
+assert fenced.tool = null and fenced.answer = "It moves the tab."
+emit ReadReply { content = "  It moves {the} tab.  " } to this get plain
+assert plain.answer = "It moves {the} tab."
+emit ToolLine { tool = "read_file", args = tool.args } to this get line
+assert line.text = "read a.code 1–20"
+
+| @ words.
+emit Mentions { input = "why does @terminal fail? see @src/a.code, and @git." } to this get mentioned
+assert mentioned.mentions = ["terminal", "src/a.code", "git"]
+
+| Wrapping.
+emit Wrap { text = "one two three four", width = 9 } to this get wrapped
+assert wrapped.lines = ["one two", "three", "four"]
+emit Wrap { text = "abcdefghij\nx", width = 4 } to this get cut
+assert cut.lines = ["abcd", "efgh", "ij", "x"]
+
+| The provider: none set up, then a local one.
+emit ProviderFor { settings = { "ai.provider" = "local", "ai.providers" = { local = { type = "openai-compatible", endpoint = "" } } } } to this get unset
+assert unset.problem ≠ ""
+emit ProviderFor { settings = { "ai.provider" = "local", "ai.providers" = { local = { endpoint = "http://localhost:8080", model = "qwen", apiKeyEnv = "KEY" } } } } to this get local
+assert local.problem = "" and local.organelle = "localai" and local.model = "qwen" and local.context_tokens = 32768
+emit ProviderFor { settings = { "ai.provider" = "cloud", "ai.providers" = { cloud = { type = "carrier-pigeon", endpoint = "x" } } } } to this get unknown
+assert unknown.problem ≠ ""
+emit ProviderConfig { provider = local, api_key = "k" } to this get config
+assert config.particle ∈ Config and config.particle.api_key = "k" and config.particle.model = "qwen"
+
+| The project map: files, each with the names it defines.
+emit RepoMap { files = "a.code\nb.md", outline = "a.code:2:Greet { who } =>\na.code:9:Part =>", chars = 1000 } to this get map
+assert map.text = "a.code\n    2: Greet { who } =>\n    9: Part =>\nb.md"

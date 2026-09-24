@@ -8,9 +8,9 @@
 | A key arrives from `tty` as `Key { name, text }`. It goes, first match:
 | to the prompt if one is open, to the menu if one is open, to a command if
 | it is bound (keys.gene.code), else to what the focused tab shows — the
-| explorer's rows, a file, or a terminal's shell (which gets most keys, see
-| `HandleKey`). Then the screen is drawn again. Anything that fails lands
-| in the status bar, not silence.
+| explorer's rows, a file, the AI chat's input, or a terminal's shell
+| (which gets most keys, see `HandleKey`). Then the screen is drawn again.
+| Anything that fails lands in the status bar, not silence.
 
 folder = ""
 cols = 80
@@ -42,7 +42,7 @@ redo = []
 last_edit = ""
 
 | What has the keys: the focused tab's kind — "tree" (the explorer),
-| "editor" (a file), "terminal", or "none" when nothing is open.
+| "editor" (a file), "terminal", "chat", or "none" when nothing is open.
 focus = "none"
 menu = null
 prompt = null
@@ -70,6 +70,24 @@ sizes = { left = 30, right = 40, top = 10, bottom = 12 }
 | The key table (see keys.gene.code): the defaults and keybindings.json.
 keytable = null
 
+| The AI chat (see chatbox.gene.code): its tab, and the conversation. The
+| model it talks to is whichever settings.json names (llm.gene.code);
+| `models` holds the organelle each provider type uses, `model_key` the
+| setup sent last, so it is sent again only when it changes.
+chat_view = { kind = "chat", path = "AI Chat", store = "view" }
+chat = { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null }
+chat_page = 10
+models = {}
+model_key = ""
+procs = null
+| What the chat says before anything is asked when no model is set up.
+chat_notice = ""
+| What "this" means to the chat: the file and the terminal shown last, and
+| the places just edited (`path:line`, latest last).
+last_file = null
+last_terminal = -1
+recent = []
+
 | Terminals: the pty organelle, how many have been opened (for their
 | names), the size each was last told, and which commands still run while
 | one has the keys (settings: terminal.integrated.commandsToSkipShell).
@@ -77,7 +95,7 @@ shells = null
 terminals_opened = 0
 terminal_sizes = {}
 
-| Links the seven organelles from the folder `from`, relative to where the program
+| Links the nine organelles from the folder `from`, relative to where the program
 | was started: `.` in a release bundle (bin/ide starts it there), and
 | `organelles` in a checkout (tools/organelles.sh puts them there).
 Organelles { from } =>
@@ -89,7 +107,9 @@ Organelles { from } =>
     link from + "/json.so" as json_at
     link from + "/fs.so" as prefs_at
     link from + "/pty.so" as pty_at
-    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at, pty = pty_at }
+    link from + "/localai.so" as localai_at
+    link from + "/process.so" as process_at
+    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at, pty = pty_at, localai = localai_at, process = process_at }
 
 | Links them, and hands each gene the ones it uses.
 UseOrganelles { from } =>
@@ -101,6 +121,10 @@ UseOrganelles { from } =>
     term = linked.tty
     prefs = linked.prefs
     shells = linked.pty
+    procs = linked.process
+    models = { localai = linked.localai }
+    emit ChatUses { json = linked.json, strings = linked.strings } to this
+    emit ContextUses { strings = linked.strings } to this
     emit SettingsUses { json = linked.json } to this
     emit KeysUses { json = linked.json, strings = linked.strings } to this
     emit EditorUses { texts = linked.strings } to this
@@ -213,6 +237,9 @@ HandleKey { name, text } =>
     if focus = "tree"
         emit TreeKey { name = name } to this
         return Handled
+    if focus = "chat"
+        emit ChatKey { name = name, text = text } to this
+        return Handled
     if focus = "editor" and file ≠ null
         emit EditorKey { name = name, text = text } to this
     return Handled
@@ -268,6 +295,13 @@ Run { command } =>
     if command = "menu.help", menu = { index = 3, item = 0 }
     if command = "edit.undo" and focus = "editor", emit Undo to this
     if command = "edit.redo" and focus = "editor", emit Redo to this
+    if command = "ai.toggle", emit ToggleChat to this
+    if command = "ai.configure", emit ConfigureAi to this
+    if command = "ai.newChat"
+        chat = chat + { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0 }
+        emit ShowChat to this
+    if command = "ai.cancel" and chat.busy
+        chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "error", text = "Stopped." }] }
     if command = "help.keys", emit ShowShortcuts to this
     if command = "help.about", message = "codelovesme ide — a terminal IDE for code, built on euglena"
     return Ran
@@ -288,6 +322,7 @@ MoveCurrent { into } =>
         explorer_slot = into
         if into = "l", emit StoreSetting { key = "workbench.sideBar.location", value = "left" } to this
         if into = "r", emit StoreSetting { key = "workbench.sideBar.location", value = "right" } to this
+    if moving.buffer ≠ null and moving.buffer.kind = "chat", emit StoreSetting { key = "ai.chat.location", value = into } to this
     return Moved
 
 | The explorer shown — its tab again if it is open, else a new one in the
@@ -593,10 +628,14 @@ Unstash =>
     focus = "none"
     if view = null, return Unstashed
     if view.kind = "explorer", focus = "tree"
-    if view.kind = "terminal", focus = "terminal"
+    if view.kind = "chat", focus = "chat"
+    if view.kind = "terminal"
+        focus = "terminal"
+        last_terminal = view.id
     if view.kind = "file"
         focus = "editor"
         file = view
+        last_file = { path = view.path, store = view.store }
         if file.undo ≠ null, undo = file.undo
         if file.redo ≠ null, redo = file.redo
     return Unstashed
@@ -629,7 +668,22 @@ EditorKey { name, text } =>
     redo = []
     last_edit = kind
     file = edited.buffer + { dirty = true }
+    emit NoteEdit to this
     return Changed
+
+| Where the file was just edited, for the chat: `path:line`, the latest
+| last, one entry a file.
+NoteEdit =>
+    if file.store ≠ "workspace", return Nothing
+    kept = []
+    loop place over recent
+        emit Split { value = place, separator = ":" } to texts get parts
+        if parts.value[0] ≠ file.path, kept += place
+    kept += file.path + ":" + (file.row + 1)
+    emit Length { value = kept } to core get { value as count }
+    if count > 6, kept = kept[count - 6, count)
+    recent = kept
+    return Noted
 
 | The open file's text replaced whole, as one edit (what a paste of
 | everything would be).
@@ -838,6 +892,9 @@ State =>
         message = message
         sizes = sizes
         keytable = keytable
+        chat = chat
+        chat_notice = chat_notice
+        settings = settings
     }
 
 | The screen of every terminal a group shows, each told first how big it
@@ -861,6 +918,7 @@ TerminalScreens { placed } =>
 
 Render =>
     if not running, return Skipped
+    emit ChatNotice to this
     emit State to this get state
     emit Placement { state = state } to this get placement
     emit TerminalScreens { placed = placement.placed } to this get terminal_screens
@@ -871,6 +929,9 @@ Render =>
     tree_top = screen.tree_top
     tree_page = screen.tree_page
     editor_page = screen.page
+    if screen.chat ≠ null
+        chat_page = screen.chat.page
+        chat = chat + { scroll = screen.chat.scroll }
     | Each group keeps how far its file was scrolled.
     loop scrolled_view over screen.views
         i = scrolled_view.group
@@ -881,3 +942,352 @@ Render =>
             groups = scrolled.groups
     emit Draw { overlays = screen.overlays, cursor_row = screen.cursor_row, cursor_col = screen.cursor_col } to term
     return Rendered
+
+
+| ── The AI chat ────────────────────────────────────────────────────────
+
+| Ctrl+L: the chat — opened where it was last (settings: ai.chat.location)
+| if it is not; the keys back to the files if it has them; else to it.
+ToggleChat =>
+    emit FindView { groups = groups, path = chat_view.path, store = chat_view.store } to this get where
+    if where.group ≥ 0 and focus = "chat"
+        emit FocusSlot { slot = "c" } to this get back
+        if back ∉ Focused, emit FocusNext to this
+        return Toggled
+    emit ShowChat to this
+    return Toggled
+
+| The chat shown and given the keys.
+ShowChat =>
+    emit FindView { groups = groups, path = chat_view.path, store = chat_view.store } to this get where
+    if where.group ≥ 0
+        emit Reveal { group = where.group, tab = where.tab } to this
+        return Shown
+    emit Show { buffer = chat_view, slot = settings["ai.chat.location"] } to this
+    return Shown
+
+| Settings > AI Model…: settings.json, with the `ai.*` settings written
+| into it if they are not there yet.
+ConfigureAi =>
+    emit StoreSetting { key = "ai.providers", value = settings["ai.providers"] } to this
+    emit OpenPrefsFile { name = "settings.json" } to this
+    message = "Set ai.providers.local.endpoint to your model server (e.g. http://localhost:8080), and its model; then save"
+    return Opened
+
+ChatNotice =>
+    emit ProviderFor { settings = settings } to this get provider
+    chat_notice = provider.problem
+    return Noted
+
+| A key in the chat: Escape gives the keys back to the files, Ctrl+C stops
+| the model; the rest are the input box's (chatbox.gene.code).
+ChatKey { name, text } =>
+    if name = "escape"
+        emit FocusSlot { slot = "c" } to this get back
+        if back ∉ Focused, emit FocusNext to this
+        return Handled
+    if name = "ctrl+c"
+        emit Run { command = "ai.cancel" } to this
+        return Handled
+    emit ChatInput { input = chat.input, name = name, text = text, page = chat_page } to this get typed
+    scroll = chat.scroll + typed.scroll
+    if scroll < 0, scroll = 0
+    chat = chat + { input = typed.input, scroll = scroll }
+    if typed.send ≠ null, emit AskAbout { question = typed.send } to this
+    return Handled
+
+| A question: what the user is looking at and what they @-mention go with
+| it, and the project's instructions and map go in the system message.
+AskAbout { question } =>
+    if chat.busy
+        message = "The AI is still answering — Ctrl+C in the chat stops it"
+        chat = chat + { input = question }
+        return Busy
+    chat = chat + { turns = chat.turns + [{ role = "user", text = question }], scroll = 0 }
+    emit ProviderFor { settings = settings } to this get provider
+    if provider.problem ≠ ""
+        chat = chat + { turns = chat.turns + [{ role = "error", text = provider.problem }] }
+        return Failed
+    emit Budget { context_tokens = provider.context_tokens, max_tokens = provider.max_tokens } to this get budget
+    emit ShownFile to this get shown
+    emit GatherContext { question = question, shown = shown.file, budget = budget } to this get gathered
+    emit ProjectKnowledge { shown = shown.file, budget = budget } to this get system
+    | Earlier questions keep only their words: what was on screen then is
+    | old news, and the room is the conversation's.
+    earlier = []
+    loop m over chat.messages
+        if m.short ≠ null, earlier += { role = m.role, content = m.short }
+        if m.short = null, earlier += m
+    asked = { role = "user", content = gathered.text + "\n# The question\n" + question, short = question }
+    chat = chat + { messages = earlier + [asked], steps = 0, system = system.text, budget = budget }
+    emit AskModel to this
+    return Asked
+
+| The file the user looks at: the focused one, else the one shown last,
+| as its tab has it now.
+ShownFile =>
+    if file ≠ null and file.store = "workspace", return ShownFileIs { file = file }
+    if last_file = null or last_file.store ≠ "workspace", return ShownFileIs { file = null }
+    emit FindView { groups = groups, path = last_file.path, store = last_file.store } to this get at
+    if at.group < 0, return ShownFileIs { file = null }
+    return ShownFileIs { file = groups[at.group].tabs[at.tab] }
+
+| Part 1 of the context (context.gene.code), and what `question` mentions
+| with `@` attached.
+GatherContext { question, shown, budget } =>
+    names = []
+    loop group over groups
+        loop tab over group.tabs
+            names += tab.path
+    emit TerminalText { lines = 40 } to this get terminal
+    emit RunQuiet { command = "git", args = ["status", "--short", "--branch"] } to this get git
+    emit Clip { text = git.text, chars = 3000 } to this get git_short
+    emit Ambient { file = shown, focus = focus, tabs = names, recent = recent, terminal = terminal.text, git = git_short.text } to this get ambient
+    emit Clip { text = ambient.text, chars = budget.ambient } to this get out
+    text = out.text
+    emit Mentions { input = question } to this get mentioned
+    loop name over mentioned.mentions
+        emit Attachment { name = name, shown = shown } to this get attached
+        emit Clip { text = attached.text, chars = budget.tool } to this get cut
+        if cut.text ≠ "", text = text + "\n# Attached: @" + name + "\n" + cut.text + "\n"
+    return Text { text = text }
+
+| What `@name` brings: the terminal, git's diff, the open file, the
+| folder, or a file or folder by its path.
+Attachment { name, shown } =>
+    if name = "terminal"
+        emit TerminalText { lines = 200 } to this get more
+        return Text { text = "```\n" + more.text + "\n```" }
+    if name = "git"
+        emit RunTool { tool = "git_diff", args = {} } to this get diff
+        return diff
+    if name = "file"
+        if shown = null, return Text { text = "(no file is open)" }
+        emit Length { value = shown.lines } to core get { value as count }
+        emit Numbered { lines = shown.lines, first = 1, last = count } to this get whole
+        return Text { text = shown.path + ":\n```\n" + whole.text + "\n```" }
+    if name = "folder"
+        emit RunTool { tool = "list_dir", args = { path = "." } } to this get listed
+        return listed
+    emit SafePath { path = name } to this get safe
+    if not safe.ok, return Text { text = "" }
+    emit Exists { path = safe.path } to files get there
+    if there ∈ Exception, return Text { text = "" }
+    if there.is_dir
+        emit RunTool { tool = "list_dir", args = { path = safe.path } } to this get listed
+        return listed
+    if there.is_file
+        emit RunTool { tool = "read_file", args = { path = safe.path, from = 1, "to" = 2000 } } to this get read
+        return read
+    return Text { text = "" }
+
+| The terminal shown last (else the first open), as its last `lines`.
+TerminalText { lines } =>
+    id = last_terminal
+    if id < 0
+        emit Terminals { groups = groups } to this get open_terminals
+        if open_terminals.ids[0] = null, return Text { text = "" }
+        id = open_terminals.ids[0]
+    emit FindTerminal { id = id } to this get where
+    if where.group < 0, return Text { text = "" }
+    emit Screen { id = id } to shells get screen
+    if screen ∈ Exception, return Text { text = "" }
+    emit ScreenText { screen = screen, last = lines } to this get shown
+    return shown
+
+| A command's output, run in the open folder; "" when it fails.
+RunQuiet { command, args } =>
+    emit Run { command = command, args = args, cwd = folder } to procs get ran
+    if ran ∈ Exception or not ran.success, return Text { text = "" }
+    emit Trim { value = ran.stdout } to texts get out
+    return Text { text = out.value }
+
+outline_patterns = [
+    "^[A-Z][A-Za-z0-9]* *(\\{.*\\})? *=>"
+    "^\\s*(pub(\\([a-z]+\\))? )?(export )?(default )?(async )?(fn|struct|enum|trait|impl|mod|class|def|function|interface|type|func) [A-Za-z_]"
+]
+
+| Parts 2 and 3: the project's instructions and its map, in the system
+| message (context.gene.code).
+ProjectKnowledge { shown, budget } =>
+    path = null
+    if shown ≠ null, path = shown.path
+    emit InstructionPaths { path = path } to this get candidates
+    found = ""
+    loop candidate over candidates.paths
+        emit Exists { path = candidate } to files get there
+        if there ∉ Exception and there.is_file
+            emit ReadFile { path = candidate } to files get read
+            if read ∉ Exception, found = found + "## " + candidate + "\n" + read.content + "\n\n"
+    emit Clip { text = found, chars = budget.instructions } to this get instructions
+    emit RunQuiet { command = "rg", args = ["--files", "--no-ignore-parent", "--sort", "path", "."] } to this get listed
+    listing = listed.text
+    if listing = ""
+        emit RunQuiet { command = "git", args = ["ls-files"] } to this get tracked
+        listing = tracked.text
+    if listing = ""
+        emit RunQuiet { command = "find", args = [".", "-type", "f", "-not", "-path", "*/.git/*", "-not", "-path", "*/node_modules/*", "-not", "-path", "*/target/*"] } to this get walked
+        listing = walked.text
+    outline_args = ["--no-ignore-parent", "-n", "--no-heading", "--with-filename", "--color", "never", "--sort", "path", "--max-count", "40", "--max-columns", "160", "-g", "!*.lock", "-g", "!*.json", "-g", "!*.min.*"]
+    loop pattern over outline_patterns
+        outline_args = outline_args + ["-e", pattern]
+    | A path is given: with none, rg would search its (empty) input.
+    emit RunQuiet { command = "rg", args = outline_args + ["."] } to this get outline
+    outlined = outline.text
+    | Without ripgrep, grep (it has no .gitignore, so the usual heavy
+    | folders are left out by name).
+    if outlined = ""
+        grep_args = ["-rnIE", "--exclude-dir=.git", "--exclude-dir=node_modules", "--exclude-dir=target", "--exclude-dir=dist", "--exclude-dir=build", "--exclude=*.json", "--exclude=*.lock", "-m", "40"]
+        loop pattern over outline_patterns
+            grep_args = grep_args + ["-e", pattern]
+        emit RunQuiet { command = "grep", args = grep_args + ["."] } to this get grepped
+        outlined = grepped.text
+    emit RepoMap { files = listing, outline = outlined, chars = budget.map } to this get map
+    emit SystemPrompt { folder = folder, instructions = instructions.text, map = map.text } to this get system
+    return system
+
+| The conversation sent to the model the settings name — set up first if
+| that changed. The reply comes back later, as `ChatResult`.
+AskModel =>
+    emit ProviderFor { settings = settings } to this get provider
+    if provider.problem ≠ ""
+        emit ChatFailed { text = provider.problem } to this
+        return Failed
+    key = ""
+    if provider.api_key_env ≠ ""
+        emit Get { name = provider.api_key_env, default = "" } to vars get from_env
+        key = from_env.value
+    emit ProviderConfig { provider = provider, api_key = key } to this get config
+    target = models[provider.organelle]
+    if config.key ≠ model_key
+        emit config.particle to target get configured
+        if configured ∈ Exception
+            emit ChatFailed { text = "The model could not be set up: " + configured.message } to this
+            return Failed
+        model_key = config.key
+    emit TrimMessages { messages = chat.messages, chars = chat.budget.conversation } to this get kept
+    sending = [{ role = "system", content = chat.system }]
+    loop m over kept.messages
+        sending += { role = m.role, content = m.content }
+    emit ProviderChat { provider = provider, messages = sending } to this get call
+    emit call.particle to target get sent
+    if sent ∈ Exception
+        emit ChatFailed { text = "The model could not be asked: " + sent.message } to this
+        return Failed
+    chat = chat + { busy = true, request = sent.value }
+    return Asked
+
+ChatFailed { text } =>
+    chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "error", text = text }] }
+    return Failed
+
+| The model's reply: a tool to run — its result goes back, and the model is
+| asked again — or the answer.
+ChatResult { content, _request_id } =>
+    if _request_id ≠ chat.request, return Ignored
+    emit ReadReply { content = content } to this get reply
+    chat = chat + { messages = chat.messages + [{ role = "assistant", content = content }] }
+    if reply.tool = null
+        chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "assistant", text = reply.answer }] }
+        if running, emit Render to this
+        return Answered
+    max_steps = settings["ai.maxSteps"]
+    if chat.steps ≥ max_steps
+        emit ChatFailed { text = "The model was still looking after " + max_steps + " steps (settings: ai.maxSteps) — ask again, more narrowly" } to this
+        if running, emit Render to this
+        return Failed
+    emit ToolLine { tool = reply.tool, args = reply.args } to this get line
+    chat = chat + { turns = chat.turns + [{ role = "tool", text = line.text }], steps = chat.steps + 1 }
+    emit RunTool { tool = reply.tool, args = reply.args } to this get result
+    emit Clip { text = result.text, chars = chat.budget.tool } to this get cut
+    note = "Result of " + reply.tool + ":\n" + cut.text
+    if chat.steps ≥ max_steps, note = note + "\n\nThat was the last step: answer now, with what you have."
+    chat = chat + { messages = chat.messages + [{ role = "user", content = note }] }
+    emit AskModel to this
+    if running, emit Render to this
+    return Stepped
+
+| The model could not be reached (the organelle's `later` failure).
+Exception { source, message as failure, _request_id } =>
+    if _request_id = null or _request_id ≠ chat.request, return Ignored
+    emit ChatFailed { text = "The model did not answer: " + failure } to this
+    if running, emit Render to this
+    return Failed
+
+| A tool the model asked for, run on the open folder. Answers `Text`:
+| what it found, or why it could not.
+RunTool { tool, args } =>
+    if tool = "list_dir"
+        emit SafePath { path = args["path"] } to this get safe
+        if not safe.ok, return Text { text = "Not allowed: paths stay inside the project folder." }
+        emit ListDir { path = safe.path } to files get listing
+        if listing ∈ Exception, return Text { text = "Error: " + listing.message }
+        names = []
+        loop entry over listing.entries
+            if entry.is_dir, names += entry.name + "/"
+            if not entry.is_dir, names += entry.name
+        emit Join { value = names, separator = "\n" } to texts get joined
+        return Text { text = joined.value }
+    if tool = "read_file"
+        emit SafePath { path = args["path"] } to this get safe
+        if not safe.ok, return Text { text = "Not allowed: paths stay inside the project folder." }
+        | An open file is read as the editor has it, unsaved changes and all.
+        lines = null
+        emit FindView { groups = groups, path = safe.path, store = "workspace" } to this get open_at
+        if open_at.group ≥ 0, lines = groups[open_at.group].tabs[open_at.tab].lines
+        if file ≠ null and file.store = "workspace" and file.path = safe.path, lines = file.lines
+        if lines = null
+            emit ReadFile { path = safe.path } to files get read
+            if read ∈ Exception, return Text { text = "Error: " + read.message }
+            emit Split { value = read.content, separator = "\n" } to texts get split
+            lines = split.value
+        emit Length { value = lines } to core get { value as count }
+        from = args["from"]
+        if from ∉ Number or from < 1, from = 1
+        to_line = args["to"]
+        if to_line ∉ Number or to_line < from, to_line = from + 299
+        if to_line > from + 299, to_line = from + 299
+        if to_line > count, to_line = count
+        emit Numbered { lines = lines, first = from, last = to_line } to this get numbered
+        return Text { text = safe.path + " (" + count + " lines), lines " + from + "–" + to_line + ":\n" + numbered.text }
+    if tool = "grep"
+        pattern = args["pattern"]
+        if pattern ∉ String or pattern = "", return Text { text = "grep needs a \"pattern\"." }
+        where = "."
+        if args["path"] ≠ null
+            emit SafePath { path = args["path"] } to this get safe
+            if not safe.ok, return Text { text = "Not allowed: paths stay inside the project folder." }
+            where = safe.path
+        search = ["--no-ignore-parent", "-n", "--no-heading", "--with-filename", "--color", "never", "-S", "--max-count", "20", "--max-columns", "200"]
+        if args["glob"] ∈ String and args["glob"] ≠ "", search = search + ["-g", args["glob"]]
+        emit Run { command = "rg", args = search + ["-e", pattern, where], cwd = folder } to procs get searched
+        found = searched
+        if searched ∈ Exception
+            emit Run { command = "grep", args = ["-rnIE", "--exclude-dir=.git", "--exclude-dir=node_modules", "--exclude-dir=target", "-e", pattern, where], cwd = folder } to procs get grepped
+            if grepped ∈ Exception, return Text { text = "Error: " + grepped.message }
+            found = grepped
+        if found.code = 1, return Text { text = "No matches." }
+        if not found.success, return Text { text = "Error: " + found.stderr }
+        emit FirstLines { text = found.stdout, count = 60 } to this get first
+        return first
+    if tool = "find_files"
+        name = args["name"]
+        if name ∉ String or name = "", return Text { text = "find_files needs a \"name\"." }
+        emit RunQuiet { command = "rg", args = ["--files", "--no-ignore-parent", "--sort", "path", "--iglob", "*" + name + "*", "."] } to this get found
+        listing = found.text
+        if listing = ""
+            emit RunQuiet { command = "find", args = [".", "-iname", "*" + name + "*", "-not", "-path", "*/.git/*"] } to this get looked
+            listing = looked.text
+        if listing = "", return Text { text = "No files match." }
+        emit FirstLines { text = listing, count = 100 } to this get first
+        return first
+    if tool = "git_diff"
+        diff_args = ["diff"]
+        if args["path"] ≠ null
+            emit SafePath { path = args["path"] } to this get safe
+            if not safe.ok, return Text { text = "Not allowed: paths stay inside the project folder." }
+            diff_args = diff_args + ["--", safe.path]
+        emit RunQuiet { command = "git", args = diff_args } to this get diff
+        if diff.text = "", return Text { text = "No changes (or not a git repository)." }
+        return diff
+    return Text { text = "There is no tool called \"" + tool + "\". The tools: list_dir, read_file, grep, find_files, git_diff." }

@@ -1,0 +1,233 @@
+| Context — what the model is told, so it knows what "this", "here" and
+| "the error" mean without being told. Pure: the ide gene gathers the
+| pieces (it has the files, the terminals, git), this puts them together.
+|
+| Every question carries:
+|
+|   1. what the user is looking at — the file and the lines round the
+|      cursor, the other open tabs, the files just edited, the last lines
+|      of the terminal, git's branch and changes;
+|   2. the project's own instructions — AGENTS.md, CLAUDE.md, .cursorrules,
+|      .github/copilot-instructions.md, .ide/instructions.md, at the root
+|      and in each folder on the way to the open file;
+|   3. a map of the project — its files, and the names each one defines;
+|   4. tools, so the model looks things up itself: list, read, search,
+|      find, git diff.
+|
+| All of it is cut to fit the model's context (`contextTokens`, taken as
+| four characters a token).
+
+texts = null
+
+ContextUses { strings } =>
+    texts = strings
+    return Using
+
+instruction_names = ["AGENTS.md", "CLAUDE.md", ".cursorrules", ".github/copilot-instructions.md", ".ide/instructions.md"]
+nested_names = ["AGENTS.md", "CLAUDE.md"]
+
+| The instruction files to look for with `path` open: the root's, then
+| each folder's on the way down to it.
+InstructionPaths { path } =>
+    out = instruction_names
+    if path = null or path = "", return Paths { paths = out }
+    emit Split { value = path, separator = "/" } to texts get parts
+    emit Length { value = parts.value } to core get { value as depth }
+    at = ""
+    i = 0
+    loop
+        if i ≥ depth - 1, break
+        at = at + parts.value[i] + "/"
+        loop name over nested_names
+            out += at + name
+        i += 1
+    return Paths { paths = out }
+
+| How many characters each part may take, from the model's context size.
+| What is left is the conversation's.
+Budget { context_tokens, max_tokens } =>
+    chars = (context_tokens - max_tokens) * 4
+    if chars < 8000, chars = 8000
+    return Budgets {
+        total = chars
+        instructions = chars * 15 / 100
+        map = chars * 20 / 100
+        ambient = chars * 15 / 100
+        tool = chars * 15 / 100
+        conversation = chars * 50 / 100
+    }
+
+| `text`, at most `chars` long.
+Clip { text, chars } =>
+    emit Length { value = text } to core get { value as size }
+    if size ≤ chars, return Text { text = text }
+    return Text { text = text[0, chars) + "\n… (cut: " + (size - chars) + " more characters)" }
+
+| A path the tools may use: inside the folder, never out of it.
+SafePath { path } =>
+    if path ∉ String, return Checked { ok = false, path = "" }
+    given = path
+    if given = "" or given = "/", given = "."
+    if given[0, 2) = "./" and given ≠ "./", given = given[2, length)
+    if given = "./", given = "."
+    if given[0] = "/" or given[0] = "~", return Checked { ok = false, path = given }
+    emit Split { value = given, separator = "/" } to texts get parts
+    loop part over parts.value
+        if part = "..", return Checked { ok = false, path = given }
+    return Checked { ok = true, path = given }
+
+| A terminal's screen as text: the last `last` lines that are not blank.
+ScreenText { screen, last } =>
+    if screen = null, return Text { text = "" }
+    lines = []
+    loop line over screen.lines
+        text = ""
+        loop span over line
+            text = text + span.text
+        lines += text
+    | Blank lines at the bottom go.
+    emit Length { value = lines } to core get { value as count }
+    loop
+        if count = 0, break
+        emit Trim { value = lines[count - 1] } to texts get trimmed
+        if trimmed.value ≠ "", break
+        count = count - 1
+    first = count - last
+    if first < 0, first = 0
+    emit Join { value = lines[first, count), separator = "\n" } to texts get joined
+    return Text { text = joined.value }
+
+| The first `count` lines of `text`, and how many more there were.
+FirstLines { text, count } =>
+    emit Split { value = text, separator = "\n" } to texts get split
+    emit Length { value = split.value } to core get { value as total }
+    if total ≤ count, return Text { text = text }
+    emit Join { value = split.value[0, count), separator = "\n" } to texts get joined
+    return Text { text = joined.value + "\n… (" + (total - count) + " more lines)" }
+
+| `lines` from `first` to `last` (1-based, both in), numbered.
+Numbered { lines, first, last } =>
+    out = []
+    i = first
+    loop
+        if i > last, break
+        line = lines[i - 1]
+        if line = null, break
+        out += "" + i + "| " + line
+        i += 1
+    emit Join { value = out, separator = "\n" } to texts get joined
+    return Text { text = joined.value }
+
+| Part 1: what the user is looking at. `file` is the file shown last (or
+| null); `tabs` every tab's name; `recent` the places just edited;
+| `terminal` its last lines; `git` its branch and changes.
+Ambient { file, focus, tabs, recent, terminal, git } =>
+    out = "# What the user is looking at\n"
+    if focus = "terminal", out = out + "The keys are in a terminal.\n"
+    if file ≠ null
+        emit Length { value = file.lines } to core get { value as count }
+        row = file.row + 1
+        out = out + "Open file: " + file.path + " (" + count + " lines), cursor on line " + row + ", column " + (file.col + 1)
+        if file.dirty = true, out = out + " — unsaved changes"
+        out = out + "\n"
+        from = row - 15
+        if from < 1, from = 1
+        emit Numbered { lines = file.lines, first = from, last = row + 15 } to this get around
+        out = out + "Lines " + from + "… round the cursor:\n```\n" + around.text + "\n```\n"
+        emit Trim { value = file.lines[file.row] } to texts get here
+        if here.value ≠ "", out = out + "The cursor's line: " + here.value + "\n"
+    if file = null, out = out + "No file is open.\n"
+    emit Length { value = tabs } to core get { value as tab_count }
+    if tab_count > 0
+        emit Join { value = tabs, separator = ", " } to texts get tab_list
+        out = out + "Open tabs: " + tab_list.value + "\n"
+    emit Length { value = recent } to core get { value as edit_count }
+    if edit_count > 0
+        emit Join { value = recent, separator = ", " } to texts get edit_list
+        out = out + "Just edited (latest last): " + edit_list.value + "\n"
+    if terminal ≠ ""
+        out = out + "The terminal's last lines:\n```\n" + terminal + "\n```\n"
+    if git ≠ "", out = out + "git status:\n```\n" + git + "\n```\n"
+    return Text { text = out }
+
+| Part 3: the project's map, from `files` (one path a line) and `outline`
+| (`path:line:text` lines — the names each file defines).
+RepoMap { files, outline, chars } =>
+    emit Split { value = outline, separator = "\n" } to texts get outline_lines
+    names = {}
+    loop entry over outline_lines.value
+        emit Split { value = entry, separator = ":" } to texts get parts
+        emit Length { value = parts.value } to core get { value as count }
+        if count ≥ 3
+            path = parts.value[0]
+            if path[0, 2) = "./", path = path[2, length)
+            emit Join { value = parts.value[2, count), separator = ":" } to texts get rest
+            emit Trim { value = rest.value } to texts get defined
+            line = "    " + parts.value[1] + ": " + defined.value[0, 100)
+            if names[path] = null, names = names + { "$path" = [] }
+            names = names + { "$path" = names[path] + [line] }
+    emit Split { value = files, separator = "\n" } to texts get file_lines
+    out = []
+    loop listed over file_lines.value
+        if listed = "", continue
+        path = listed
+        if path[0, 2) = "./", path = path[2, length)
+        out += path
+        if names[path] ≠ null, out = out + names[path]
+    emit Join { value = out, separator = "\n" } to texts get joined
+    emit Clip { text = joined.value, chars = chars } to this get clipped
+    return Text { text = clipped.text }
+
+tools_text = [
+    "Tools (paths are relative to the project folder):"
+    "- list_dir {\"path\"}: the entries of a folder (\".\" is the root)."
+    "- read_file {\"path\", \"from\"?, \"to\"?}: a file's lines, numbered from 1 (at most 300 at a time)."
+    "- grep {\"pattern\", \"path\"?, \"glob\"?}: a regex search over the files (ripgrep, smart case); up to 60 matches as path:line:text."
+    "- find_files {\"name\"}: the files whose path contains `name`."
+    "- git_diff {\"path\"?}: the changes not yet committed."
+]
+
+| The system message: who the model is, how to reply, the tools, the
+| project's instructions and its map.
+SystemPrompt { folder, instructions, map } =>
+    lines = [
+        "You are the AI assistant inside the codelovesme ide, a terminal code editor. The user has the project at " + folder + " open, and asks you about it."
+        ""
+        "Reply with exactly one JSON object and nothing else:"
+        "  {\"tool\": \"<name>\", \"args\": {…}}   to look at the project, or"
+        "  {\"answer\": \"<the answer, in markdown>\"}   once you know enough."
+        ""
+    ]
+    lines = lines + tools_text + [
+        ""
+        "How to work:"
+        "- The user rarely names files. \"What the user is looking at\" (sent with every question) tells you what \"this\", \"here\", \"the error\" and \"this function\" mean."
+        "- Look before you answer: search, then read the lines that matter. Never guess about code you have not read. One tool per reply; you will be sent its result."
+        "- Answer short and concrete, citing places as path:line. You cannot change files yet: show a change as a snippet with its file and lines."
+        "- The project's own instructions below come first; follow them."
+    ]
+    if instructions ≠ ""
+        lines = lines + ["", "# The project's instructions", instructions]
+    if map ≠ ""
+        lines = lines + ["", "# The project's files, and what each defines", map]
+    emit Join { value = lines, separator = "\n" } to texts get joined
+    return Text { text = joined.value }
+
+| The conversation cut to `chars`: the oldest messages go first, the last
+| always stays, and it never starts with the model's side.
+TrimMessages { messages, chars } =>
+    emit Length { value = messages } to core get { value as count }
+    total = 0
+    first = count
+    loop
+        if first = 0, break
+        emit Length { value = messages[first - 1].content } to core get { value as size }
+        if total + size > chars and first < count, break
+        total += size
+        first = first - 1
+    kept = messages[first, count)
+    loop
+        emit Length { value = kept } to core get { value as left }
+        if left ≤ 1 or kept[0].role = "user", break
+        kept = kept[1, length)
+    return Messages { messages = kept }

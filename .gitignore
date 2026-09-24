@@ -15,6 +15,7 @@ __pycache__/
 
 # Made and removed by tests/ide.code
 .test-folder/
+.test-config/
 
 # tools/package.sh output
 dist/

@@ -1,0 +1,75 @@
+| Provider — which model the AI chat talks to, and how. Pure.
+|
+| Nothing about a model is built in: settings.json names them —
+|
+|     "ai.provider": "local",
+|     "ai.providers": {
+|         "local": { "type": "openai-compatible", "endpoint": "http://localhost:8080",
+|                    "model": "", "apiKeyEnv": "", "contextTokens": 32768 }
+|     }
+|
+| `ai.provider` picks one of `ai.providers`. Its `type` says how to talk to
+| it; each type is one organelle and the particles it takes. Today there is
+| one type, `openai-compatible` — the `localai` organelle, which speaks
+| `/v1/chat/completions`: LocalAI, Ollama, llama.cpp's server, vLLM, LM
+| Studio. Another kind of provider (Anthropic, …) is another entry in
+| `types` and in the two handlers below; nothing else changes.
+|
+| A key is never written in settings.json: `apiKeyEnv` names the
+| environment variable that holds it.
+
+types = {
+    "openai-compatible" = { organelle = "localai" }
+}
+
+default_context = 32768
+default_reply = 2048
+
+| The provider settings pick, checked. `problem` is "" when it can be
+| used, else what to do about it.
+ProviderFor { settings } =>
+    name = settings["ai.provider"]
+    all = settings["ai.providers"]
+    given = null
+    if all ∈ Object and name ∈ String, given = all[name]
+    if given = null or given ∉ Object
+        return Provider { name = name, problem = "No AI model is set up: Settings > AI Model… and give \"ai.providers\" an endpoint" }
+    kind = given["type"]
+    if kind = null, kind = "openai-compatible"
+    if types[kind] = null
+        return Provider { name = name, problem = "ai.providers." + name + ": no provider type \"" + kind + "\" — use \"openai-compatible\"" }
+    endpoint = given["endpoint"]
+    if endpoint = null or endpoint ∉ String or endpoint = ""
+        return Provider { name = name, problem = "No AI model is set up: Settings > AI Model… and set ai.providers." + name + ".endpoint (e.g. http://localhost:8080)" }
+    model = given["model"]
+    if model ∉ String, model = ""
+    key_env = given["apiKeyEnv"]
+    if key_env ∉ String, key_env = ""
+    context = given["contextTokens"]
+    if context ∉ Number or context < 2048, context = default_context
+    reply = given["maxTokens"]
+    if reply ∉ Number or reply < 256, reply = default_reply
+    return Provider {
+        name = name
+        type = kind
+        organelle = types[kind].organelle
+        endpoint = endpoint
+        model = model
+        api_key_env = key_env
+        context_tokens = context
+        max_tokens = reply
+        problem = ""
+    }
+
+| The setup particle for `provider`'s organelle, with its key.
+ProviderConfig { provider, api_key } =>
+    config = Config { endpoint = provider.endpoint, max_tokens = provider.max_tokens, temperature = 0.2, timeout_seconds = 900 }
+    if provider.model ≠ "", config = config + { model = provider.model }
+    if api_key ≠ "", config = config + { api_key = api_key }
+    return Particle { particle = config, key = provider.type + " " + provider.endpoint + " " + provider.model + " " + api_key }
+
+| One turn of the conversation, asked of `provider`'s organelle: answered
+| at once with `Sent { value }`, the reply arriving later as a
+| `ChatResult { content, _request_id }` (or an `Exception`).
+ProviderChat { provider, messages } =>
+    return Particle { particle = Chat { messages = messages, later = true } }

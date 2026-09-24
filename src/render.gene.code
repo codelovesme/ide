@@ -5,7 +5,7 @@
 | Row 0 is the menu bar, the last row the status bar; between them the
 | body: every group of tabs where `Layout` puts its slot — a tab strip,
 | then what its active tab shows (the explorer's rows, a file, a
-| terminal). A group not at the left edge has a line down its left side.
+| terminal, the AI chat). A group not at the left edge has a line down its left side.
 
 | The `strings` and `syntax` organelles, handed over when the ide links them.
 texts = null
@@ -85,6 +85,118 @@ TerminalRows { pane, screen, focused } =>
     if focused and screen.cursor_visible
         view = view + { cursor_row = 1 + pane.y + screen.cursor_row, cursor_col = pane.x + screen.cursor_col }
     return view
+
+chat_help = [
+    "Ask about this project — it looks at what you are looking at."
+    "Enter asks · Alt+Enter a new line · Esc back to the files"
+    "PgUp/PgDn scroll · Ctrl+C stops · @terminal @git @file @folder @path"
+]
+
+| One turn of the chat as lines `{ text, style }`, `width` wide.
+TurnLines { turn, width } =>
+    out = []
+    if turn.role = "tool"
+        emit Wrap { text = "· " + turn.text, width = width - 2 } to this get wrapped
+        loop line over wrapped.lines
+            out += { text = "  " + line, style = "dim" }
+        return ChatLines { lines = out }
+    if turn.role = "error"
+        emit Wrap { text = turn.text, width = width - 4 } to this get wrapped
+        loop i, line over wrapped.lines
+            lead = "    "
+            if i = 0, lead = "  ! "
+            out += { text = lead + line, style = "plain", fg = [230, 140, 60] }
+        out += { text = "", style = "plain" }
+        return ChatLines { lines = out }
+    if turn.role = "user", out += { text = "You", style = "plain", fg = [86, 156, 214], bold = true }
+    if turn.role = "assistant", out += { text = "AI", style = "plain", fg = [78, 201, 176], bold = true }
+    emit Split { value = turn.text, separator = "\n" } to texts get lines
+    fenced = false
+    loop line over lines.value
+        if line[0, 3) = "```"
+            fenced = not fenced
+            out += { text = "  " + line[0, width - 2), style = "dim" }
+            continue
+        if fenced
+            out += { text = "  " + line[0, width - 2), style = "variable" }
+            continue
+        style = "plain"
+        if line[0] = "#", style = "property"
+        emit Wrap { text = line, width = width - 2 } to this get wrapped
+        loop part over wrapped.lines
+            out += { text = "  " + part, style = style }
+    out += { text = "", style = "plain" }
+    return ChatLines { lines = out }
+
+| The AI chat in `pane` (below its tab strip): the conversation, the
+| newest at the bottom (`scroll` lines up from there), and the input box
+| under a rule, growing to six lines.
+ChatRows { pane, chat, notice, focused } =>
+    width = pane.width - 1
+    out = []
+    emit Wrap { text = chat.input, width = width - 3 } to this get typed
+    emit Length { value = typed.lines } to core get { value as typed_count }
+    shown_typed = typed.lines
+    if typed_count > 6, shown_typed = typed.lines[typed_count - 6, typed_count)
+    emit Length { value = shown_typed } to core get { value as box }
+    room = pane.height - box - 1
+    if room < 1, room = 1
+
+    | Lines from the newest turn back, until there are enough to fill the
+    | room scrolled up.
+    lines = []
+    if chat.busy
+        lines = [{ text = "  … thinking (step " + (chat.steps + 1) + ")", style = "dim" }]
+    emit Length { value = chat.turns } to core get { value as turn_count }
+    i = turn_count - 1
+    loop
+        if i < 0, break
+        emit Length { value = lines } to core get { value as have }
+        if have ≥ room + chat.scroll, break
+        emit TurnLines { turn = chat.turns[i], width = width } to this get turn_lines
+        lines = turn_lines.lines + lines
+        i = i - 1
+    if turn_count = 0
+        lines = []
+        loop hint over chat_help
+            lines += { text = " " + hint, style = "dim" }
+        if notice ≠ ""
+            lines += { text = "", style = "plain" }
+            emit Wrap { text = notice, width = width - 4 } to this get wrapped
+            loop part over wrapped.lines
+                lines += { text = "  " + part, style = "plain", fg = [230, 140, 60] }
+    emit Length { value = lines } to core get { value as count }
+    scroll = chat.scroll
+    most = count - room
+    if i < 0 and most < 0, most = 0
+    if i < 0 and scroll > most, scroll = most
+    if scroll < 0, scroll = 0
+    last = count - scroll
+    first = last - room
+    if first < 0, first = 0
+    at = 0
+    loop line over lines[first, last)
+        out += { row = 1 + pane.y + at, col = pane.x + 1, spans = [line + { width = width }] }
+        at += 1
+
+    rule_row = 1 + pane.y + room
+    rule = ""
+    k = 0
+    loop
+        if k ≥ pane.width, break
+        rule = rule + "─"
+        k += 1
+    out += { row = rule_row, col = pane.x, spans = [{ text = rule, style = "border" }] }
+    cursor_row = null, cursor_col = null
+    loop j, line over shown_typed
+        lead = "   "
+        if j = 0 and box = typed_count, lead = " › "
+        out += { row = rule_row + 1 + j, col = pane.x, spans = [{ text = lead + line, width = pane.width, style = "plain" }] }
+    if focused
+        emit Length { value = shown_typed[box - 1] } to core get { value as end_col }
+        cursor_row = rule_row + box
+        cursor_col = pane.x + 3 + end_col
+    return PaneView { overlays = out, cursor_row = cursor_row, cursor_col = cursor_col, chat = { scroll = scroll, page = room } }
 
 | The tab strip: every tab's name (● when a file has unsaved changes),
 | the active one lit, scrolled so the active one is always in sight.
@@ -227,7 +339,7 @@ GroupView { area, group, index, state, screens } =>
     out += { row = 1 + pane.y, col = pane.x, spans = strip.spans }
     view = group.tabs[group.active]
     content = pane + { y = pane.y + 1, height = pane.height - 1 }
-    result = GroupDrawn { overlays = out, scroll = null, tree = null, page = null, cursor_row = null, cursor_col = null }
+    result = GroupDrawn { overlays = out, scroll = null, tree = null, page = null, cursor_row = null, cursor_col = null, chat = null }
     if view.kind = "explorer"
         emit BaseName { path = state.folder } to this get folder_name
         emit ExplorerRows { pane = content, nodes = state.tree, sel = state.tree_sel, top = state.tree_top, focused = focused, title = folder_name.name } to this get rows
@@ -239,6 +351,10 @@ GroupView { area, group, index, state, screens } =>
         emit EditorView { pane = pane, buffer = buffer, focused = focused } to this get rows
         result = result + { overlays = out + rows.overlays, scroll = { group = index, top = rows.top, left = rows.left }, page = rows.page }
         if focused, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
+    if view.kind = "chat"
+        emit ChatRows { pane = content, chat = state.chat, notice = state.chat_notice, focused = focused } to this get rows
+        result = result + { overlays = out + rows.overlays, chat = rows.chat }
+        if rows.cursor_row ≠ null, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
     if view.kind = "terminal"
         emit TerminalRows { pane = content, screen = screens["$view.id"], focused = focused } to this get rows
         result = result + { overlays = out + rows.overlays }
@@ -260,6 +376,7 @@ Frame { state, placement, screens } =>
     tree_page = 10
     page = 10
     cursor_row = null, cursor_col = null
+    chat_drawn = null
     views = []
     loop area over placement.placed
         if area.id < 0
@@ -269,6 +386,7 @@ Frame { state, placement, screens } =>
             emit GroupView { area = area, group = state.groups[area.id], index = area.id, state = state, screens = screens } to this get drawn
             overlays = overlays + drawn.overlays
             if drawn.scroll ≠ null, views += drawn.scroll
+            if drawn.chat ≠ null, chat_drawn = drawn.chat
             if drawn.tree ≠ null
                 tree_top = drawn.tree.top
                 tree_page = drawn.tree.page
@@ -296,4 +414,5 @@ Frame { state, placement, screens } =>
         tree_page = tree_page
         views = views
         page = page
+        chat = chat_drawn
     }

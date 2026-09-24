@@ -50,6 +50,55 @@ commands listed in `terminal.integrated.commandsToSkipShell` (F6, Ctrl+Tab,
 the menus, Ctrl+Q, Ctrl+\` …). `exit` closes its tab. Most terminals send
 Ctrl+\` as Ctrl+Space, which is bound too. Not yet: scrollback, the mouse.
 
+### The AI chat
+
+Ctrl+L (View > AI Chat) opens it, on the right until you move it (Move
+Tab, like any tab — it remembers where). Ask about the project in your own
+words: it is sent what you are looking at, so "this function", "here" and
+"why did that fail?" need no file named —
+
+- the open file, the lines round the cursor, the other tabs, the places
+  you just edited, the terminal's last lines, git's branch and changes;
+- the project's own instructions: `AGENTS.md`, `CLAUDE.md`, `.cursorrules`,
+  `.github/copilot-instructions.md`, `.ide/instructions.md` — at the root
+  and in each folder down to the open file;
+- a map of the project: every file (ripgrep's list, so `.gitignore` holds),
+  and the names each one defines;
+- and tools it uses itself, step by step, each shown in grey: list a
+  folder, read a file, search (ripgrep), find files, git diff. It only
+  reads — it cannot change anything yet.
+
+`@terminal`, `@git`, `@file`, `@folder` or `@some/path` in a question
+attaches more of that. Enter asks, Alt+Enter is a new line, PgUp/PgDn
+scroll, Ctrl+C stops the answer, Escape gives the keys back to the files,
+Ctrl+W closes the tab (the conversation stays for next time), View > New
+AI Chat starts over. From a terminal: Ctrl+\` back to the files, then
+Ctrl+L (the shell keeps Ctrl+L to clear its screen).
+
+**The model is yours to choose**, in settings.json (Settings > AI Model…
+writes the entries in for you):
+
+```json
+"ai.provider": "local",
+"ai.providers": {
+  "local": {
+    "type": "openai-compatible",
+    "endpoint": "http://localhost:8080",
+    "model": "qwen2.5-coder-14b",
+    "apiKeyEnv": "LOCALAI_API_KEY",
+    "contextTokens": 32768
+  }
+}
+```
+
+`openai-compatible` is anything that serves `/v1/chat/completions` —
+LocalAI, Ollama (`http://localhost:11434`), llama.cpp's server, vLLM, LM
+Studio. A key never goes in the file: `apiKeyEnv` names the environment
+variable that holds it. `contextTokens` is how much the model can take;
+everything sent is cut to fit it. Other kinds of providers (Anthropic,
+OpenAI's own) will be more `type`s, next to this one
+([src/llm.gene.code](src/llm.gene.code)).
+
 ### Tabs and editor groups
 
 Every open file has a tab; the active tab's file is shown, and opening a
@@ -89,6 +138,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+K and an arrow | Move the focused side's edge (the left grows with →, the bottom with ↑) |
 | Ctrl+K M | Move the tab to another place |
 | Ctrl+\` (Ctrl+Space) / Ctrl+K T | The terminal / a new terminal |
+| Ctrl+L (Ctrl+Alt+I) | The AI chat: open it, or the keys to and from it |
 
 In the editor: arrows, Home (first non-space, then column 0), End,
 PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab and Shift+Tab
@@ -114,6 +164,10 @@ explorer writes it for you.
   "workbench.layout.top": 10,
   "workbench.layout.bottom": 12,
   "terminal.integrated.shell": "",
+  "ai.provider": "local",
+  "ai.providers": { "local": { "type": "openai-compatible", "endpoint": "", "…": "" } },
+  "ai.chat.location": "r",
+  "ai.maxSteps": 12,
   "terminal.integrated.commandsToSkipShell": ["terminal.toggle", "focus.next", "…"]
 }
 ```
@@ -156,7 +210,10 @@ Enter, Ctrl+I is Tab, Ctrl+M is Enter.)
 | `editor` | what a key does to a buffer |
 | `render` | the whole screen from the state, as `tty` overlays |
 | `settings` | settings.json read and checked, and written back |
-| `tabs` | what is open where: groups in slots, their tabs (files, the explorer, terminals) |
+| `tabs` | what is open where: groups in slots, their tabs (files, the explorer, terminals, the chat) |
+| `chatbox` | the AI chat's input box, the model's replies read, text wrapped |
+| `context` | what the model is told: what is on screen, the instructions, the project map, the tools |
+| `llm` | which model, from settings: provider types and the particles each takes |
 
 Everything but `ide` is pure: a particle in, a particle out. State lives in
 one gene because a gene's top level is its handlers' whole world. A handler
@@ -165,7 +222,8 @@ that fails puts `Error: …` in the status bar instead of stalling.
 Organelles: `tty` (keys in, a screen out — only changed rows are written),
 `syntax` (spans from code's lexer, still coloured while a file does not
 lex), `fs` (twice: the open folder, and the settings folder), `json`,
-`strings`, `env`, `pty` (the terminals).
+`strings`, `env`, `pty` (the terminals), `localai` (the model, over
+`/v1/chat/completions`), `process` (ripgrep and git for the chat).
 
 ## Developing
 
@@ -186,7 +244,7 @@ A `v*` tag runs [the release workflow](.github/workflows/release.yml), which
 does exactly the above on a clean machine. Then
 [tools/package.sh](tools/package.sh) builds the ide as a program (`code
 build`) and lays out `ide-<tag>-x86_64-linux.tar.gz`: the program, [its
-launcher](bin/ide), and the seven organelles beside it. It needs no `code`
+launcher](bin/ide), and the nine organelles beside it. It needs no `code`
 interpreter to run. The smoke test proves that — it runs the bundle with no
 `code` on the machine and no module cache — before it is published.
 
@@ -201,8 +259,11 @@ tells it which folder to open.
 `euglena test` — [tests/layout.code](tests/layout.code) (every slot, and
 the shapes above), [tests/editor.code](tests/editor.code) (the keys on a
 buffer), [tests/ide.code](tests/ide.code) (a folder opened, walked, a file
-edited, undone, saved, the menu, the prompts, and a frame drawn), all
-without a terminal.
+edited, undone, saved, the menu, the prompts, a frame drawn, and the AI
+chat asked, stepping through a tool to its answer — against a port that
+never answers, so the replies the test hands in are the only ones),
+[tests/chat.code](tests/chat.code) (replies read, the input box, wrapping,
+the project map, providers from settings), all without a terminal.
 
 In a real terminal: `python3 tools/smoke.py` (from a checkout) or
 `python3 tools/smoke.py <bundle>/ide` — a pty, keys pressed, the screen read
@@ -211,6 +272,7 @@ sends (no tmux or pyte needed).
 
 ## Next
 
-Tabs and more than one file, Ctrl+P, find, the clipboard, the mouse,
-resizing panes, a terminal pane in the bottom slot, diagnostics from the
-language server, extensions.
+The AI changing files (each change shown as a diff to accept or reject),
+answers that appear as they are written, a meaning-based search index,
+suggestions as you type, remote providers. And Ctrl+P, find, the
+clipboard, the mouse, diagnostics from the language server, extensions.

@@ -75,6 +75,18 @@ check(s.screen.row(1)[33:].startswith(" hello.code "), "ctrl+k → makes the exp
 settings = open(config + "/codelovesme-ide/settings.json").read()
 check('"workbench.layout.left": 32' in settings, "and settings.json remembers it")
 
+# The AI chat: Ctrl+L opens it on the right; with no model set up it says how.
+s.keys(b"\x0c", 1.0)
+right = "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
+check(" AI Chat " in right and "Ask about this project" in right, "ctrl+l opens the AI chat on the right")
+check("No AI model is set up" in right, "with no model, the chat says how to set one up")
+s.keys(b"hello", 0.6)
+check(any("› hello" in s.screen.row(r) for r in range(30, 39)), "typing goes to the chat's input box")
+s.keys(b"\x15\x1b", 0.8)                  # ctrl+u clears it; escape back to the files
+s.keys(b"\x0c", 0.8)                      # ctrl+l again gives the chat the keys
+s.keys(b"\x17", 0.8)                      # and ctrl+w closes its tab
+check(not any(" AI Chat " in s.screen.row(r) for r in range(1, 39)), "ctrl+w closes the chat")
+
 # The integrated terminal.
 s.keys(b"\x00", 1.5)   # ctrl+` — what most terminals send for it
 bottom = lambda: "\n".join(s.screen.row(r) for r in range(28, 39))
@@ -89,7 +101,7 @@ s.keys(b"\x03", 0.8)
 s.keys(b"echo after-interrupt\r", 1.5)
 check("after-interrupt" in bottom().replace("echo after-interrupt", ""), "ctrl+c reaches the shell")
 s.keys(b"\x1bv", 0.6)                       # View menu (works from a terminal)
-s.keys(b"\x1b[B" * 5 + b"\r", 0.6)          # Move Tab…
+s.keys(b"\x1b[B" * 7 + b"\r", 0.6)          # Move Tab…
 s.keys(b"r\r", 1.5)
 right_half = "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
 check(" Terminal 1 " in right_half and "hello-ide" in right_half, "move tab: the terminal goes to the right, shell and all")
