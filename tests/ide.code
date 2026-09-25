@@ -247,6 +247,17 @@ assert left_terminal.focus ≠ "terminal"
 emit HandleKey { name = "ctrl+`", text = "" } to this
 emit State to this get back_in_terminal
 assert back_in_terminal.focus = "terminal"
+| Shift+PgUp in a terminal scrolls it back (the shell never sees it); a
+| key typed brings the live screen back.
+emit HandleKey { name = "shift+pageup", text = "" } to this
+emit State to this get scrolled_back
+assert scrolled_back.terminal_scrolls["$terminal_id"] > 0
+emit HandleKey { name = "shift+pagedown", text = "" } to this
+emit HandleKey { name = "shift+pageup", text = "" } to this
+emit HandleKey { name = "a", text = "a" } to this
+emit State to this get live_again
+assert live_again.terminal_scrolls["$terminal_id"] = 0
+emit HandleKey { name = "backspace", text = "" } to this
 | Ctrl+J with the terminal focused puts it away, its shell still running;
 | Ctrl+J brings it back where it was, with the keys.
 emit HandleKey { name = "ctrl+j", text = "" } to this

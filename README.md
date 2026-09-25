@@ -64,7 +64,11 @@ on a real pseudo-terminal, with its colours. While it has the keys, every
 key goes to the shell — Ctrl+C, Ctrl+E, Ctrl+W are the shell's — except the
 commands listed in `terminal.integrated.commandsToSkipShell` (F6, Ctrl+Tab,
 the menus, Ctrl+Q, the pane keys …). `exit` closes its tab. Most terminals send
-Ctrl+\` as Ctrl+Space, which is bound too. Not yet: scrollback, the mouse.
+Ctrl+\` as Ctrl+Space, which is bound too. Shift+PgUp / Shift+PgDn scroll
+back through what went off the top (typing returns to the live screen). A
+program that asks for them (an editor inside) gets Ctrl+Tab, Ctrl+J and the
+rest whole, as far as the terminal the ide runs in passes them on — see
+[console](https://github.com/codelovesme/console). Not yet: the mouse.
 
 ### The AI chat
 

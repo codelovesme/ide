@@ -81,6 +81,10 @@ TerminalRows { pane, screen, focused } =>
             loop span over line
                 spans += span + { style = "plain" }
             out += { row = 1 + pane.y + i, col = pane.x, spans = spans }
+    if screen.scrolled ≠ null and screen.scrolled > 0
+        note = " ↑ " + screen.scrolled + " lines back "
+        emit Length { value = note } to core get { value as note_size }
+        out += { row = 1 + pane.y, col = pane.x + pane.width - note_size, spans = [{ text = note, style = "status" }] }
     view = PaneView { overlays = out }
     if focused and screen.cursor_visible
         view = view + { cursor_row = 1 + pane.y + screen.cursor_row, cursor_col = pane.x + screen.cursor_col }

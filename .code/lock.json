@@ -2,8 +2,8 @@
   "modules": {
     "env": {
       "name": "env",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "env-linux-x86_64.so",
       "sha256": "e280daed548bdd55414732ef0287b5868b732c9012623e4aecdcb35ed7a10afb",
       "handlers": [
@@ -14,8 +14,8 @@
     },
     "fs": {
       "name": "fs",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "fs-linux-x86_64.so",
       "sha256": "f5002728e04de3103837bea2ac5fd4115e8398c73ed756989cbd814017a32a2c",
       "handlers": [
@@ -33,8 +33,8 @@
     },
     "http_client": {
       "name": "http_client",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "http_client-linux-x86_64.so",
       "sha256": "c7ea53e9ed13bd86d79d249f3a5f9a056abc072236ebdfd1cf94770f3d59c67f",
       "handlers": [
@@ -50,8 +50,8 @@
     },
     "json": {
       "name": "json",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "json-linux-x86_64.so",
       "sha256": "f5b25f2dc157cd1afab3ba3369a17fe03180ea0bfb8f90972226e01ac7eadc05",
       "handlers": [
@@ -62,8 +62,8 @@
     },
     "localai": {
       "name": "localai",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "localai-linux-x86_64.so",
       "sha256": "b36f0e1ea956fa7e577d49fb44757fc82b395e891ef552b01e6c87064e8fc39e",
       "handlers": [
@@ -79,8 +79,8 @@
     },
     "process": {
       "name": "process",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "process-linux-x86_64.so",
       "sha256": "08d4763bee3dd9a88cb81531f836a76d2c8569c2650fe3fe16700c521e20cbde",
       "handlers": [
@@ -96,24 +96,26 @@
     },
     "pty": {
       "name": "pty",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "pty-linux-x86_64.so",
-      "sha256": "5f26252c8e81b8c7a2fe5bb8fd7f5c2635934d91dc9d3e9a58fce0904cedc92d",
+      "sha256": "6c25dedaf6c2ea6893cd4ccbddda450e1dc9b03255dc0bfc8098cbb1bbdb2bda",
       "handlers": [
         "Open",
         "Type",
         "Write",
         "Resize",
         "Screen",
-        "Close"
+        "Close",
+        "Paste",
+        "Mouse"
       ],
       "global": false
     },
     "strings": {
       "name": "strings",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "strings-linux-x86_64.so",
       "sha256": "c9edcbf96ae98f3ad4d0918ee60df8644ad17867bce63ce7a80e81e9b4771e07",
       "handlers": [
@@ -129,10 +131,10 @@
     },
     "syntax": {
       "name": "syntax",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "syntax-linux-x86_64.so",
-      "sha256": "1977768f82c1b6386aa3799a3b070368f4315d99bd4d7c3a08fb35234750dfa6",
+      "sha256": "e71a5ba41a0a6651bdfb337110c98f19fc501a62901b9e68f1afebb264f1ea72",
       "handlers": [
         "Highlight"
       ],
@@ -140,8 +142,8 @@
     },
     "tty": {
       "name": "tty",
-      "version": "2.8.3",
-      "source": "https://github.com/codelovesme/code/releases/tag/v2.8.3",
+      "version": "2.9.0",
+      "source": "https://github.com/codelovesme/code/releases/tag/v2.9.0",
       "asset": "tty-linux-x86_64.so",
       "sha256": "312cc5012f955ccf644b8b2319eb92eb9f8598cc2b2c0931bb9ca570b1834fec",
       "handlers": [

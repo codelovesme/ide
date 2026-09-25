@@ -74,7 +74,9 @@ max_spots = 50
 hidden_panes = { terminal = [], file = [] }
 | The pane keys run from inside a terminal too, whatever
 | terminal.integrated.commandsToSkipShell says.
-pane_commands = { "view.explorer" = true, "terminal.toggle" = true, "ai.toggle" = true, "editor.toggle" = true }
+pane_commands = { "view.explorer" = true, "terminal.toggle" = true, "ai.toggle" = true, "editor.toggle" = true, "terminal.scrollUp" = true, "terminal.scrollDown" = true }
+| How far back each terminal is scrolled (Shift+PgUp), by its id.
+terminal_scrolls = {}
 
 | The organelles. They are linked while the program runs, not when it is
 | built — a built program would otherwise carry the full path each one had
@@ -270,6 +272,9 @@ HandleKey { name, text } =>
             emit Run { command = for_shell.command } to this
             return Handled
         emit Active { groups = groups, current = current } to this get shown
+        | A key typed brings the terminal back to its live screen.
+        live_id = shown.buffer.id
+        terminal_scrolls = terminal_scrolls + { "$live_id" = 0 }
         emit Type { id = shown.buffer.id, name = name, text = text } to shells
         return Typed
     emit Keymap { name = name, pending = chord, table = keytable } to this get bound
@@ -365,6 +370,18 @@ Run { command } =>
     if command = "ai.showChanges", emit ShowAiChanges to this
     if command = "ai.toggleMode", emit ToggleAgentMode to this
     if command = "ai.switchModel", emit OpenModelPicker to this
+    if command = "terminal.scrollUp" or command = "terminal.scrollDown"
+        emit Active { groups = groups, current = current } to this get scrolling
+        if scrolling.buffer ≠ null and scrolling.buffer.kind = "terminal"
+            scroll_id = scrolling.buffer.id
+            back = terminal_scrolls["$scroll_id"]
+            if back = null, back = 0
+            page = rows - 4
+            if page < 1, page = 1
+            if command = "terminal.scrollUp", back += page
+            if command = "terminal.scrollDown", back = back - page
+            if back < 0, back = 0
+            terminal_scrolls = terminal_scrolls + { "$scroll_id" = back }
     if command = "nav.back", emit GoSpot { step = -1 } to this
     if command = "nav.forward", emit GoSpot { step = 1 } to this
     if command = "help.keys", emit ShowShortcuts to this
@@ -975,6 +992,7 @@ State =>
         menu = menu
         picker = picker
         picker_rows = picker_rows
+        terminal_scrolls = terminal_scrolls
         prompt = prompt
         message = message
         sizes = sizes
@@ -1001,7 +1019,11 @@ TerminalScreens { placed } =>
             if terminal_sizes["$view.id"] ≠ size and wide > 0 and high > 0
                 emit Resize { id = view.id, cols = wide, rows = high } to shells
                 terminal_sizes = terminal_sizes + { "$view.id" = size }
-            emit Screen { id = view.id } to shells get screen
+            back = terminal_scrolls["$view.id"]
+            if back = null, back = 0
+            emit Screen { id = view.id, scroll = back } to shells get screen
+            | Scrolled no further than there was.
+            if screen ∉ Exception, terminal_scrolls = terminal_scrolls + { "$view.id" = screen.scrolled }
             if screen ∉ Exception, screens = screens + { "$view.id" = screen }
     return Screens { screens = screens }
 

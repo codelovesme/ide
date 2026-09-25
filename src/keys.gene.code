@@ -46,6 +46,9 @@ defaults = [
     { key = "ctrl+tab", command = "tab.next" }
     { key = "shift+tab", command = "tab.previous" }
     | VS Code's Go Back / Go Forward.
+    | A terminal's scrollback.
+    { key = "shift+pageup", command = "terminal.scrollUp" }
+    { key = "shift+pagedown", command = "terminal.scrollDown" }
     { key = "alt+left", command = "nav.back" }
     { key = "alt+right", command = "nav.forward" }
     { key = "ctrl+z", command = "edit.undo" }
@@ -104,6 +107,8 @@ commands = [
     { id = "tab.next", title = "Next tab" }
     { id = "tab.previous", title = "Previous tab" }
     { id = "edit.outdent", title = "Take the line a level of indentation back" }
+    { id = "terminal.scrollUp", title = "Terminal: back a page into what scrolled off" }
+    { id = "terminal.scrollDown", title = "Terminal: forward a page (typing goes back to the live screen)" }
     { id = "nav.back", title = "Go Back: where the cursor was before" }
     { id = "nav.forward", title = "Go Forward" }
     { id = "edit.undo", title = "Undo" }

@@ -138,6 +138,10 @@ s.keys(b"\x1b[B" * 10 + b"\r", 0.6)         # Move Tab…
 s.keys(b"r\r", 1.5)
 right_half = "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
 check(" Terminal 1 " in right_half and "hello-ide" in right_half, "move tab: the terminal goes to the right, shell and all")
+s.keys(b"seq 1 120\r", 1.2)
+s.keys(b"\x1b[5;2~", 1.0)                   # shift+pageup
+check(any("lines back" in s.screen.row(r) for r in range(1, 39)), "shift+pgup scrolls the terminal back")
+s.keys(b"\x1b[6;2~" * 20, 1.0)              # shift+pagedown, back to the live screen
 s.keys(b"\x00", 0.8)                        # ctrl+` with the terminal focused: put away
 check(not any(" Terminal 1 " in s.screen.row(r) for r in range(1, 39)), "the terminal key puts a focused terminal away")
 s.keys(b"\x00", 0.8)
