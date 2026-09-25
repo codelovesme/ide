@@ -466,6 +466,41 @@ assert shown_turns = 3
 emit Framed to this get answered_frame
 assert answered_frame ∈ Screen
 
+| Enter while the AI works queues the question, ten at most: the
+| eleventh stays in the box. Ctrl+C stops it and puts them back there.
+emit AskAbout { question = "busy one" } to this
+queue_i = 0
+loop
+    if queue_i = 10, break
+    emit AskAbout { question = "waiting " + queue_i } to this
+    queue_i += 1
+emit State to this get q_full
+assert q_full.focus = "chat"
+emit Length { value = q_full.chat.queue } to core get { value as q_full_count }
+assert q_full_count = 10
+emit HandleKey { name = "x", text = "x" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get q_kept
+assert q_kept.chat.input = "x"
+emit Framed to this get q_frame
+assert q_frame ∈ Screen
+emit HandleKey { name = "ctrl+c", text = "" } to this
+emit State to this get q_stopped
+assert not q_stopped.chat.busy and q_stopped.chat.queue = []
+emit Contains { text = q_stopped.chat.input, part = "x\nwaiting 0\nwaiting 1" } to this get q_back
+assert q_back.yes
+emit HandleKey { name = "ctrl+u", text = "" } to this
+| The answer sends the next one waiting.
+emit AskAbout { question = "first" } to this
+emit AskAbout { question = "second" } to this
+emit State to this get q_two
+emit ChatResult { content = "{\"answer\": \"one\"}", _request_id = q_two.chat.request } to this
+emit State to this get q_next
+assert q_next.chat.busy and q_next.chat.queue = []
+emit Length { value = q_next.chat.turns } to core get { value as q_turns }
+assert q_next.chat.turns[q_turns - 1].text = "second"
+emit ChatResult { content = "{\"answer\": \"two\"}", _request_id = q_next.chat.request } to this
+
 | Tools stay inside the folder.
 emit RunTool { tool = "read_file", args = { path = "../etc/passwd" } } to this get outside
 assert outside.text = "Not allowed: paths stay inside the project folder."

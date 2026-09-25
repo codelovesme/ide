@@ -92,7 +92,7 @@ TerminalRows { pane, screen, focused } =>
 
 chat_help = [
     "Ask about this project — it looks at what you are looking at."
-    "Enter asks · Alt+Enter a new line · Esc back to the files"
+    "Enter asks (while the AI works, queues) · Alt+Enter a new line · Esc back to the files"
     "PgUp/PgDn scroll · Ctrl+C stops · @terminal @git @file @folder @path"
 ]
 
@@ -134,11 +134,22 @@ TurnLines { turn, width } =>
 
 | The AI chat in `pane` (below its tab strip): the conversation, the
 | newest at the bottom (`scroll` lines up from there), and the input box
-| under a rule, growing to six lines.
+| under a rule, growing to six lines — at the right of its first line,
+| whether the AI is working and how many questions wait.
 ChatRows { pane, chat, notice, label, focused } =>
     width = pane.width - 1
     out = []
-    emit Wrap { text = chat.input, width = width - 3 } to this get typed
+    mark = ""
+    mark_fg = [78, 201, 176]
+    if chat.busy
+        mark = "● working "
+        if chat.pending ≠ null
+            mark = "● waiting for you "
+            mark_fg = [230, 190, 90]
+    emit Length { value = chat.queue } to core get { value as queued_count }
+    if queued_count > 0, mark = mark + "· " + queued_count + " queued "
+    emit Length { value = mark } to core get { value as mark_size }
+    emit Wrap { text = chat.input, width = width - 3 - mark_size } to this get typed
     emit Length { value = typed.lines } to core get { value as typed_count }
     shown_typed = typed.lines
     if typed_count > 6, shown_typed = typed.lines[typed_count - 6, typed_count)
@@ -198,6 +209,9 @@ ChatRows { pane, chat, notice, label, focused } =>
     loop j, line over shown_typed
         lead = "   "
         if j = 0 and box = typed_count, lead = " › "
+        if j = 0 and mark_size > 0
+            out += { row = rule_row + 1 + j, col = pane.x, spans = [{ text = lead + line, width = pane.width - mark_size, style = "plain" }, { text = mark, width = mark_size, align = "right", style = "plain", fg = mark_fg }] }
+            continue
         out += { row = rule_row + 1 + j, col = pane.x, spans = [{ text = lead + line, width = pane.width, style = "plain" }] }
     if focused
         emit Length { value = shown_typed[box - 1] } to core get { value as end_col }

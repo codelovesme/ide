@@ -101,8 +101,10 @@ keytable = null
 | `models` holds the organelle each provider type uses, `model_key` the
 | setup sent last, so it is sent again only when it changes.
 chat_view = { kind = "chat", path = "AI Chat", store = "view" }
-chat = { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null, pending = null, checkpoints = [], agent = null, session = "", session_for = "", snapshot = null, changed = null }
+chat = { turns = [], messages = [], input = "", queue = [], busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null, pending = null, checkpoints = [], agent = null, session = "", session_for = "", snapshot = null, changed = null }
 chat_page = 10
+| How many questions may wait (`chat.queue`) while the AI is working.
+queue_most = 10
 | The questions asked (oldest first) for ↑/↓ in the input box — kept
 | through New AI Chat — where ↑/↓ are in them (their count: on the
 | draft), and the question being written before ↑ was pressed.
@@ -214,6 +216,7 @@ Key { name, text } =>
     message = ""
     emit HandleKey { name = name, text = text } to this get handled
     if handled ∈ Exception, message = "Error: " + handled.message
+    emit SendQueued to this
     emit Render to this
     return handled
 
@@ -232,6 +235,7 @@ TerminalExited { id, code } =>
     hidden_panes = hidden_panes + { terminal = still_hidden }
     if chat.agent ≠ null and id = chat.agent.pty
         emit AgentFinished to this
+        emit SendQueued to this
         if running, emit Render to this
         return Finished
     emit FindTerminal { id = id } to this get where
@@ -362,8 +366,9 @@ Run { command } =>
     if command = "ai.newChat"
         emit DropProposal to this
         if chat.agent ≠ null, emit Close { id = chat.agent.pty } to shells
-        chat = chat + { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, checkpoints = [], agent = null, session = "", snapshot = null, changed = null }
+        chat = chat + { turns = [], messages = [], input = "", queue = [], busy = false, request = -1, steps = 0, scroll = 0, checkpoints = [], agent = null, session = "", snapshot = null, changed = null }
         emit ShowChat to this
+    if command = "ai.cancel", emit Unqueue to this
     if command = "ai.cancel" and chat.agent ≠ null
         emit Close { id = chat.agent.pty } to shells
         emit AgentFinished to this
@@ -1153,9 +1158,14 @@ ChatKey { name, text } =>
 | it, and the project's instructions and map go in the system message.
 AskAbout { question } =>
     if chat.busy
-        message = "The AI is still answering — Ctrl+C in the chat stops it"
-        chat = chat + { input = question }
-        return Busy
+        emit Length { value = chat.queue } to core get { value as queued_count }
+        if queued_count ≥ queue_most
+            message = "" + queue_most + " questions are waiting already — this one stays in the box until the AI takes the next"
+            chat = chat + { input = question }
+            return Busy
+        chat = chat + { queue = chat.queue + [question] }
+        message = "Queued (" + (queued_count + 1) + " of " + queue_most + ") — asked when the AI is done; Ctrl+C puts them back in the box"
+        return Queued
     chat = chat + { turns = chat.turns + [{ role = "user", text = question }], scroll = 0 }
     emit ProviderFor { settings = settings } to this get provider
     if provider.problem ≠ ""
@@ -1338,21 +1348,46 @@ ChatFailed { text } =>
     chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "error", text = text }] }
     return Failed
 
+| The AI is done: the next question waiting is asked (and, if that fails
+| at once, the one after).
+SendQueued =>
+    loop
+        if chat.busy or chat.queue = [], break
+        next_question = chat.queue[0]
+        emit Length { value = chat.queue } to core get { value as queued_count }
+        chat = chat + { queue = chat.queue[1, queued_count) }
+        emit AskAbout { question = next_question } to this
+    return Sent
+
+| Ctrl+C: the questions waiting go back into the box, after what is in it.
+Unqueue =>
+    if chat.queue = [], return Nothing
+    parts = chat.queue
+    if chat.input ≠ "", parts = [chat.input] + parts
+    emit Join { value = parts, separator = "\n" } to texts get joined
+    chat = chat + { input = joined.value, queue = [] }
+    return Unqueued
+
 | The model's reply: a tool to run — its result goes back, and the model is
 | asked again — or the answer.
 ChatResult { content, _request_id } =>
-    if _request_id ≠ chat.request, return Ignored
+    emit TakeReply { content = content, reply_to = _request_id } to this get took
+    emit SendQueued to this
+    if running, emit Render to this
+    return took
+
+| The reply itself (see ChatResult).
+TakeReply { content, reply_to } =>
+    if reply_to ≠ chat.request, return Ignored
     emit ReadReply { content = content } to this get reply
     chat = chat + { messages = chat.messages + [{ role = "assistant", content = content }] }
     if reply.tool = null
         chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "assistant", text = reply.answer }] }
         emit OfferPlan to this
-        if running, emit Render to this
         return Answered
     max_steps = settings["ai.maxSteps"]
     if chat.steps ≥ max_steps
         emit ChatFailed { text = "The model was still looking after " + max_steps + " steps (settings: ai.maxSteps) — ask again, more narrowly" } to this
-        if running, emit Render to this
         return Failed
     chat = chat + { steps = chat.steps + 1 }
     changes = reply.tool = "edit_file" or reply.tool = "create_file" or reply.tool = "run_command"
@@ -1361,26 +1396,21 @@ ChatResult { content, _request_id } =>
         refused = "Not in " + settings["ai.agent.mode"] + " mode: nothing is changed or run. Answer instead — in plan mode, with the plan."
         chat = chat + { turns = chat.turns + [{ role = "tool", text = reply.tool + ": not in " + settings["ai.agent.mode"] + " mode" }] }
         emit ToolDone { tool = reply.tool, text = refused } to this
-        if running, emit Render to this
         return Stepped
     if changes
         emit Propose { tool = reply.tool, args = reply.args } to this get proposed
         if proposed ∈ AutoDone
-            if running, emit Render to this
             return Stepped
         if proposed ∈ Waiting
             chat = chat + { request = -1 }
-            if running, emit Render to this
             return Waiting
         chat = chat + { turns = chat.turns + [{ role = "tool", text = reply.tool + ": " + proposed.text }] }
         emit ToolDone { tool = reply.tool, text = proposed.text } to this
-        if running, emit Render to this
         return Stepped
     emit ToolLine { tool = reply.tool, args = reply.args } to this get line
     chat = chat + { turns = chat.turns + [{ role = "tool", text = line.text }] }
     emit RunTool { tool = reply.tool, args = reply.args } to this get result
     emit ToolDone { tool = reply.tool, text = result.text } to this
-    if running, emit Render to this
     return Stepped
 
 | A tool's result back to the model, which is asked again.
@@ -1396,6 +1426,7 @@ ToolDone { tool, text } =>
 Exception { source, message as failure, _request_id } =>
     if _request_id = null or _request_id ≠ chat.request, return Ignored
     emit ChatFailed { text = "The model did not answer: " + failure } to this
+    emit SendQueued to this
     if running, emit Render to this
     return Failed
 
