@@ -100,7 +100,7 @@ the project in `.ide/memory.md`, read with the instructions every time.
 `@terminal`, `@git`, `@file`, `@folder` or `@some/path` in a question
 attaches more of that. Enter asks, Alt+Enter is a new line, ↑/↓ bring
 back the questions asked before, PgUp/PgDn
-scroll, Ctrl+C stops the answer, Escape gives the keys back to the files,
+scroll (Ctrl+↑/↓ a line at a time), Ctrl+C stops the answer, Escape gives the keys back to the files,
 Ctrl+W closes the tab (the conversation stays for next time), View > New
 AI Chat starts over. Ctrl+L works from a terminal too (so there it no
 longer clears the shell's screen — `clear` does).

@@ -28,6 +28,10 @@ emit ChatInput { input = "   ", name = "enter", text = "", page = 10 } to this g
 assert empty.send = null
 emit ChatInput { input = "", name = "pageup", text = "", page = 10 } to this get up
 assert up.scroll = 10
+emit ChatInput { input = "", name = "ctrl+up", text = "", page = 10 } to this get line_up
+assert line_up.scroll = 1
+emit ChatInput { input = "", name = "ctrl+down", text = "", page = 10 } to this get line_down
+assert line_down.scroll = -1
 | ↑/↓: back through what was asked, then forward to the draft.
 emit Recall { history = ["one", "two"], at = 2, input = "thr", draft = "", step = -1 } to this get recall_two
 assert recall_two.input = "two" and recall_two.at = 1 and recall_two.draft = "thr"
