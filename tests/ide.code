@@ -392,7 +392,9 @@ emit WhereNow to this get with_chat
 emit State to this get chatting
 assert chatting.focus = "chat"
 assert with_chat.groups[chatting.current] = "r:chat"
-| With no model set up, asking says how to set one up.
+| With no model set up (its address taken out), asking says how to set
+| one up.
+emit StoreSetting { key = "ai.providers", value = { local = { endpoint = "" } } } to this
 emit HandleKey { name = "h", text = "h" } to this
 emit HandleKey { name = "i", text = "i" } to this
 emit State to this get typed_hi

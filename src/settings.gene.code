@@ -16,7 +16,10 @@ defaults = {
     "terminal.integrated.shell" = ""
     "ai.provider" = "local"
     "ai.providers" = {
-        local = { type = "openai-compatible", endpoint = "", model = "", apiKeyEnv = "", contextTokens = 32768 }
+        | LocalAI's own address, and the variable its key is in (unset: no
+        | key is sent); its model "" is the server's default, and Alt+M
+        | lists the rest from its /v1/models.
+        local = { type = "openai-compatible", endpoint = "http://localhost:8080", model = "", apiKeyEnv = "LOCALAI_API_KEY", contextTokens = 32768, maxTokens = 2048 }
         | Claude Code cannot list its models or efforts: these are the names
         | its --model and --effort take, a model by its full, versioned id
         | (so two versions of one can sit side by side) and shown by `name`.
@@ -57,6 +60,9 @@ defaults = {
         "focus.group2"
     ]
 }
+
+| The local entry as the ide wrote it out before 0.17: no endpoint.
+old_local = { type = "openai-compatible", endpoint = "", model = "", apiKeyEnv = "", contextTokens = 32768 }
 
 slots = { tl = true, t = true, tr = true, l = true, c = true, r = true, bl = true, b = true, br = true }
 
@@ -128,6 +134,10 @@ ReadSettings { text } =>
     | written out by 0.10) takes the versioned one.
     if good_providers and providers["claude"] ∈ Object and providers["claude"]["models"] = ["fable", "opus", "sonnet"]
         providers = providers + { claude = providers["claude"] + { models = defaults["ai.providers"]["claude"]["models"] } }
+    | A local entry still the empty one written out before 0.17 takes the
+    | new default.
+    if good_providers and providers["local"] = old_local
+        providers = providers + { local = defaults["ai.providers"]["local"] }
     if good_providers
         merged = defaults["ai.providers"]
         loop key, entry over providers

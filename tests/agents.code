@@ -159,6 +159,15 @@ assert closed_picker.picker = null
 | the first (bare aliases) is read as it.
 emit ReadSettings { text = "{ \"ai.providers\": { \"claude\": { \"type\": \"claude-code\", \"models\": [\"fable\", \"opus\", \"sonnet\"] } } }" } to this get upgraded
 assert upgraded.values["ai.providers"]["claude"]["models"][0] = { id = "claude-opus-5-5", name = "Opus 5.5" }
+| The local model is LocalAI at its own address unless said otherwise, and
+| the empty local entry older ides wrote out is read as that.
+emit ReadSettings { text = null } to this get fresh
+assert fresh.values["ai.providers"]["local"]["endpoint"] = "http://localhost:8080"
+assert fresh.values["ai.providers"]["local"]["apiKeyEnv"] = "LOCALAI_API_KEY"
+emit ReadSettings { text = "{ \"ai.providers\": { \"local\": { \"type\": \"openai-compatible\", \"endpoint\": \"\", \"model\": \"\", \"apiKeyEnv\": \"\", \"contextTokens\": 32768 } } }" } to this get old_written
+assert old_written.values["ai.providers"]["local"]["endpoint"] = "http://localhost:8080"
+emit ReadSettings { text = "{ \"ai.providers\": { \"local\": { \"endpoint\": \"\" } } }" } to this get cleared
+assert cleared.values["ai.providers"]["local"]["endpoint"] = ""
 | An entry that names only some fields keeps the default's others.
 emit ReadSettings { text = "{ \"ai.providers\": { \"claude\": { \"model\": \"claude-sonnet-5\" } } }" } to this get partial_entry
 assert partial_entry.values["ai.providers"]["claude"]["model"] = "claude-sonnet-5"

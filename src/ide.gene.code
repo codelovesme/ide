@@ -1090,7 +1090,7 @@ ShowChat =>
 ConfigureAi =>
     emit StoreSetting { key = "ai.providers", value = settings["ai.providers"] } to this
     emit OpenPrefsFile { name = "settings.json" } to this
-    message = "Set ai.providers.local.endpoint to your model server (e.g. http://localhost:8080), and its model; then save"
+    message = "ai.providers.local is LocalAI at http://localhost:8080; change its endpoint and model if yours differ, then save"
     return Opened
 
 ChatNotice =>

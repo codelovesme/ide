@@ -190,8 +190,10 @@ shown on the line over the input:
 "ai.agent.allowCommands": []
 ```
 
-`openai-compatible` is anything that serves `/v1/chat/completions` —
-LocalAI, Ollama (`http://localhost:11434`), llama.cpp's server, vLLM, LM
+Out of the box `local` is LocalAI at `http://localhost:8080`, its key
+read from `LOCALAI_API_KEY` (unset, none is sent); name its model in
+`model`, or pick one with Alt+M. `openai-compatible` is anything that
+serves `/v1/chat/completions` — LocalAI, Ollama (`http://localhost:11434`), llama.cpp's server, vLLM, LM
 Studio. A key never goes in the file: `apiKeyEnv` names the environment
 variable that holds it. `contextTokens` is how much the model can take;
 everything sent is cut to fit it. Other kinds of providers (Anthropic,
@@ -265,7 +267,7 @@ explorer writes it for you.
   "workbench.layout.bottom": 12,
   "terminal.integrated.shell": "",
   "ai.provider": "local",
-  "ai.providers": { "local": { "type": "openai-compatible", "endpoint": "", "…": "" } },
+  "ai.providers": { "local": { "type": "openai-compatible", "endpoint": "http://localhost:8080", "…": "" } },
   "ai.chat.location": "r",
   "ai.maxSteps": 12,
   "terminal.integrated.commandsToSkipShell": ["terminal.toggle", "focus.next", "…"]
