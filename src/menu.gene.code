@@ -11,6 +11,7 @@ menus = [
             { label = "Open Folder…", command = "file.openFolder" }
             { label = "Save", command = "file.save" }
             { label = "Close Editor", command = "file.close" }
+            { label = "New Window", command = "window.new" }
             { label = "Exit", command = "app.quit" }
         ]
     }
@@ -26,6 +27,7 @@ menus = [
             { label = "New Terminal", command = "terminal.new" }
             { label = "AI Chat", command = "ai.toggle" }
             { label = "New AI Chat", command = "ai.newChat" }
+            { label = "New AI Chat Tab", command = "ai.newTab" }
             { label = "Show AI Changes", command = "ai.showChanges" }
             { label = "Undo AI Changes", command = "ai.undoTurn" }
             { label = "Move Tab…", command = "view.moveTab" }

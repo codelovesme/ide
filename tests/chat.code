@@ -18,20 +18,40 @@ emit UseOrganelles { from = "organelles" } to this get lib
 assert lib ∈ Linked
 
 | The input box.
-emit ChatInput { input = "wh", name = "y", text = "y", page = 10 } to this get typed
+emit ChatInput { caret = null, input = "wh", name = "y", text = "y", page = 10 } to this get typed
 assert typed.input = "why" and typed.send = null
-emit ChatInput { input = "why", name = "alt+enter", text = "", page = 10 } to this get two_lines
+emit ChatInput { caret = null, input = "why", name = "alt+enter", text = "", page = 10 } to this get two_lines
 assert two_lines.input = "why\n"
-emit ChatInput { input = "  why  ", name = "enter", text = "", page = 10 } to this get sent
+emit ChatInput { caret = null, input = "  why  ", name = "enter", text = "", page = 10 } to this get sent
 assert sent.send = "why" and sent.input = ""
-emit ChatInput { input = "   ", name = "enter", text = "", page = 10 } to this get empty
+emit ChatInput { caret = null, input = "   ", name = "enter", text = "", page = 10 } to this get empty
 assert empty.send = null
-emit ChatInput { input = "", name = "pageup", text = "", page = 10 } to this get up
+emit ChatInput { caret = null, input = "", name = "pageup", text = "", page = 10 } to this get up
 assert up.scroll = 10
-emit ChatInput { input = "", name = "ctrl+up", text = "", page = 10 } to this get line_up
+emit ChatInput { caret = null, input = "", name = "ctrl+up", text = "", page = 10 } to this get line_up
 assert line_up.scroll = 1
-emit ChatInput { input = "", name = "ctrl+down", text = "", page = 10 } to this get line_down
+emit ChatInput { caret = null, input = "", name = "ctrl+down", text = "", page = 10 } to this get line_down
 assert line_down.scroll = -1
+| The cursor: typed at, deleted before, moved; ↑ on the first line and ↓
+| on the last are the history's.
+emit ChatInput { input = "ac", caret = 1, name = "b", text = "b", page = 10 } to this get typed_at
+assert typed_at.input = "abc" and typed_at.caret = 2
+emit ChatInput { input = "abc", caret = 1, name = "backspace", text = "", page = 10 } to this get deleted_at
+assert deleted_at.input = "bc" and deleted_at.caret = 0
+emit ChatInput { input = "abc", caret = 1, name = "delete", text = "", page = 10 } to this get deleted_after
+assert deleted_after.input = "ac" and deleted_after.caret = 1
+emit ChatInput { input = "abc", caret = null, name = "left", text = "", page = 10 } to this get went_left
+assert went_left.caret = 2
+emit ChatInput { input = "ab\ncdef", caret = 6, name = "up", text = "", page = 10 } to this get went_up
+assert went_up.caret = 2 and not went_up.edge
+emit ChatInput { input = "ab\ncdef", caret = 1, name = "down", text = "", page = 10 } to this get went_down
+assert went_down.caret = 4
+emit ChatInput { input = "ab\ncdef", caret = 1, name = "up", text = "", page = 10 } to this get top_edge
+assert top_edge.edge
+emit ChatInput { input = "ab\ncdef", caret = 5, name = "home", text = "", page = 10 } to this get went_home
+assert went_home.caret = 3
+emit InputLines { text = "abcde\nf", caret = 4, width = 3 } to this get shaped
+assert shaped.lines = ["abc", "de", "f"] and shaped.caret_line = 1 and shaped.caret_col = 1
 | ↑/↓: back through what was asked, then forward to the draft.
 emit Recall { history = ["one", "two"], at = 2, input = "thr", draft = "", step = -1 } to this get recall_two
 assert recall_two.input = "two" and recall_two.at = 1 and recall_two.draft = "thr"

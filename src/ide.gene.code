@@ -74,7 +74,7 @@ max_spots = 50
 hidden_panes = { terminal = [], file = [] }
 | The pane keys run from inside a terminal too, whatever
 | terminal.integrated.commandsToSkipShell says.
-pane_commands = { "view.explorer" = true, "terminal.toggle" = true, "ai.toggle" = true, "editor.toggle" = true, "terminal.scrollUp" = true, "terminal.scrollDown" = true }
+pane_commands = { "view.explorer" = true, "terminal.toggle" = true, "ai.toggle" = true, "editor.toggle" = true, "terminal.scrollUp" = true, "terminal.scrollDown" = true, "tab.newHere" = true, "window.new" = true }
 | How far back each terminal is scrolled (Shift+PgUp), by its id.
 terminal_scrolls = {}
 
@@ -100,8 +100,16 @@ keytable = null
 | model it talks to is whichever settings.json names (llm.gene.code);
 | `models` holds the organelle each provider type uses, `model_key` the
 | setup sent last, so it is sent again only when it changes.
-chat_view = { kind = "chat", path = "AI Chat", store = "view" }
-chat = { turns = [], messages = [], input = "", queue = [], busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null, pending = null, checkpoints = [], agent = null, session = "", session_for = "", snapshot = null, changed = null }
+chat_view = { kind = "chat", path = "AI Chat", store = "view", chat_id = "1" }
+empty_chat = { turns = [], messages = [], input = "", caret = null, queue = [], busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null, pending = null, checkpoints = [], agent = null, session = "", session_for = "", snapshot = null, changed = null }
+chat = empty_chat
+| More than one AI tab (Ctrl+T in the chat): `chat` is the conversation
+| with the keys (`chat_id`, its tab's `chat_id`); the others wait in
+| `chats`, by id, and are brought in for a moment when their replies
+| come (InChat).
+chat_id = "1"
+chats = {}
+chats_opened = 1
 chat_page = 10
 | How many questions may wait (`chat.queue`) while the AI is working.
 queue_most = 10
@@ -222,8 +230,8 @@ Key { name, text } =>
 
 | A terminal's screen changed (pushed by the pty organelle): draw again.
 TerminalOutput { id } =>
-    if chat.agent ≠ null and id = chat.agent.pty
-        emit AgentProgress to this
+    emit ChatOwner { request = null, pty = id } to this get owner
+    if owner.id ≠ "", emit InChat { id = owner.id, particle = AgentProgress } to this
     if running, emit Render to this
     return Drawn
 
@@ -233,9 +241,9 @@ TerminalExited { id, code } =>
     loop kept over hidden_panes.terminal
         if kept.view.id ≠ id, still_hidden += kept
     hidden_panes = hidden_panes + { terminal = still_hidden }
-    if chat.agent ≠ null and id = chat.agent.pty
-        emit AgentFinished to this
-        emit SendQueued to this
+    emit ChatOwner { request = null, pty = id } to this get owner
+    if owner.id ≠ ""
+        emit InChat { id = owner.id, particle = AgentFinished } to this
         if running, emit Render to this
         return Finished
     emit FindTerminal { id = id } to this get where
@@ -354,6 +362,9 @@ Run { command } =>
     if command = "terminal.toggle", emit TogglePane { kind = "terminal" } to this
     if command = "editor.toggle", emit TogglePane { kind = "file" } to this
     if command = "terminal.new", emit NewTerminal { slot = "" } to this
+    if command = "tab.newHere", emit NewHere to this
+    if command = "ai.newTab", emit NewChatTab to this
+    if command = "window.new", emit NewWindow to this
     if command = "menu.file", menu = { index = 0, item = 0 }
     if command = "menu.view", menu = { index = 1, item = 0 }
     if command = "menu.settings", menu = { index = 2, item = 0 }
@@ -567,7 +578,7 @@ PromptKey { name, text } =>
     if asked.kind = "ai_run"
         if name ≠ "y" and name ≠ "n" and name ≠ "escape", return Typed
         prompt = null
-        emit AnswerRun { yes = name = "y" } to this
+        emit InChat { id = asked.chat_id, particle = AnswerRun { yes = name = "y" } } to this
         return Answered
     if name = "escape"
         prompt = null
@@ -735,7 +746,11 @@ Unstash =>
     focus = "none"
     if view = null, return Unstashed
     if view.kind = "explorer", focus = "tree"
-    if view.kind = "chat", focus = "chat"
+    if view.kind = "chat"
+        focus = "chat"
+        shown_chat = view.chat_id
+        if shown_chat = null, shown_chat = "1"
+        emit SwapChat { id = shown_chat } to this
     if view.kind = "diff", focus = "diff"
     if view.kind = "terminal"
         focus = "terminal"
@@ -1011,6 +1026,8 @@ State =>
         sizes = sizes
         keytable = keytable
         chat = chat
+        chat_id = chat_id
+        chats = chats
         chat_notice = chat_notice
         chat_label = chat_label
         ai_status = ai_status
@@ -1073,7 +1090,8 @@ Render =>
 | Ctrl+L: the chat — opened where it was last (settings: ai.chat.location)
 | if it is not; the keys back to the files if it has them; else to it.
 ToggleChat =>
-    emit FindView { groups = groups, path = chat_view.path, store = chat_view.store } to this get where
+    emit ChatTab { id = chat_id } to this get this_chat
+    emit FindView { groups = groups, path = this_chat.path, store = this_chat.store } to this get where
     if where.group ≥ 0 and focus = "chat"
         emit FocusSlot { slot = "c" } to this get back
         if back ∉ Focused, emit FocusNext to this
@@ -1083,11 +1101,12 @@ ToggleChat =>
 
 | The chat shown and given the keys.
 ShowChat =>
-    emit FindView { groups = groups, path = chat_view.path, store = chat_view.store } to this get where
+    emit ChatTab { id = chat_id } to this get this_chat
+    emit FindView { groups = groups, path = this_chat.path, store = this_chat.store } to this get where
     if where.group ≥ 0
         emit Reveal { group = where.group, tab = where.tab } to this
         return Shown
-    emit Show { buffer = chat_view, slot = settings["ai.chat.location"] } to this
+    emit Show { buffer = this_chat, slot = settings["ai.chat.location"] } to this
     return Shown
 
 | Settings > AI Model…: settings.json, with the `ai.*` settings written
@@ -1132,18 +1151,19 @@ ChatKey { name, text } =>
     if name = "ctrl+c"
         emit Run { command = "ai.cancel" } to this
         return Handled
-    if name = "up" or name = "down"
+    emit ChatInput { input = chat.input, caret = chat.caret, name = name, text = text, page = chat_page } to this get typed
+    | ↑ on the first line, ↓ on the last: the questions asked before.
+    if typed.edge
         step = -1
         if name = "down", step = 1
         emit Recall { history = questions, at = recall_at, input = chat.input, draft = recall_draft, step = step } to this get recalled
         recall_at = recalled.at
         recall_draft = recalled.draft
-        chat = chat + { input = recalled.input }
+        chat = chat + { input = recalled.input, caret = null }
         return Handled
-    emit ChatInput { input = chat.input, name = name, text = text, page = chat_page } to this get typed
     scroll = chat.scroll + typed.scroll
     if scroll < 0, scroll = 0
-    chat = chat + { input = typed.input, scroll = scroll }
+    chat = chat + { input = typed.input, caret = typed.caret, scroll = scroll }
     if typed.send ≠ null
         emit Length { value = questions } to core get { value as asked_count }
         if asked_count = 0 or questions[asked_count - 1] ≠ typed.send
@@ -1161,7 +1181,7 @@ AskAbout { question } =>
         emit Length { value = chat.queue } to core get { value as queued_count }
         if queued_count ≥ queue_most
             message = "" + queue_most + " questions are waiting already — this one stays in the box until the AI takes the next"
-            chat = chat + { input = question }
+            chat = chat + { input = question, caret = null }
             return Busy
         chat = chat + { queue = chat.queue + [question] }
         message = "Queued (" + (queued_count + 1) + " of " + queue_most + ") — asked when the AI is done; Ctrl+C puts them back in the box"
@@ -1359,20 +1379,95 @@ SendQueued =>
         emit AskAbout { question = next_question } to this
     return Sent
 
+| The conversation `id` made the one in `chat`; the one there waits in
+| `chats`. An id never seen starts empty.
+SwapChat { id } =>
+    if id = chat_id, return Same
+    chats = chats + { "$chat_id" = chat }
+    swapped_in = chats[id]
+    if swapped_in = null, swapped_in = empty_chat
+    chat = swapped_in
+    chat_id = id
+    return Swapped
+
+| Which conversation asked `request` (the model's reply) or runs its
+| agent in terminal `pty`: its id, or "".
+ChatOwner { request, pty } =>
+    if request ≠ null and request ≠ -1 and chat.request = request, return Owner { id = chat_id }
+    if pty ≠ null and chat.agent ≠ null and chat.agent.pty = pty, return Owner { id = chat_id }
+    loop owner_id, one over chats
+        if owner_id ≠ chat_id
+            if request ≠ null and request ≠ -1 and one.request = request, return Owner { id = owner_id }
+            if pty ≠ null and one.agent ≠ null and one.agent.pty = pty, return Owner { id = owner_id }
+    return Owner { id = "" }
+
+| `particle` handled with conversation `id` in `chat` — its next queued
+| question sent if it is done — and then the one before put back (or the
+| one whose tab is in front now).
+InChat { id, particle } =>
+    was_chat = chat_id
+    emit SwapChat { id = id } to this
+    emit particle to this get done
+    emit SendQueued to this
+    | The keys stay with the conversation of the tab in front, if it is one.
+    emit Active { groups = groups, current = current } to this get in_front
+    if in_front.buffer ≠ null and in_front.buffer.kind = "chat"
+        was_chat = in_front.buffer.chat_id
+        if was_chat = null, was_chat = "1"
+    emit SwapChat { id = was_chat } to this
+    return done
+
+| The tab of conversation `id`.
+ChatTab { id } =>
+    if id = "1", return chat_view
+    return chat_view + { path = "AI Chat " + id, chat_id = id }
+
+| Ctrl+T in the chat: another conversation, in a tab of its own beside it.
+NewChatTab =>
+    chats_opened += 1
+    new_id = "" + chats_opened
+    emit ChatTab { id = new_id } to this get new_tab
+    into = settings["ai.chat.location"]
+    if focus = "chat", into = groups[current].slot
+    emit Show { buffer = new_tab, slot = into } to this
+    return Opened
+
+| Ctrl+T: another of what has the keys — a terminal, an AI chat.
+NewHere =>
+    if focus = "terminal"
+        emit NewTerminal { slot = "" } to this
+        return Opened
+    if focus = "chat"
+        emit NewChatTab to this
+        return Opened
+    message = "Ctrl+T opens another terminal in a terminal, another AI chat in the chat"
+    return Nothing
+
+| Ctrl+Shift+N: another ide, in a window of its own, on the same folder.
+NewWindow =>
+    script = "if [ -x ./ide ]; then l=\"\$(pwd)/ide\"; else l=\$(command -v ide || echo \"\$HOME/.local/bin/ide\"); fi; c=\$(command -v cdlvsm-console || echo \"\$HOME/.local/bin/cdlvsm-console\"); if [ -x \"\$c\" ]; then setsid -f \"\$c\" -e \"\$l\" \"\$0\"; elif command -v gnome-terminal >/dev/null; then setsid -f gnome-terminal -- \"\$l\" \"\$0\"; else setsid -f x-terminal-emulator -e \"\$l\" \"\$0\"; fi >/dev/null 2>&1"
+    emit Run { command = "/bin/sh", args = ["-c", script, folder] } to procs get launched
+    if launched ∈ Exception or not launched.success
+        message = "Another window could not be opened"
+        return Failed
+    message = "Another ide is opening on " + folder
+    return Opened
+
 | Ctrl+C: the questions waiting go back into the box, after what is in it.
 Unqueue =>
     if chat.queue = [], return Nothing
     parts = chat.queue
     if chat.input ≠ "", parts = [chat.input] + parts
     emit Join { value = parts, separator = "\n" } to texts get joined
-    chat = chat + { input = joined.value, queue = [] }
+    chat = chat + { input = joined.value, caret = null, queue = [] }
     return Unqueued
 
 | The model's reply: a tool to run — its result goes back, and the model is
 | asked again — or the answer.
 ChatResult { content, _request_id } =>
-    emit TakeReply { content = content, reply_to = _request_id } to this get took
-    emit SendQueued to this
+    emit ChatOwner { request = _request_id, pty = null } to this get owner
+    if owner.id = "", return Ignored
+    emit InChat { id = owner.id, particle = TakeReply { content = content, reply_to = _request_id } } to this get took
     if running, emit Render to this
     return took
 
@@ -1424,9 +1519,9 @@ ToolDone { tool, text } =>
 
 | The model could not be reached (the organelle's `later` failure).
 Exception { source, message as failure, _request_id } =>
-    if _request_id = null or _request_id ≠ chat.request, return Ignored
-    emit ChatFailed { text = "The model did not answer: " + failure } to this
-    emit SendQueued to this
+    emit ChatOwner { request = _request_id, pty = null } to this get owner
+    if _request_id = null or owner.id = "", return Ignored
+    emit InChat { id = owner.id, particle = ChatFailed { text = "The model did not answer: " + failure } } to this
     if running, emit Render to this
     return Failed
 
@@ -1530,7 +1625,7 @@ Propose { tool, args } =>
         if settings["ai.agent.mode"] = "auto"
             emit AnswerRun { yes = true } to this
             return AutoDone
-        prompt = { kind = "ai_run", label = "Run for the AI: " + command + "  — y / n ", text = "" }
+        prompt = { kind = "ai_run", chat_id = chat_id, label = "Run for the AI: " + command + "  — y / n ", text = "" }
         chat = chat + { turns = chat.turns + [{ role = "tool", text = "wants to run: " + command + " (y / n in the status bar)" }] }
         return Waiting
     emit SafePath { path = args["path"] } to this get safe
@@ -1558,7 +1653,7 @@ Propose { tool, args } =>
         new_text = joined.value[0, where.at) + replace + joined.value[where.at + find_size, length)
     emit Split { value = new_text, separator = "\n" } to texts get split
     emit DiffLines { old = old, new = split.value, around = 3 } to this get diff
-    view = { kind = "diff", path = safe.path + " ±", store = "ai", target = safe.path, created = created, lines = split.value, diff = diff.lines, removed = diff.removed, added = diff.added, top = 0 }
+    view = { kind = "diff", path = safe.path + " ±", store = "ai", chat_id = chat_id, target = safe.path, created = created, lines = split.value, diff = diff.lines, removed = diff.removed, added = diff.added, top = 0 }
     | Auto: made at once, and said.
     if settings["ai.agent.mode"] = "auto"
         emit ApplyChange { view = view } to this get applied
@@ -1586,11 +1681,13 @@ DiffKey { name } =>
         emit Unstash to this
         return Handled
     if looking.buffer ≠ null and looking.buffer.reviewed = true and name ≠ "down" and name ≠ "up" and name ≠ "pagedown" and name ≠ "pageup", return Handled
+    asking = chat_id
+    if looking.buffer ≠ null and looking.buffer.chat_id ≠ null, asking = looking.buffer.chat_id
     if name = "a" or name = "y" or name = "enter"
-        emit DecideChange { accepted = true } to this
+        emit InChat { id = asking, particle = DecideChange { accepted = true } } to this
         return Handled
     if name = "r" or name = "n" or name = "escape"
-        emit DecideChange { accepted = false } to this
+        emit InChat { id = asking, particle = DecideChange { accepted = false } } to this
         return Handled
     step = 0
     if name = "down", step = 1
@@ -1834,19 +1931,19 @@ AskAgent { provider, question, context } =>
     text = context + "\n# The question\n" + question
     emit ModeNote { mode = mode } to this get mode_note
     if mode_note.text ≠ "", text = text + "\n\n" + mode_note.text
-    emit WriteFile { path = "runs/prompt.txt", content = text } to prefs get wrote
+    emit WriteFile { path = "runs/" + chat_id + "-prompt.txt", content = text } to prefs get wrote
     if wrote ∈ Exception
         emit ChatFailed { text = "The question could not be written for the agent: " + wrote.message } to this
         return Failed
-    emit WriteFile { path = "runs/out.jsonl", content = "" } to prefs
+    emit WriteFile { path = "runs/" + chat_id + "-out.jsonl", content = "" } to prefs
     chat = chat + { snapshot = null, changed = null }
     if mode = "edit" or mode = "auto"
         emit TakeSnapshot to this get snap
         if snap ∈ Snapshot, chat = chat + { snapshot = snap }
         if snap ∉ Snapshot, chat = chat + { turns = chat.turns + [{ role = "error", text = "Not a git repository (or no commit yet): what the agent changes cannot be undone from here." }] }
     runs = settings_dir + "/runs"
-    emit AgentCommand { provider = provider, mode = mode, session = chat.session, prompt_file = runs + "/prompt.txt", err_file = runs + "/err.txt", allow = settings["ai.agent.allowCommands"] } to this get line
-    emit Quoted { text = runs + "/out.jsonl" } to this get out_at
+    emit AgentCommand { provider = provider, mode = mode, session = chat.session, prompt_file = runs + "/" + chat_id + "-prompt.txt", err_file = runs + "/" + chat_id + "-err.txt", allow = settings["ai.agent.allowCommands"] } to this get line
+    emit Quoted { text = runs + "/" + chat_id + "-out.jsonl" } to this get out_at
     emit Open { cols = 200, rows = 50, cwd = folder, command = "/bin/sh", args = ["-c", line.text + " | tee " + out_at.text] } to shells get opened
     if opened ∈ Exception
         emit ChatFailed { text = provider.title + " could not be started: " + opened.message } to this
@@ -1858,7 +1955,7 @@ AskAgent { provider, question, context } =>
 AgentProgress =>
     agent = chat.agent
     if agent = null, return Nothing
-    emit ReadFile { path = "runs/out.jsonl" } to prefs get out
+    emit ReadFile { path = "runs/" + chat_id + "-out.jsonl" } to prefs get out
     if out ∈ Exception, return Nothing
     emit Split { value = out.content, separator = "\n" } to texts get split
     emit Length { value = split.value } to core get { value as count }
@@ -1885,7 +1982,7 @@ AgentFinished =>
     chat = chat + { agent = null, busy = false }
     problem = agent.error
     if not agent.done and problem = ""
-        emit ReadFile { path = "runs/err.txt" } to prefs get err
+        emit ReadFile { path = "runs/" + chat_id + "-err.txt" } to prefs get err
         why = ""
         if err ∉ Exception
             emit Trim { value = err.content } to texts get trimmed

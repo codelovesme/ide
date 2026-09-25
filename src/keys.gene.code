@@ -32,6 +32,9 @@ defaults = [
     { key = "ctrl+`", command = "terminal.toggle" }
     { key = "ctrl+space", command = "terminal.toggle" }
     { key = "ctrl+k t", command = "terminal.new" }
+    | Another of what has the keys: a terminal, an AI chat.
+    { key = "ctrl+t", command = "tab.newHere" }
+    { key = "ctrl+shift+n", command = "window.new" }
     | Pane keys: shown and focused, focused, or put away (TogglePane).
     { key = "ctrl+e", command = "editor.toggle" }
     { key = "ctrl+j", command = "terminal.toggle" }
@@ -100,6 +103,8 @@ commands = [
     { id = "view.moveTab.br", title = "Move the tab to the bottom right" }
     { id = "terminal.toggle", title = "Terminal: open one and focus it; put it away when focused (and back)" }
     { id = "terminal.new", title = "New terminal" }
+    { id = "tab.newHere", title = "Another of what has the keys: a terminal in a terminal, an AI chat in the chat" }
+    { id = "window.new", title = "New Window: another ide on this folder" }
     { id = "focus.explorer", title = "Focus the Explorer" }
     { id = "focus.editor", title = "Focus the center" }
     { id = "focus.group2", title = "Focus the right" }
@@ -120,6 +125,7 @@ commands = [
     { id = "menu.help", title = "Help menu" }
     { id = "ai.toggle", title = "AI Chat: open it and focus it; close it when focused" }
     { id = "ai.newChat", title = "AI Chat: start a new conversation" }
+    { id = "ai.newTab", title = "AI Chat: another conversation, in a tab of its own" }
     { id = "ai.cancel", title = "AI Chat: stop the model's answer" }
     { id = "ai.configure", title = "AI Model… (settings.json)" }
     { id = "ai.undoTurn", title = "AI Chat: undo the changes it made since the last question" }

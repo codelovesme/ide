@@ -101,12 +101,15 @@ the project in `.ide/memory.md`, read with the instructions every time.
 attaches more of that. Enter asks — while the AI is working (● working,
 at the right of the input line) it queues the question, up to 10, each
 asked when the one before is answered; an eleventh stays in the box.
-Alt+Enter is a new line, ↑/↓ bring
-back the questions asked before, PgUp/PgDn
+Alt+Enter is a new line, ←/→ Home/End move the cursor (↑/↓ too, between
+the lines of a long question); on its first or last line ↑/↓ bring
+back the questions asked before. PgUp/PgDn
 scroll (Ctrl+↑/↓ a line at a time), Ctrl+C stops the answer (and puts
 the queued questions back in the box), Escape gives the keys back to the files,
 Ctrl+W closes the tab (the conversation stays for next time), View > New
-AI Chat starts over. Ctrl+L works from a terminal too (so there it no
+AI Chat starts over. Ctrl+T in the chat opens another conversation in a
+tab of its own (View > New AI Chat Tab); each goes on answering while
+another has the keys. Ctrl+L works from a terminal too (so there it no
 longer clears the shell's screen — `clear` does).
 
 **The model is yours to choose**, in settings.json (Settings > AI Model…
@@ -245,6 +248,8 @@ the editor (center); the grid is ready for more.
 | Ctrl+K and an arrow | Move the focused side's edge (the left grows with →, the bottom with ↑) |
 | Ctrl+K M | Move the tab to another place |
 | Ctrl+K T | A new terminal |
+| Ctrl+T | Another of what has the keys: a terminal in a terminal, an AI chat in the chat |
+| Ctrl+Shift+N | New Window: another ide on this folder |
 | Alt+M | The AI, its model and its effort |
 
 In the editor: arrows, Home (first non-space, then column 0), End,

@@ -20,26 +20,102 @@ ChatUses { json, strings } =>
     texts = strings
     return Using
 
-| A key in the chat's input box. `send` is the text to ask about when
-| Enter sent it (else null); `scroll` moves the conversation (lines, up
-| is more): PgUp/PgDn a page, Ctrl+↑/↓ a line. ↑/↓ are `Recall`'s.
-ChatInput { input, name, text, page } =>
+| A key in the chat's input box, whose cursor is at `caret` (a character
+| of `input`; null is its end). `send` is the text to ask about when Enter
+| sent it (else null); `scroll` moves the conversation (lines, up is
+| more): PgUp/PgDn a page, Ctrl+↑/↓ a line. ←/→, Home/End and ↑/↓ move
+| the cursor; ↑ on the first line or ↓ on the last is `edge` — `Recall`'s.
+ChatInput { input, caret, name, text, page } =>
+    emit Length { value = input } to core get { value as size }
+    at = caret
+    if at = null or at > size, at = size
+    if at < 0, at = 0
+    before = input[0, at)
+    after = input[at, size)
+    result = ChatInputResult { input = input, caret = at, send = null, scroll = 0, edge = false }
     if name = "enter"
         emit Trim { value = input } to texts get trimmed
-        if trimmed.value = "", return ChatInputResult { input = input, send = null, scroll = 0 }
-        return ChatInputResult { input = "", send = trimmed.value, scroll = 0 }
+        if trimmed.value = "", return result
+        return result + { input = "", caret = 0, send = trimmed.value }
     if name = "alt+enter" or name = "shift+enter" or name = "ctrl+enter"
-        return ChatInputResult { input = input + "\n", send = null, scroll = 0 }
+        return result + { input = before + "\n" + after, caret = at + 1 }
     if name = "backspace"
-        return ChatInputResult { input = input[0, length - 1), send = null, scroll = 0 }
-    if name = "ctrl+u"
-        return ChatInputResult { input = "", send = null, scroll = 0 }
-    if name = "pageup", return ChatInputResult { input = input, send = null, scroll = page }
-    if name = "pagedown", return ChatInputResult { input = input, send = null, scroll = 0 - page }
-    if name = "ctrl+up", return ChatInputResult { input = input, send = null, scroll = 1 }
-    if name = "ctrl+down", return ChatInputResult { input = input, send = null, scroll = -1 }
-    if text ≠ "", return ChatInputResult { input = input + text, send = null, scroll = 0 }
-    return ChatInputResult { input = input, send = null, scroll = 0 }
+        if at = 0, return result
+        return result + { input = input[0, at - 1) + after, caret = at - 1 }
+    if name = "delete"
+        if at = size, return result
+        return result + { input = before + input[at + 1, size), caret = at }
+    if name = "ctrl+u", return result + { input = "", caret = 0 }
+    if name = "left"
+        if at > 0, return result + { caret = at - 1 }
+        return result
+    if name = "right"
+        if at < size, return result + { caret = at + 1 }
+        return result
+    emit LineSpan { text = input, at = at } to this get here
+    if name = "home", return result + { caret = here.start }
+    if name = "end", return result + { caret = here.stop }
+    if name = "up"
+        if here.start = 0, return result + { edge = true }
+        emit LineSpan { text = input, at = here.start - 1 } to this get above
+        reach = above.start + at - here.start
+        if reach > above.stop, reach = above.stop
+        return result + { caret = reach }
+    if name = "down"
+        if here.stop = size, return result + { edge = true }
+        emit LineSpan { text = input, at = here.stop + 1 } to this get below
+        reach = below.start + at - here.start
+        if reach > below.stop, reach = below.stop
+        return result + { caret = reach }
+    if name = "pageup", return result + { scroll = page }
+    if name = "pagedown", return result + { scroll = 0 - page }
+    if name = "ctrl+up", return result + { scroll = 1 }
+    if name = "ctrl+down", return result + { scroll = -1 }
+    if text ≠ ""
+        emit Length { value = text } to core get { value as added }
+        return result + { input = before + text + after, caret = at + added }
+    return result
+
+| The line of `text` that character `at` is on: where it starts, and where
+| it stops (its "\n", or the end).
+LineSpan { text, at } =>
+    emit Length { value = text } to core get { value as size }
+    start = at
+    loop
+        if start = 0 or text[start - 1] = "\n", break
+        start = start - 1
+    stop = at
+    loop
+        if stop ≥ size or text[stop] = "\n", break
+        stop += 1
+    return Span { start = start, stop = stop }
+
+| The input box's lines: `text` cut every `width` characters (and at its
+| own line breaks), and the line and column the cursor (`caret`) is on.
+| A line has room for the cursor after its last character.
+InputLines { text, caret, width } =>
+    if width < 1, width = 1
+    out = []
+    caret_line = 0
+    caret_col = 0
+    offset = 0
+    emit Split { value = text, separator = "\n" } to texts get paragraphs
+    loop paragraph over paragraphs.value
+        emit Length { value = paragraph } to core get { value as size }
+        i = 0
+        loop
+            last_piece = i + width > size
+            if caret ≥ offset + i and (caret < offset + i + width or (last_piece and caret ≤ offset + size))
+                emit Length { value = out } to core get { value as lines_before }
+                caret_line = lines_before
+                caret_col = caret - offset - i
+            piece_end = i + width
+            if piece_end > size, piece_end = size
+            out += paragraph[i, piece_end)
+            i += width
+            if last_piece, break
+        offset += size + 1
+    return InputShape { lines = out, caret_line = caret_line, caret_col = caret_col }
 
 | ↑ (`step` -1) and ↓ (1) in the input box: back through the questions
 | asked (`history`, oldest first) and forward again to what was being

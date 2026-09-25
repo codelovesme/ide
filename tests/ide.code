@@ -501,6 +501,28 @@ emit Length { value = q_next.chat.turns } to core get { value as q_turns }
 assert q_next.chat.turns[q_turns - 1].text = "second"
 emit ChatResult { content = "{\"answer\": \"two\"}", _request_id = q_next.chat.request } to this
 
+| Ctrl+T in the chat: another conversation in a tab of its own. A reply
+| to it lands there, whichever tab has the keys.
+emit HandleKey { name = "ctrl+t", text = "" } to this
+emit State to this get tab_two
+assert tab_two.chat_id = "2" and tab_two.chat.turns = [] and tab_two.focus = "chat"
+emit AskAbout { question = "in two" } to this
+emit State to this get two_asking
+emit HandleKey { name = "shift+tab", text = "" } to this
+emit State to this get tab_one
+assert tab_one.chat_id = "1" and not tab_one.chat.busy
+emit ChatResult { content = "{\"answer\": \"two done\"}", _request_id = two_asking.chat.request } to this
+emit State to this get after_two
+assert after_two.chat_id = "1"
+assert after_two.chats["2"].turns[1].text = "two done" and not after_two.chats["2"].busy
+emit Framed to this get two_frame
+assert two_frame ∈ Screen
+| Its tab closed; the first conversation keeps the keys.
+emit HandleKey { name = "shift+tab", text = "" } to this
+emit HandleKey { name = "ctrl+w", text = "" } to this
+emit State to this get two_closed
+assert two_closed.chat_id = "1" and two_closed.focus = "chat"
+
 | Tools stay inside the folder.
 emit RunTool { tool = "read_file", args = { path = "../etc/passwd" } } to this get outside
 assert outside.text = "Not allowed: paths stay inside the project folder."

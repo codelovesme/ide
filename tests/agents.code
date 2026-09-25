@@ -223,7 +223,7 @@ assert not answered.chat.busy and answered.chat.agent = null
 assert answered.chat.turns[1].text = "read hello.code"
 assert answered.chat.turns[2].text = "It greets."
 assert answered.chat.session = "fake-session"
-emit ReadFile { path = "runs/prompt.txt" } to fixtures get prompt_sent
+emit ReadFile { path = "runs/1-prompt.txt" } to fixtures get prompt_sent
 emit Contains { text = prompt_sent.content, part = "# The question\nwhat is this?" } to this get has_question
 assert has_question.yes
 emit Contains { text = prompt_sent.content, part = "Ask mode" } to this get says_ask
@@ -243,7 +243,7 @@ assert plan_mode.settings["ai.agent.mode"] = "plan"
 | Plan: read-only, the question says to answer with a plan, and the
 | answer offers Alt+G, which goes ahead in edit mode.
 emit AgentRun { question = "plan it" } to this get plan_run
-emit ReadFile { path = "runs/prompt.txt" } to fixtures get plan_prompt
+emit ReadFile { path = "runs/1-prompt.txt" } to fixtures get plan_prompt
 emit Contains { text = plan_prompt.content, part = "Plan mode" } to this get says_plan
 assert says_plan.yes
 emit Run { command = "sh", args = ["-c", "cat \"\${TMPDIR:-/tmp}/ide-fake-agent-args\""] } to procs_lib get plan_args

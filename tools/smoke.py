@@ -134,7 +134,7 @@ s.keys(b"\x03", 0.8)
 s.keys(b"echo after-interrupt\r", 1.5)
 check("after-interrupt" in bottom().replace("echo after-interrupt", ""), "ctrl+c reaches the shell")
 s.keys(b"\x1bv", 0.6)                       # View menu (works from a terminal)
-s.keys(b"\x1b[B" * 10 + b"\r", 0.6)         # Move Tab…
+s.keys(b"\x1b[B" * 11 + b"\r", 0.6)         # Move Tab…
 s.keys(b"r\r", 1.5)
 right_half = "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
 check(" Terminal 1 " in right_half and "hello-ide" in right_half, "move tab: the terminal goes to the right, shell and all")

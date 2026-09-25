@@ -93,7 +93,7 @@ TerminalRows { pane, screen, focused } =>
 chat_help = [
     "Ask about this project — it looks at what you are looking at."
     "Enter asks (while the AI works, queues) · Alt+Enter a new line · Esc back to the files"
-    "PgUp/PgDn scroll · Ctrl+C stops · @terminal @git @file @folder @path"
+    "PgUp/PgDn scroll · Ctrl+C stops · Ctrl+T another chat · @terminal @git @file @folder @path"
 ]
 
 | One turn of the chat as lines `{ text, style }`, `width` wide.
@@ -149,10 +149,18 @@ ChatRows { pane, chat, notice, label, focused } =>
     emit Length { value = chat.queue } to core get { value as queued_count }
     if queued_count > 0, mark = mark + "· " + queued_count + " queued "
     emit Length { value = mark } to core get { value as mark_size }
-    emit Wrap { text = chat.input, width = width - 3 - mark_size } to this get typed
+    caret = chat.caret
+    if caret = null
+        emit Length { value = chat.input } to core get { value as input_size }
+        caret = input_size
+    emit InputLines { text = chat.input, caret = caret, width = width - 3 - mark_size } to this get typed
     emit Length { value = typed.lines } to core get { value as typed_count }
-    shown_typed = typed.lines
-    if typed_count > 6, shown_typed = typed.lines[typed_count - 6, typed_count)
+    | At most six lines, the last ones unless the cursor is further up.
+    first_typed = 0
+    if typed_count > 6, first_typed = typed_count - 6
+    if typed.caret_line < first_typed, first_typed = typed.caret_line
+    shown_typed = typed.lines[first_typed, typed_count)
+    if typed_count - first_typed > 6, shown_typed = typed.lines[first_typed, first_typed + 6)
     emit Length { value = shown_typed } to core get { value as box }
     room = pane.height - box - 1
     if room < 1, room = 1
@@ -208,15 +216,14 @@ ChatRows { pane, chat, notice, label, focused } =>
     cursor_row = null, cursor_col = null
     loop j, line over shown_typed
         lead = "   "
-        if j = 0 and box = typed_count, lead = " › "
+        if j = 0 and first_typed = 0, lead = " › "
         if j = 0 and mark_size > 0
             out += { row = rule_row + 1 + j, col = pane.x, spans = [{ text = lead + line, width = pane.width - mark_size, style = "plain" }, { text = mark, width = mark_size, align = "right", style = "plain", fg = mark_fg }] }
             continue
         out += { row = rule_row + 1 + j, col = pane.x, spans = [{ text = lead + line, width = pane.width, style = "plain" }] }
     if focused
-        emit Length { value = shown_typed[box - 1] } to core get { value as end_col }
-        cursor_row = rule_row + box
-        cursor_col = pane.x + 3 + end_col
+        cursor_row = rule_row + 1 + typed.caret_line - first_typed
+        cursor_col = pane.x + 3 + typed.caret_col
     return PaneView { overlays = out, cursor_row = cursor_row, cursor_col = cursor_col, chat = { scroll = scroll, page = room } }
 
 | A change the AI proposes, in `pane` (below its tab strip): what it does
@@ -478,8 +485,17 @@ GroupView { area, group, index, state, screens } =>
         emit DiffRows { pane = content, view = view, focused = focused } to this get rows
         result = result + { overlays = out + rows.overlays }
     if view.kind = "chat"
-        emit ChatRows { pane = content, chat = state.chat, notice = state.chat_notice, label = state.chat_label, focused = focused } to this get rows
-        result = result + { overlays = out + rows.overlays, chat = rows.chat }
+        | Each AI tab its own conversation: the one with the keys, or one
+        | waiting (see chats in the ide gene).
+        shown_chat = state.chat
+        view_chat = view.chat_id
+        if view_chat = null, view_chat = "1"
+        if state.chat_id ≠ null and view_chat ≠ state.chat_id
+            shown_chat = state.chats[view_chat]
+            if shown_chat = null, shown_chat = { turns = [], messages = [], input = "", caret = null, queue = [], busy = false, request = -1, steps = 0, scroll = 0, pending = null, agent = null }
+        emit ChatRows { pane = content, chat = shown_chat, notice = state.chat_notice, label = state.chat_label, focused = focused } to this get rows
+        result = result + { overlays = out + rows.overlays }
+        if state.chat_id = null or view_chat = state.chat_id, result = result + { chat = rows.chat }
         if rows.cursor_row ≠ null, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
     if view.kind = "terminal"
         emit TerminalRows { pane = content, screen = screens["$view.id"], focused = focused } to this get rows
