@@ -66,6 +66,7 @@ defaults = [
     { key = "ctrl+k d", command = "ai.showChanges" }
     { key = "alt+m", command = "ai.switchModel" }
     { key = "alt+e", command = "ai.toggleMode" }
+    { key = "alt+g", command = "ai.goAhead" }
     { key = "ctrl+k shift+tab", command = "edit.outdent" }
 ]
 
@@ -123,7 +124,12 @@ commands = [
     { id = "ai.configure", title = "AI Model… (settings.json)" }
     { id = "ai.undoTurn", title = "AI Chat: undo the changes it made since the last question" }
     { id = "ai.showChanges", title = "AI Chat: show what the agent changed since the last question" }
-    { id = "ai.toggleMode", title = "AI Chat: ask ↔ edit, for Claude Code and Codex" }
+    { id = "ai.toggleMode", title = "AI Chat: the next mode — ask, plan, edit, auto" }
+    { id = "ai.mode.ask", title = "AI Chat: Ask mode — it looks and answers" }
+    { id = "ai.mode.plan", title = "AI Chat: Plan mode — it answers with a plan" }
+    { id = "ai.mode.edit", title = "AI Chat: Edit mode — it changes files" }
+    { id = "ai.mode.auto", title = "AI Chat: Auto mode — changes and commands without asking" }
+    { id = "ai.goAhead", title = "AI Chat: carry out the plan just made" }
     { id = "ai.switchModel", title = "AI Chat: pick the AI and its model (each checked: ready, signed in, reachable)" }
     { id = "help.keys", title = "This list" }
     { id = "help.about", title = "About" }

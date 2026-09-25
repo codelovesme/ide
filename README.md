@@ -185,6 +185,7 @@ shown on the line over the input:
   "codex":  { "type": "codex", "command": "codex", "model": "", "effort": "" }
 },
 "ai.agent.mode": "ask",
+"ai.agent.planFollowup": "edit",
 "ai.agent.allowCommands": []
 ```
 

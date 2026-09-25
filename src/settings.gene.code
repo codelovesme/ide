@@ -41,6 +41,8 @@ defaults = {
     "ai.chat.location" = "r"
     "ai.maxSteps" = 12
     "ai.agent.mode" = "ask"
+    | What Alt+G carries a plan out in: "edit" or "auto".
+    "ai.agent.planFollowup" = "edit"
     "ai.agent.allowCommands" = []
     "terminal.integrated.commandsToSkipShell" = [
         "terminal.toggle"
@@ -142,8 +144,14 @@ ReadSettings { text } =>
     if good_steps, values = values + { "ai.maxSteps" = steps }
     if steps ≠ null and not good_steps, wrong += "ai.maxSteps (1 to 50)"
     agent_mode = given["ai.agent.mode"]
-    if agent_mode = "ask" or agent_mode = "edit", values = values + { "ai.agent.mode" = agent_mode }
-    if agent_mode ≠ null and agent_mode ≠ "ask" and agent_mode ≠ "edit", wrong += "ai.agent.mode (\"ask\" or \"edit\")"
+    known_modes = { ask = true, plan = true, edit = true, auto = true }
+    good_mode = agent_mode ∈ String
+    if good_mode, good_mode = known_modes[agent_mode] = true
+    if good_mode, values = values + { "ai.agent.mode" = agent_mode }
+    if agent_mode ≠ null and not good_mode, wrong += "ai.agent.mode (\"ask\", \"plan\", \"edit\" or \"auto\")"
+    followup = given["ai.agent.planFollowup"]
+    if followup = "edit" or followup = "auto", values = values + { "ai.agent.planFollowup" = followup }
+    if followup ≠ null and followup ≠ "edit" and followup ≠ "auto", wrong += "ai.agent.planFollowup (\"edit\" or \"auto\")"
     allow = given["ai.agent.allowCommands"]
     good_allow = allow ∈ Array
     if good_allow

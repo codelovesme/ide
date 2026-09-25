@@ -47,7 +47,8 @@ menus = [
             { label = "Keyboard Shortcuts", command = "help.keys" }
             { label = "AI Model…", command = "ai.configure" }
             { label = "AI: Switch Model…", command = "ai.switchModel" }
-            { label = "AI: Ask ↔ Edit", command = "ai.toggleMode" }
+            { label = "AI: Next Mode (Ask, Plan, Edit, Auto)", command = "ai.toggleMode" }
+            { label = "AI: Go Ahead with the Plan", command = "ai.goAhead" }
         ]
     }
     {

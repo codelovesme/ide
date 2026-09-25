@@ -229,6 +229,22 @@ assert resumed.yes
 | opens their diffs, Undo AI Changes puts them back.
 emit HandleKey { name = "ctrl+l", text = "" } to this
 emit HandleKey { name = "alt+e", text = "" } to this
+emit State to this get plan_mode
+assert plan_mode.settings["ai.agent.mode"] = "plan"
+| Plan: read-only, the question says to answer with a plan, and the
+| answer offers Alt+G, which goes ahead in edit mode.
+emit AgentRun { question = "plan it" } to this get plan_run
+emit ReadFile { path = "runs/prompt.txt" } to fixtures get plan_prompt
+emit Contains { text = plan_prompt.content, part = "Plan mode" } to this get says_plan
+assert says_plan.yes
+emit Run { command = "sh", args = ["-c", "cat \"\${TMPDIR:-/tmp}/ide-fake-agent-args\""] } to procs_lib get plan_args
+emit Contains { text = plan_args.stdout, part = "--permission-mode plan" } to this get plan_readonly
+assert plan_readonly.yes
+assert plan_run.chat.plan_ready
+emit Length { value = plan_run.chat.turns } to core get { value as plan_turns }
+emit Contains { text = plan_run.chat.turns[plan_turns - 1].text, part = "Alt+G: go ahead" } to this get offered
+assert offered.yes
+emit HandleKey { name = "alt+e", text = "" } to this
 emit State to this get edit_mode
 assert edit_mode.settings["ai.agent.mode"] = "edit"
 emit AgentRun { question = "change it" } to this get edit_run
@@ -247,6 +263,25 @@ emit ReadFile { path = "hello.code" } to agent_fs get put_back
 assert put_back.content = "Greet { who } =>\n    return Hi\n"
 emit Exists { path = "new.txt" } to agent_fs get new_gone
 assert not new_gone.is_file
+
+| Auto: Claude's own auto mode; Codex's --approve-for-me. Round again to ask.
+emit AgentCommand { provider = claude, mode = "auto", session = "", prompt_file = "/r/p", err_file = "/r/e", allow = [] } to this get auto_line
+assert auto_line.text = "'claude' -p --output-format stream-json --verbose --permission-mode auto < '/r/p' 2> '/r/e'"
+emit AgentCommand { provider = codex, mode = "auto", session = "", prompt_file = "/r/p", err_file = "/r/e", allow = [] } to this get codex_auto
+assert codex_auto.text = "'codex' exec --json --skip-git-repo-check -c sandbox_mode=\"workspace-write\" --approve-for-me - < '/r/p' 2> '/r/e'"
+emit AgentCommand { provider = claude, mode = "plan", session = "", prompt_file = "/r/p", err_file = "/r/e", allow = [] } to this get plan_line
+assert plan_line.text = "'claude' -p --output-format stream-json --verbose --permission-mode plan < '/r/p' 2> '/r/e'"
+emit HandleKey { name = "alt+e", text = "" } to this
+emit State to this get auto_mode
+assert auto_mode.settings["ai.agent.mode"] = "auto"
+emit HandleKey { name = "alt+e", text = "" } to this
+emit State to this get round_mode
+assert round_mode.settings["ai.agent.mode"] = "ask"
+| A mode that is not one falls back, and says so.
+emit ReadSettings { text = "{ \"ai.agent.mode\": \"yolo\" }" } to this get bad_mode
+assert bad_mode.values["ai.agent.mode"] = "ask"
+emit Contains { text = bad_mode.problem, part = "ai.agent.mode" } to this get said_bad
+assert said_bad.yes
 
 | A program that is not there: the chat says why.
 emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = "/nowhere/claude" } } } to this

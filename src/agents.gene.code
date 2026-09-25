@@ -7,14 +7,21 @@
 | and reads what it does as it does it — one JSON event a line — into the
 | chat: its words, and each step it takes, in grey.
 |
-| Two modes, switched with Alt+E:
+| Four modes, Alt+E going round them (settings: ai.agent.mode):
 |
-|   ask   it may only read — Claude in plan mode, Codex in a read-only
-|         sandbox;
+|   ask   it may only read, and answers — Claude in its plan mode, Codex in
+|         a read-only sandbox;
+|   plan  the same, but it answers with a plan for the change — which
+|         files, what in each; Alt+G then carries it out (ai.goAhead);
 |   edit  it changes files itself — Claude accepting its edits (commands
 |         only those in `ai.agent.allowCommands`), Codex in its
-|         workspace-write sandbox. The ide shows what changed after, and can
-|         put it back (ide.gene.code, UndoAiChanges).
+|         workspace-write sandbox;
+|   auto  it changes files and runs commands without asking, each action
+|         checked by the agent itself first — Claude's auto mode, Codex's
+|         --approve-for-me.
+|
+| After edit and auto the ide shows what changed, and can put it back
+| (ide.gene.code, UndoAiChanges).
 
 parser = null
 texts = null
@@ -47,8 +54,10 @@ AgentCommand { provider, mode, session, prompt_file, err_file, allow } =>
     line = program.text
     if provider.type = "claude-code"
         line = line + " -p --output-format stream-json --verbose"
-        if mode = "edit", line = line + " --permission-mode acceptEdits"
-        if mode ≠ "edit", line = line + " --permission-mode plan"
+        permission = "plan"
+        if mode = "edit", permission = "acceptEdits"
+        if mode = "auto", permission = "auto"
+        line = line + " --permission-mode " + permission
         if provider.model ≠ ""
             emit Quoted { text = provider.model } to this get model
             line = line + " --model " + model.text
@@ -67,8 +76,9 @@ AgentCommand { provider, mode, session, prompt_file, err_file, allow } =>
         if session ≠ "", line = line + " resume"
         line = line + " --json --skip-git-repo-check"
         sandbox = "read-only"
-        if mode = "edit", sandbox = "workspace-write"
+        if mode = "edit" or mode = "auto", sandbox = "workspace-write"
         line = line + " -c sandbox_mode=\"" + sandbox + "\""
+        if mode = "auto", line = line + " --approve-for-me"
         if provider.effort ≠ null and provider.effort ≠ ""
             emit Quoted { text = "model_reasoning_effort=\"" + provider.effort + "\"" } to this get effort
             line = line + " -c " + effort.text

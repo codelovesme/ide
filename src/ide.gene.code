@@ -368,6 +368,8 @@ Run { command } =>
         chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "error", text = "Stopped." }] }
     if command = "ai.undoTurn", emit UndoAiChanges to this
     if command = "ai.showChanges", emit ShowAiChanges to this
+    if command[0, 8) = "ai.mode.", emit SetAgentMode { mode = command[8, length) } to this
+    if command = "ai.goAhead", emit GoAhead to this
     if command = "ai.toggleMode", emit ToggleAgentMode to this
     if command = "ai.switchModel", emit OpenModelPicker to this
     if command = "terminal.scrollUp" or command = "terminal.scrollDown"
@@ -1094,9 +1096,9 @@ ChatNotice =>
     if provider.models ≠ null
         loop one over provider.models
             if one ∈ Object and one["id"] = provider.model and one["name"] ∈ String, shown_model = one["name"]
+    shown_modes = { ask = "Ask", plan = "Plan", edit = "Edit", auto = "Auto" }
+    mode = shown_modes[settings["ai.agent.mode"]]
     if provider.problem = "" and provider.runner = "cli"
-        mode = "Ask"
-        if settings["ai.agent.mode"] = "edit", mode = "Edit"
         ai_status = provider.title
         if provider.model ≠ "", ai_status = ai_status + " · " + shown_model
         if provider.effort ≠ "", ai_status = ai_status + " · " + provider.effort
@@ -1105,7 +1107,8 @@ ChatNotice =>
     if provider.problem = "" and provider.runner = "api"
         ai_status = provider.name
         if provider.model ≠ "", ai_status = ai_status + " · " + provider.model
-        chat_label = ai_status + " · Alt+M: switch"
+        chat_label = ai_status + " · " + mode + " (Alt+E) · Alt+M: switch"
+        ai_status = ai_status + " · " + mode
     return Noted
 
 | A key in the chat: Escape gives the keys back to the files, Ctrl+C stops
@@ -1150,7 +1153,8 @@ AskAbout { question } =>
     loop m over chat.messages
         if m.short ≠ null, earlier += { role = m.role, content = m.short }
         if m.short = null, earlier += m
-    asked = { role = "user", content = gathered.text + "\n# The question\n" + question, short = question }
+    emit ModeNote { mode = settings["ai.agent.mode"] } to this get mode_note
+    asked = { role = "user", content = gathered.text + "\n# The question\n" + question + "\n\n" + mode_note.text, short = question }
     chat = chat + { messages = earlier + [asked], steps = 0, system = system.text, budget = budget, checkpoints = [] }
     emit AskModel to this
     return Asked
@@ -1321,6 +1325,7 @@ ChatResult { content, _request_id } =>
     chat = chat + { messages = chat.messages + [{ role = "assistant", content = content }] }
     if reply.tool = null
         chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "assistant", text = reply.answer }] }
+        emit OfferPlan to this
         if running, emit Render to this
         return Answered
     max_steps = settings["ai.maxSteps"]
@@ -1330,8 +1335,18 @@ ChatResult { content, _request_id } =>
         return Failed
     chat = chat + { steps = chat.steps + 1 }
     changes = reply.tool = "edit_file" or reply.tool = "create_file" or reply.tool = "run_command"
+    looking_only = settings["ai.agent.mode"] = "ask" or settings["ai.agent.mode"] = "plan"
+    if changes and looking_only
+        refused = "Not in " + settings["ai.agent.mode"] + " mode: nothing is changed or run. Answer instead — in plan mode, with the plan."
+        chat = chat + { turns = chat.turns + [{ role = "tool", text = reply.tool + ": not in " + settings["ai.agent.mode"] + " mode" }] }
+        emit ToolDone { tool = reply.tool, text = refused } to this
+        if running, emit Render to this
+        return Stepped
     if changes
         emit Propose { tool = reply.tool, args = reply.args } to this get proposed
+        if proposed ∈ AutoDone
+            if running, emit Render to this
+            return Stepped
         if proposed ∈ Waiting
             chat = chat + { request = -1 }
             if running, emit Render to this
@@ -1460,6 +1475,9 @@ Propose { tool, args } =>
         command = args["command"]
         if command ∉ String or command = "", return Text { text = "run_command needs a \"command\"." }
         chat = chat + { pending = { tool = tool, command = command } }
+        if settings["ai.agent.mode"] = "auto"
+            emit AnswerRun { yes = true } to this
+            return AutoDone
         prompt = { kind = "ai_run", label = "Run for the AI: " + command + "  — y / n ", text = "" }
         chat = chat + { turns = chat.turns + [{ role = "tool", text = "wants to run: " + command + " (y / n in the status bar)" }] }
         return Waiting
@@ -1489,6 +1507,12 @@ Propose { tool, args } =>
     emit Split { value = new_text, separator = "\n" } to texts get split
     emit DiffLines { old = old, new = split.value, around = 3 } to this get diff
     view = { kind = "diff", path = safe.path + " ±", store = "ai", target = safe.path, created = created, lines = split.value, diff = diff.lines, removed = diff.removed, added = diff.added, top = 0 }
+    | Auto: made at once, and said.
+    if settings["ai.agent.mode"] = "auto"
+        emit ApplyChange { view = view } to this get applied
+        if applied ∈ Text, return applied
+        chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + safe.path + " (−" + diff.removed + " +" + diff.added + "; View > Undo AI Changes puts it back)" }] }
+        return Text { text = safe.path + " is changed and saved." }
     emit EditorSlot to this get into
     emit Show { buffer = view, slot = into.slot } to this
     chat = chat + { pending = { tool = tool, path = safe.path } }
@@ -1756,14 +1780,15 @@ AskAgent { provider, question, context } =>
     mode = settings["ai.agent.mode"]
     if chat.session_for ≠ provider.name, chat = chat + { session = "", session_for = provider.name }
     text = context + "\n# The question\n" + question
-    if mode ≠ "edit", text = text + "\n\n(Ask mode: look and answer; change no files.)"
+    emit ModeNote { mode = mode } to this get mode_note
+    if mode_note.text ≠ "", text = text + "\n\n" + mode_note.text
     emit WriteFile { path = "runs/prompt.txt", content = text } to prefs get wrote
     if wrote ∈ Exception
         emit ChatFailed { text = "The question could not be written for the agent: " + wrote.message } to this
         return Failed
     emit WriteFile { path = "runs/out.jsonl", content = "" } to prefs
     chat = chat + { snapshot = null, changed = null }
-    if mode = "edit"
+    if mode = "edit" or mode = "auto"
         emit TakeSnapshot to this get snap
         if snap ∈ Snapshot, chat = chat + { snapshot = snap }
         if snap ∉ Snapshot, chat = chat + { turns = chat.turns + [{ role = "error", text = "Not a git repository (or no commit yet): what the agent changes cannot be undone from here." }] }
@@ -1817,6 +1842,7 @@ AgentFinished =>
         problem = agent.title + " stopped without an answer"
         if why ≠ "", problem = problem + ":\n" + why
     if problem ≠ "", chat = chat + { turns = chat.turns + [{ role = "error", text = problem }] }
+    if problem = "", emit OfferPlan to this
     emit NoteAgentChanges to this
     return Finished
 
@@ -1970,13 +1996,38 @@ ShowAiChanges =>
         emit Show { buffer = view, slot = into.slot } to this
     return Shown
 
-| Alt+E: ask ↔ edit, remembered in settings.
+| Alt+E: ask → plan → edit → auto, and round, remembered in settings.
 ToggleAgentMode =>
-    mode = "edit"
-    if settings["ai.agent.mode"] = "edit", mode = "ask"
-    emit StoreSetting { key = "ai.agent.mode", value = mode } to this
-    message = "AI mode: " + mode
+    emit NextMode { mode = settings["ai.agent.mode"] } to this get next_mode
+    emit SetAgentMode { mode = next_mode.text } to this
     return Toggled
+
+| The AI's mode set (ai.mode.<mode>, or Alt+E), and said.
+SetAgentMode { mode } =>
+    emit StoreSetting { key = "ai.agent.mode", value = mode } to this
+    said = { ask = "Ask — it looks and answers", plan = "Plan — it looks and answers with a plan (Alt+G carries it out)", edit = "Edit — it changes files; commands only from ai.agent.allowCommands", auto = "Auto — it changes files and runs commands without asking" }
+    message = "AI mode: " + said[mode]
+    emit ChatNotice to this
+    return Moded
+
+| A plan-mode answer: the chat says how to carry it out.
+OfferPlan =>
+    if settings["ai.agent.mode"] ≠ "plan", return Nothing
+    followup = settings["ai.agent.planFollowup"]
+    chat = chat + { plan_ready = true, turns = chat.turns + [{ role = "tool", text = "Alt+G: go ahead — carry out this plan in " + followup + " mode" }] }
+    return Offered
+
+| Alt+G: the plan just made, carried out — the mode switched to
+| ai.agent.planFollowup (edit, unless it says auto), and the AI told to
+| go ahead, in the same conversation.
+GoAhead =>
+    if chat.plan_ready ≠ true
+        message = "There is no plan to carry out — ask in Plan mode first (Alt+E)"
+        return Nothing
+    chat = chat + { plan_ready = false }
+    emit SetAgentMode { mode = settings["ai.agent.planFollowup"] } to this
+    emit AskAbout { question = "Go ahead: carry out the plan above." } to this get asked
+    return asked
 
 | The providers to pick from: every `ai.providers` entry (the defaults
 | and the user's, see settings.gene.code).

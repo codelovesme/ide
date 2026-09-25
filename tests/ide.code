@@ -459,7 +459,35 @@ assert outside.text = "Not allowed: paths stay inside the project folder."
 emit RunTool { tool = "read_file", args = { path = "hello.code", from = 2, "to" = 2 } } to this get one_line
 assert one_line.text = "hello.code (4 lines), lines 2–2:\n2| Greet { who } =>"
 
-| Changes: the model proposes, the user decides.
+| Ask (the default): a change the model asks for is refused, and it is
+| told so; nothing waits on the user.
+emit AskAbout { question = "change it" } to this
+emit State to this get ask_asked
+emit ChatResult { content = "{\"tool\": \"edit_file\", \"args\": {\"path\": \"hello.code\", \"find\": \"return Hi\", \"replace\": \"return Hello\"}}", _request_id = ask_asked.chat.request } to this
+emit State to this get ask_refused
+assert ask_refused.chat.pending = null
+emit Length { value = ask_refused.chat.messages } to core get { value as ask_count }
+emit Contains { text = ask_refused.chat.messages[ask_count - 1].content, part = "Not in ask mode" } to this get told_ask
+assert told_ask.yes
+| Plan: the answer offers Alt+G, which switches to edit and goes ahead in
+| the same conversation.
+emit SetAgentMode { mode = "plan" } to this
+emit ChatResult { content = "{\"answer\": \"1. In hello.code, return Hello.\"}", _request_id = ask_refused.chat.request } to this
+emit State to this get planned
+assert planned.chat.plan_ready
+emit Run { command = "ai.goAhead" } to this
+emit State to this get going
+assert going.settings["ai.agent.mode"] = "edit"
+assert going.chat.busy and not going.chat.plan_ready
+emit Length { value = going.chat.turns } to core get { value as going_turns }
+emit Contains { text = going.chat.turns[going_turns - 1].text, part = "Go ahead" } to this get went
+assert went.yes
+emit ChatResult { content = "{\"answer\": \"ok\"}", _request_id = going.chat.request } to this
+emit Run { command = "ai.goAhead" } to this
+emit State to this get no_plan
+assert no_plan.message = "There is no plan to carry out — ask in Plan mode first (Alt+E)"
+
+| Edit — changes: the model proposes, the user decides.
 emit AskAbout { question = "say Hello instead" } to this
 emit State to this get edit_asked
 edit_find = "{\"tool\": \"edit_file\", \"args\": {\"path\": \"hello.code\", \"find\": \"return Hi\", \"replace\": \"return Hello\"}}"
@@ -520,6 +548,30 @@ assert not gone_new.is_file
 emit State to this get after_undo
 assert after_undo.file.lines[2] = "    return Hi"
 emit RemoveDir { path = "docs" } to files
+
+| Auto: a change made at once, a command run at once, each said; Undo AI
+| Changes still puts them back.
+emit SetAgentMode { mode = "auto" } to this
+emit AskAbout { question = "say Hey" } to this
+emit State to this get auto_asked
+emit ChatResult { content = "{\"tool\": \"edit_file\", \"args\": {\"path\": \"hello.code\", \"find\": \"return Hi\", \"replace\": \"return Hey\"}}", _request_id = auto_asked.chat.request } to this
+emit ReadFile { path = "hello.code" } to files get auto_changed
+emit Contains { text = auto_changed.content, part = "return Hey" } to this get made_at_once
+assert made_at_once.yes
+emit State to this get auto_edited
+assert auto_edited.chat.pending = null and auto_edited.chat.busy
+emit ChatResult { content = "{\"tool\": \"run_command\", \"args\": {\"command\": \"echo auto-\$((40 + 2))\"}}", _request_id = auto_edited.chat.request } to this
+emit State to this get auto_ran
+assert auto_ran.prompt = null
+emit Length { value = auto_ran.chat.messages } to core get { value as auto_count }
+emit Contains { text = auto_ran.chat.messages[auto_count - 1].content, part = "auto-42" } to this get auto_output
+assert auto_output.yes
+emit ChatResult { content = "{\"answer\": \"Done.\"}", _request_id = auto_ran.chat.request } to this
+emit Run { command = "ai.undoTurn" } to this
+emit ReadFile { path = "hello.code" } to files get auto_undone
+emit Contains { text = auto_undone.content, part = "return Hi\n" } to this get auto_back
+assert auto_back.yes
+emit SetAgentMode { mode = "ask" } to this
 emit Run { command = "ai.toggle" } to this
 
 | Moved, the chat remembers where; Escape gives the keys back.

@@ -250,6 +250,20 @@ RepoMap { files, outline, chars } =>
     emit Clip { text = joined.value, chars = chars } to this get clipped
     return Text { text = clipped.text }
 
+| What the question says about the mode, for every AI alike.
+ModeNote { mode } =>
+    if mode = "ask", return Text { text = "(Ask mode: look and answer; change no files, run nothing that changes anything.)" }
+    if mode = "plan", return Text { text = "(Plan mode: look as much as you need, then answer with a plan for doing what is asked: the steps, the files, what changes in each, how it will be checked. Change no files yet — the plan is carried out after the user says go ahead.)" }
+    if mode = "auto", return Text { text = "(Auto mode: make the change and run what it needs, without asking; check each step is safe first. Say at the end what you changed.)" }
+    return Text { text = "" }
+
+| `mode` after `mode` (Alt+E): ask, plan, edit, auto, and round.
+NextMode { mode } =>
+    if mode = "ask", return Text { text = "plan" }
+    if mode = "plan", return Text { text = "edit" }
+    if mode = "edit", return Text { text = "auto" }
+    return Text { text = "ask" }
+
 tools_text = [
     "Tools (paths are relative to the project folder):"
     "- list_dir {\"path\"}: the entries of a folder (\".\" is the root)."
