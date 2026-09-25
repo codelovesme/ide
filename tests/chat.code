@@ -28,6 +28,19 @@ emit ChatInput { input = "   ", name = "enter", text = "", page = 10 } to this g
 assert empty.send = null
 emit ChatInput { input = "", name = "pageup", text = "", page = 10 } to this get up
 assert up.scroll = 10
+| ↑/↓: back through what was asked, then forward to the draft.
+emit Recall { history = ["one", "two"], at = 2, input = "thr", draft = "", step = -1 } to this get recall_two
+assert recall_two.input = "two" and recall_two.at = 1 and recall_two.draft = "thr"
+emit Recall { history = ["one", "two"], at = 1, input = "two", draft = "thr", step = -1 } to this get recall_one
+assert recall_one.input = "one" and recall_one.at = 0
+emit Recall { history = ["one", "two"], at = 0, input = "one", draft = "thr", step = -1 } to this get recall_first
+assert recall_first.input = "one" and recall_first.at = 0
+emit Recall { history = ["one", "two"], at = 1, input = "two", draft = "thr", step = 1 } to this get recall_draft
+assert recall_draft.input = "thr" and recall_draft.at = 2
+emit Recall { history = ["one", "two"], at = 2, input = "thr", draft = "", step = 1 } to this get recall_past
+assert recall_past.input = "thr" and recall_past.at = 2
+emit Recall { history = [], at = 0, input = "", draft = "", step = -1 } to this get recall_none
+assert recall_none.input = ""
 
 | Replies: a tool, an answer, JSON in a fence, and plain words.
 emit ReadReply { content = "{\"tool\": \"read_file\", \"args\": {\"path\": \"a.code\", \"from\": 1, \"to\": 20}}" } to this get tool

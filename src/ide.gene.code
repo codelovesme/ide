@@ -103,6 +103,12 @@ keytable = null
 chat_view = { kind = "chat", path = "AI Chat", store = "view" }
 chat = { turns = [], messages = [], input = "", busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null, pending = null, checkpoints = [], agent = null, session = "", session_for = "", snapshot = null, changed = null }
 chat_page = 10
+| The questions asked (oldest first) for ↑/↓ in the input box — kept
+| through New AI Chat — where ↑/↓ are in them (their count: on the
+| draft), and the question being written before ↑ was pressed.
+questions = []
+recall_at = 0
+recall_draft = ""
 models = {}
 model_key = ""
 procs = null
@@ -1121,10 +1127,25 @@ ChatKey { name, text } =>
     if name = "ctrl+c"
         emit Run { command = "ai.cancel" } to this
         return Handled
+    if name = "up" or name = "down"
+        step = -1
+        if name = "down", step = 1
+        emit Recall { history = questions, at = recall_at, input = chat.input, draft = recall_draft, step = step } to this get recalled
+        recall_at = recalled.at
+        recall_draft = recalled.draft
+        chat = chat + { input = recalled.input }
+        return Handled
     emit ChatInput { input = chat.input, name = name, text = text, page = chat_page } to this get typed
     scroll = chat.scroll + typed.scroll
     if scroll < 0, scroll = 0
     chat = chat + { input = typed.input, scroll = scroll }
+    if typed.send ≠ null
+        emit Length { value = questions } to core get { value as asked_count }
+        if asked_count = 0 or questions[asked_count - 1] ≠ typed.send
+            questions += typed.send
+            asked_count += 1
+        recall_at = asked_count
+        recall_draft = ""
     if typed.send ≠ null, emit AskAbout { question = typed.send } to this
     return Handled
 

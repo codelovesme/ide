@@ -22,7 +22,7 @@ ChatUses { json, strings } =>
 
 | A key in the chat's input box. `send` is the text to ask about when
 | Enter sent it (else null); `scroll` moves the conversation (lines, up
-| is more).
+| is more). ↑/↓ are `Recall`'s.
 ChatInput { input, name, text, page } =>
     if name = "enter"
         emit Trim { value = input } to texts get trimmed
@@ -36,10 +36,22 @@ ChatInput { input, name, text, page } =>
         return ChatInputResult { input = "", send = null, scroll = 0 }
     if name = "pageup", return ChatInputResult { input = input, send = null, scroll = page }
     if name = "pagedown", return ChatInputResult { input = input, send = null, scroll = 0 - page }
-    if name = "up", return ChatInputResult { input = input, send = null, scroll = 1 }
-    if name = "down", return ChatInputResult { input = input, send = null, scroll = -1 }
     if text ≠ "", return ChatInputResult { input = input + text, send = null, scroll = 0 }
     return ChatInputResult { input = input, send = null, scroll = 0 }
+
+| ↑ (`step` -1) and ↓ (1) in the input box: back through the questions
+| asked (`history`, oldest first) and forward again to what was being
+| written (`draft`). `at` is where it is: the history's length on the
+| draft.
+Recall { history, at, input, draft, step } =>
+    emit Length { value = history } to core get { value as size }
+    if at ≥ size
+        at = size
+        draft = input
+    next = at + step
+    if next < 0 or next > size, return Recalled { input = input, at = at, draft = draft }
+    if next = size, return Recalled { input = draft, at = size, draft = draft }
+    return Recalled { input = history[next], at = next, draft = draft }
 
 | The first `{` … the last `}` of `text`, or "" when it has none.
 Braced { text } =>

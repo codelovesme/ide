@@ -404,6 +404,17 @@ assert unset.chat.turns[1].role = "error"
 assert unset.chat.input = ""
 emit Framed to this get unset_frame
 assert unset_frame ∈ Screen
+| ↑ brings back the last question over what is being written, ↓ goes
+| back to that.
+emit HandleKey { name = "y", text = "y" } to this
+emit HandleKey { name = "up", text = "" } to this
+emit HandleKey { name = "up", text = "" } to this
+emit State to this get chat_recalled
+assert chat_recalled.chat.input = "hi"
+emit HandleKey { name = "down", text = "" } to this
+emit State to this get chat_draft_again
+assert chat_draft_again.chat.input = "y"
+emit HandleKey { name = "ctrl+u", text = "" } to this
 
 | A model set up (settings.json), and the project's own instructions.
 emit WriteFile { path = "AGENTS.md", content = "Indent with four spaces." } to files
