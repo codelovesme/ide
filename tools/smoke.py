@@ -100,7 +100,8 @@ check(not any(" AI Chat " in s.screen.row(r) for r in range(1, 39)), "ctrl+w clo
 
 # An agent behind the chat (the stand-in for Claude Code): switched to from
 # the Settings menu; the ide keeps answering keys while it works.
-s.keys(b"\x1bm", 1.5)                      # alt+m: the AIs, models, efforts side by side
+s.keys(b"\x1bm", 0.2)                      # alt+m: the AIs, models, efforts side by side
+check(s.wait_for(" AI —", 10), "the model picker opens after checking every AI")
 screen_text = s.screen.text()
 check(" Model" in screen_text and " Effort" in screen_text and "● local" in screen_text and "Claude Code" in screen_text and "Codex" in screen_text, "alt+m shows every AI, and its models and efforts, at once")
 check("local: not set up" in screen_text, "and how the AI under the cursor stands")

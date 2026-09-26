@@ -205,6 +205,16 @@ assert not missing_check.ready and missing_check.note = "/nowhere/claude is not 
 emit ProviderCheck { provider = { type = "openai-compatible", runner = "api", endpoint = "http://127.0.0.1:9", api_key_env = "", problem = "", models = null } } to this get down_check
 assert not down_check.ready and down_check.note = "not reachable at http://127.0.0.1:9"
 
+| Codex supplies its own complete catalogue. Hidden entries are kept and
+| labelled, and their own effort metadata survives beside listed entries.
+emit ProviderCheck { provider = { type = "codex", runner = "cli", command = tests_at.value + "/fake-agent.sh", problem = "", models = null, efforts = null } } to this get codex_catalogue
+assert codex_catalogue.ready
+assert codex_catalogue.models = ["listed-model", "hidden-model"]
+assert codex_catalogue.names["listed-model"] = "Listed Model"
+assert codex_catalogue.names["hidden-model"] = "Hidden Model (hidden)"
+assert codex_catalogue.levels["listed-model"] = { efforts = ["low", "medium"], default = "medium" }
+assert codex_catalogue.levels["hidden-model"] = { efforts = ["high"], default = "high" }
+
 | The agent's run, waited for, and its end handed in (as the pty would).
 AgentRun { question } =>
     emit AskAbout { question = question } to this

@@ -5,6 +5,13 @@
 # "slow" in it waits, to be stopped.
 # `auth status` (the model picker's check) answers signed in.
 if [ "$1 $2" = "auth status" ]; then echo '{"loggedIn": true}'; exit 0; fi
+# Codex uses different checks. Its catalogue deliberately includes one hidden
+# entry so the picker fixture proves that it does not silently omit models.
+if [ "$1 $2" = "login status" ]; then echo 'Logged in'; exit 0; fi
+if [ "$1 $2" = "debug models" ]; then
+  echo '{"models":[{"slug":"listed-model","display_name":"Listed Model","visibility":"list","default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"}]},{"slug":"hidden-model","display_name":"Hidden Model","visibility":"hide","default_reasoning_level":"high","supported_reasoning_levels":[{"effort":"high"}]}]}'
+  exit 0
+fi
 printf '%s\n' "$*" > "${TMPDIR:-/tmp}/ide-fake-agent-args"
 prompt=$(cat)
 case "$prompt" in *slow*) sleep 30 ;; esac

@@ -2252,11 +2252,13 @@ ProviderCheck { provider } =>
             emit Parse { text = catalog.stdout } to jsons get codex_listed
             if codex_listed ∉ Exception and codex_listed.value ∈ Object and codex_listed.value["models"] ∈ Array
                 loop one over codex_listed.value["models"]
-                    if one["slug"] ∈ String and one["visibility"] ≠ "hide"
+                    if one["slug"] ∈ String
                         found += one["slug"]
                         if one["display_name"] ∈ String
                             slug_name = one["slug"]
-                            names = names + { "$slug_name" = one["display_name"] }
+                            shown_name = one["display_name"]
+                            if one["visibility"] = "hide", shown_name = shown_name + " (hidden)"
+                            names = names + { "$slug_name" = shown_name }
                         takes = []
                         if one["supported_reasoning_levels"] ∈ Array
                             loop level over one["supported_reasoning_levels"]

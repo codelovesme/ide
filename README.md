@@ -149,7 +149,8 @@ open — ready, not installed, not signed in, not reachable, the key refused
 (`Claude Code · Opus 5.5 · high · Ask`).
 
 Nothing here is built into the ide. The models and efforts are the ones a
-tool reports itself — a server's `/v1/models`; Codex's catalogue, with the
+tool reports itself — a server's `/v1/models`; Codex's complete catalogue
+from `codex debug models`, with hidden entries labelled `(hidden)`, the
 efforts each model takes and its default — or, where it cannot say, the
 `"models"` / `"efforts"` lists in its entry, which win. A model there is a
 name, or `{ "id": "claude-opus-5-5", "name": "Opus 5.5" }` — the id is what
