@@ -12,9 +12,8 @@ Acceptance criteria:
       `approvals_reviewer="auto_review"` and does not emit
       `--approve-for-me` after `resume`.
 - [x] Ask and edit command generation remains unchanged.
-- [ ] `euglena test` passes, including the agent regression case.
+- [x] `euglena test` passes, including the agent regression case.
 
-Verification note: the new agent assertion passes in a clean worktree. The
-full suite still has pre-existing failures in the Ctrl+C cleanup and chat
-focus cases; the working checkout also contains unrelated editor changes
-that currently prevent the suite from starting there.
+Verified 2026-09-26: `cdlvsm euglena test` passed all 7 test files, including
+the Codex resume approval regression case. The implementation and regression
+assertion are in commit `a1ff973`.
