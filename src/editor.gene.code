@@ -78,9 +78,98 @@ WordMove { line, col, step } =>
             at += 1
     return Moved { col = at }
 
+| The keys that move the cursor — with Shift, they select.
+moves = { left = true, right = true, up = true, down = true, home = true, "end" = true, pageup = true, pagedown = true, "ctrl+left" = true, "ctrl+right" = true, "ctrl+home" = true, "ctrl+end" = true }
+
+| The selection of `buffer` in order: from `start` to `stop` (each
+| `{ row, col }`); `empty` when there is none. `buffer.anchor` is where it
+| began, the cursor where it ends.
+Selection { buffer } =>
+    here = { row = buffer.row, col = buffer.col }
+    anchor = buffer.anchor
+    if anchor = null, return Range { start = here, stop = here, empty = true }
+    if anchor.row = here.row and anchor.col = here.col, return Range { start = here, stop = here, empty = true }
+    if anchor.row < here.row or (anchor.row = here.row and anchor.col < here.col), return Range { start = anchor, stop = here, empty = false }
+    return Range { start = here, stop = anchor, empty = false }
+
+| The selected text (lines joined with "\n"), "" with none.
+SelectedText { buffer } =>
+    emit Selection { buffer = buffer } to this get picked
+    if picked.empty, return Text { text = "" }
+    start = picked.start
+    stop = picked.stop
+    if start.row = stop.row, return Text { text = buffer.lines[start.row][start.col, stop.col) }
+    out = buffer.lines[start.row][start.col, length)
+    r = start.row + 1
+    loop
+        if r ≥ stop.row, break
+        out = out + "\n" + buffer.lines[r]
+        r += 1
+    out = out + "\n" + buffer.lines[stop.row][0, stop.col)
+    return Text { text = out }
+
+| The selection taken out; the cursor where it began.
+DeleteSelection { buffer } =>
+    emit Selection { buffer = buffer } to this get picked
+    if picked.empty, return Edited { buffer = buffer + { anchor = null }, changed = false }
+    start = picked.start
+    stop = picked.stop
+    lines = buffer.lines
+    joined = lines[start.row][0, start.col) + lines[stop.row][stop.col, length)
+    lines = lines[0, start.row) + [joined] + lines(stop.row, length)
+    return Edited { buffer = buffer + { lines = lines, row = start.row, col = start.col, want = start.col, anchor = null }, changed = true }
+
+| `text` put in at the cursor, over the selection — its line breaks kept
+| (a paste).
+InsertText { buffer, text } =>
+    emit DeleteSelection { buffer = buffer } to this get cleared
+    current = cleared.buffer
+    emit Split { value = text, separator = "\n" } to texts get parts
+    pieces = parts.value
+    emit Length { value = pieces } to core get { value as count }
+    line = current.lines[current.row]
+    head = line[0, current.col)
+    tail = line[current.col, length)
+    if count = 1
+        emit Length { value = text } to core get { value as added }
+        lines = current.lines[0, current.row) + [head + text + tail] + current.lines(current.row, length)
+        return Edited { buffer = current + { lines = lines, col = current.col + added, want = current.col + added }, changed = true }
+    middle = []
+    if count > 2, middle = pieces[1, count - 1)
+    last_piece = pieces[count - 1]
+    emit Length { value = last_piece } to core get { value as last_size }
+    lines = current.lines[0, current.row) + [head + pieces[0]] + middle + [last_piece + tail] + current.lines(current.row, length)
+    return Edited { buffer = current + { lines = lines, row = current.row + count - 1, col = last_size, want = last_size }, changed = true }
+
 | One key applied to `buffer`. `page` is how many lines pageup/pagedown
-| move. Answers `Edited { buffer, changed }`.
+| move. Answers `Edited { buffer, changed }`. Shift and a move key select
+| (from `anchor`); typing, Enter, Backspace and Delete take the selection
+| out first; any other key lets it go. Ctrl+A selects everything.
 Edit { buffer, name, text, page } =>
+    emit Length { value = buffer.lines } to core get { value as count }
+    if name = "ctrl+a"
+        emit Length { value = buffer.lines[count - 1] } to core get { value as last }
+        return Edited { buffer = buffer + { anchor = { row = 0, col = 0 }, row = count - 1, col = last, want = last }, changed = false }
+    base_key = ""
+    if name[0, 6) = "shift+", base_key = name[6, length)
+    if name[0, 11) = "ctrl+shift+", base_key = "ctrl+" + name[11, length)
+    if base_key ≠ "" and moves[base_key] = true
+        keep = buffer.anchor
+        if keep = null, keep = { row = buffer.row, col = buffer.col }
+        emit EditPlain { buffer = buffer, name = base_key, text = "", page = page } to this get moved
+        return Edited { buffer = moved.buffer + { anchor = keep }, changed = false }
+    emit Selection { buffer = buffer } to this get picked
+    takes = text ≠ "" or name = "enter" or name = "backspace" or name = "delete"
+    if not picked.empty and takes
+        emit DeleteSelection { buffer = buffer } to this get cleared
+        if name = "backspace" or name = "delete", return cleared
+        emit EditPlain { buffer = cleared.buffer, name = name, text = text, page = page } to this get then
+        return Edited { buffer = then.buffer + { anchor = null }, changed = true }
+    emit EditPlain { buffer = buffer + { anchor = null }, name = name, text = text, page = page } to this get plain
+    return plain
+
+| One key, no selection involved.
+EditPlain { buffer, name, text, page } =>
     lines = buffer.lines
     row = buffer.row
     col = buffer.col
@@ -200,6 +289,21 @@ Edit { buffer, name, text, page } =>
             return Edited { buffer = buffer + { row = row + 1, col = 0, want = 0 }, changed = false }
         emit WordMove { line = line, col = col, step = step } to this get moved
         return Edited { buffer = buffer + { col = moved.col, want = moved.col }, changed = false }
+
+    | Ctrl+↑ / Ctrl+↓: the view a line up or down; the cursor only moves to
+    | stay in it.
+    if name = "ctrl+up" or name = "ctrl+down"
+        top = buffer.top
+        if top = null, top = 0
+        if name = "ctrl+up" and top > 0, top = top - 1
+        if name = "ctrl+down" and top < count - 1, top += 1
+        if row < top, row = top
+        if page > 0 and row > top + page - 1, row = top + page - 1
+        if row = buffer.row, return Edited { buffer = buffer + { top = top }, changed = false }
+        emit Length { value = lines[row] } to core get { value as there }
+        col = want
+        if col > there, col = there
+        return Edited { buffer = buffer + { top = top, row = row, col = col }, changed = false }
 
     | Up and down keep `want`, the column the cursor would like to be in.
     target = row

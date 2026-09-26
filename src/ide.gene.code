@@ -87,6 +87,11 @@ texts = null
 vars = null
 | A second `fs`, based in the settings folder rather than the open one.
 prefs = null
+| The desktop's clipboard: the `window` organelle's Copy / Paste (no window
+| is opened). Null when it could not be linked — then `copied`, the ide's
+| own, is all there is.
+clipboard = null
+copied = ""
 
 | The user's settings (see settings.gene.code), and where they are kept.
 settings = null
@@ -182,7 +187,29 @@ UseOrganelles { from } =>
     emit KeysUses { json = linked.json, strings = linked.strings } to this
     emit EditorUses { texts = linked.strings } to this
     emit RenderUses { texts = linked.strings, colours = linked.syntax } to this
+    emit LinkClipboard { from = from } to this
     return linked
+
+| The clipboard's organelle, on its own: an ide without it still starts.
+LinkClipboard { from } =>
+    link from + "/window.so" as window_at
+    clipboard = window_at
+    return Linked
+
+| `text` onto the clipboard (and kept, for a desktop without one).
+CopyText { text } =>
+    copied = text
+    if clipboard = null, return Copied
+    emit Copy { text = text } to clipboard get put
+    if put ∈ Exception, message = "Copied here only — the desktop's clipboard said: " + put.message
+    return Copied
+
+| What is on the clipboard.
+PasteText =>
+    if clipboard = null, return Text { text = copied }
+    emit Paste {} to clipboard get got
+    if got ∈ Exception, return Text { text = copied }
+    return Text { text = got.text }
 
 EuglenaHasBeenBorn { cell_name } =>
     emit UseOrganelles { from = "." } to this get bundled
@@ -1419,8 +1446,8 @@ InChat { id, particle } =>
 
 | The tab of conversation `id`.
 ChatTab { id } =>
-    if id = "1", return chat_view
-    return chat_view + { path = "AI Chat " + id, chat_id = id }
+    if id = "1", return chat_view + { _class = "ChatTab" }
+    return chat_view + { _class = "ChatTab", path = "AI Chat " + id, chat_id = id }
 
 | Ctrl+T in the chat: another conversation, in a tab of its own beside it.
 NewChatTab =>

@@ -11,7 +11,8 @@
     "pty": "pty",
     "strings": "strings",
     "syntax": "syntax",
-    "tty": "tty"
+    "tty": "tty",
+    "window": "window"
   },
   "runtime": "native",
   "title": "ide"
