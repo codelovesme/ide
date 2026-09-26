@@ -26,7 +26,7 @@
 parser = null
 texts = null
 
-AgentsUses { json, strings }  =>
+AgentsUses { json, strings } =>
     parser = json
     texts = strings
     return Using
@@ -78,7 +78,10 @@ AgentCommand { provider, mode, session, prompt_file, err_file, allow } =>
         sandbox = "read-only"
         if mode = "edit" or mode = "auto", sandbox = "workspace-write"
         line = line + " -c sandbox_mode=\"" + sandbox + "\""
-        if mode = "auto", line = line + " --approve-for-me"
+        | `codex exec` accepts this flag; its `resume` child does not. The
+        | config key is the equivalent for a resumed session.
+        if mode = "auto" and session = "", line = line + " --approve-for-me"
+        if mode = "auto" and session ≠ "", line = line + " -c approvals_reviewer=\"auto_review\""
         if provider.effort ≠ null and provider.effort ≠ ""
             emit Quoted { text = "model_reasoning_effort=\"" + provider.effort + "\"" } to this get effort
             line = line + " -c " + effort.text
