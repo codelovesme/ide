@@ -91,6 +91,15 @@ emit ProviderFor { settings = { "ai.provider" = "local", "ai.providers" = { loca
 assert unset.problem ≠ ""
 emit ProviderFor { settings = { "ai.provider" = "local", "ai.providers" = { local = { endpoint = "http://localhost:8080", model = "qwen", apiKeyEnv = "KEY" } } } } to this get local
 assert local.problem = "" and local.organelle = "localai" and local.model = "qwen" and local.context_tokens = 32768
+assert local.runner = "api" and local.update_url = null
+emit ProviderFor { settings = { "ai.provider" = "claude", "ai.providers" = { claude = { type = "claude-code" } } } } to this get claude_cli
+assert claude_cli.update_url = "https://registry.npmjs.org/%40anthropic-ai%2Fclaude-code/latest" and claude_cli.version_word = 0
+emit ProviderFor { settings = { "ai.provider" = "codex", "ai.providers" = { codex = { type = "codex" } } } } to this get codex_cli
+assert codex_cli.update_url = "https://registry.npmjs.org/%40openai%2Fcodex/latest" and codex_cli.version_word = 1
+emit VersionNewer { installed = "0.156.1", latest = "0.157.1" } to this get codex_update
+emit VersionNewer { installed = "2.1.283", latest = "2.1.283" } to this get same_claude
+emit VersionNewer { installed = "2.1.283", latest = "2.1.282" } to this get older_release
+assert codex_update ∈ Yes and same_claude ∈ No and older_release ∈ No
 emit ProviderFor { settings = { "ai.provider" = "cloud", "ai.providers" = { cloud = { type = "carrier-pigeon", endpoint = "x" } } } } to this get unknown
 assert unknown.problem ≠ ""
 emit ProviderConfig { provider = local, api_key = "k" } to this get config

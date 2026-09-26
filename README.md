@@ -148,6 +148,11 @@ open — ready, not installed, not signed in, not reachable, the key refused
 — and keeps its own model and effort. The status bar shows what is in use
 (`Claude Code · Opus 5.5 · high · Ask`).
 
+On startup, the ide checks the installed versions of configured Claude Code
+and Codex CLIs against their latest published package versions. If one is
+older, the status bar reports the installed and available versions. The ide
+does not install or update CLI tools; you choose how to update them.
+
 Nothing here is built into the ide. The models and efforts are the ones a
 tool reports itself — a server's `/v1/models`; Codex's complete catalogue
 from `codex debug models`, with hidden entries labelled `(hidden)`, the

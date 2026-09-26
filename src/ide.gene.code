@@ -130,6 +130,9 @@ procs = null
 | http_client: a model server's /v1/models, for the picker.
 web = null
 jsons = null
+cli_update_requests = {}
+cli_updates = {}
+cli_update_count = 0
 | What the chat says before anything is asked when no model is set up,
 | and the model (and, for an agent, the mode) on the rule over its input.
 chat_notice = ""
@@ -237,8 +240,56 @@ EuglenaHasBeenBorn { cell_name } =>
     cols = started.cols
     rows = started.rows
     running = true
+    emit CheckCliUpdates to this
     emit Render to this
     return Alive { cell_name = cell_name }
+
+| Check each configured coding-agent CLI once per IDE launch. The local
+| version command is quick; the registry request is asynchronous.
+CheckCliUpdates =>
+    all = settings["ai.providers"]
+    if all ∉ Object, return Nothing
+    loop name, entry over all
+        emit ProviderFor { settings = settings + { "ai.provider" = name } } to this get provider
+        if provider.runner ≠ "cli" or provider.update_url = null, continue
+        emit Run { command = provider.command, args = ["--version"], cwd = folder } to procs get installed
+        if installed ∈ Exception or not installed.success, continue
+        emit Split { value = installed.stdout, separator = " " } to texts get words
+        version = words.value[provider.version_word]
+        if version ∉ String or version = "", continue
+        emit Get { url = provider.update_url, timeout_seconds = 5, max_body_bytes = 262144, network_policy = "public_https", later = true } to web get requested
+        if requested ∈ Exception or requested ∉ Sent, continue
+        request_id = requested.value
+        cli_update_requests = cli_update_requests + { "$request_id" = { name = name, title = provider.title, installed = version } }
+    return Checked
+
+| Parse the numeric major.minor.patch components of a release version.
+VersionParts { version } =>
+    emit Split { value = version, separator = "." } to texts get split
+    parts = []
+    loop i, piece over split.value
+        if i ≥ 3, break
+        emit Split { value = piece, separator = "-" } to texts get version_head
+        emit Parse { text = version_head.value[0] } to jsons get number
+        if number ∈ Exception or number.value ∉ Number, return Version { parts = [] }
+        parts += number.value
+    return Version { parts = parts }
+
+VersionNewer { installed, latest } =>
+    emit VersionParts { version = installed } to this get old_parts
+    emit VersionParts { version = latest } to this get new_parts
+    if old_parts.parts[0] = null or new_parts.parts[0] = null, return No
+    i = 0
+    loop
+        if i ≥ 3, break
+        old = old_parts.parts[i]
+        new = new_parts.parts[i]
+        if old = null, old = 0
+        if new = null, new = 0
+        if new > old, return Yes
+        if new < old, return No
+        i += 1
+    return No
 
 Resize { cols as width, rows as height } =>
     cols = width
@@ -498,7 +549,7 @@ PlaceExplorer { slot } =>
 Reveal { group, tab } =>
     emit Stash to this
     held = groups[group] + { active = tab }
-    groups = groups[0, group) + [held] + groups(group, length)
+    groups = groups[0, group) + [held] + groups (group, length)
     current = group
     emit Unstash to this
     return Revealed
@@ -1111,7 +1162,6 @@ Render =>
     emit Draw { overlays = screen.overlays, cursor_row = screen.cursor_row, cursor_col = screen.cursor_col } to term
     return Rendered
 
-
 | ── The AI chat ────────────────────────────────────────────────────────
 
 | Ctrl+L: the chat — opened where it was last (settings: ai.chat.location)
@@ -1420,11 +1470,11 @@ SwapChat { id } =>
 | Which conversation asked `request` (the model's reply) or runs its
 | agent in terminal `pty`: its id, or "".
 ChatOwner { request, pty } =>
-    if request ≠ null and request ≠ -1 and chat.request = request, return Owner { id = chat_id }
+    if request ≠ null and request ≠ - 1 and chat.request = request, return Owner { id = chat_id }
     if pty ≠ null and chat.agent ≠ null and chat.agent.pty = pty, return Owner { id = chat_id }
     loop owner_id, one over chats
         if owner_id ≠ chat_id
-            if request ≠ null and request ≠ -1 and one.request = request, return Owner { id = owner_id }
+            if request ≠ null and request ≠ - 1 and one.request = request, return Owner { id = owner_id }
             if pty ≠ null and one.agent ≠ null and one.agent.pty = pty, return Owner { id = owner_id }
     return Owner { id = "" }
 
@@ -1622,7 +1672,6 @@ RunTool { tool, args } =>
         if diff.text = "", return Text { text = "No changes (or not a git repository)." }
         return diff
     return Text { text = "There is no tool called \"" + tool + "\". The tools: list_dir, read_file, grep, find_files, git_diff." }
-
 
 | A file's lines as the user has them: an open file as the editor holds
 | it, unsaved changes and all; else from the disk. `Text` when it cannot
@@ -1850,13 +1899,12 @@ UndoAiChanges =>
             if point.before ≠ null
                 emit Split { value = point.before, separator = "\n" } to texts get restored
                 tab = groups[at.group].tabs[at.tab] + { lines = restored.value, row = 0, col = 0, want = 0, top = 0, dirty = false }
-                emit PutActive { groups = groups[0, at.group) + [groups[at.group] + { active = at.tab }] + groups(at.group, length), current = at.group, buffer = tab } to this get put
+                emit PutActive { groups = groups[0, at.group) + [groups[at.group] + { active = at.tab }] + groups (at.group, length), current = at.group, buffer = tab } to this get put
                 groups = put.groups
     emit Unstash to this
     chat = chat + { checkpoints = [], turns = chat.turns + [{ role = "tool", text = "undid the AI's changes to " + count + " file(s)" }] }
     message = "The AI's changes are undone"
     return Undone
-
 
 | ── New File ───────────────────────────────────────────────────────────
 
@@ -1944,7 +1992,6 @@ RefreshTree { reveal } =>
     loop at, node over tree
         if node.path = reveal, tree_sel = at
     return Refreshed
-
 
 | ── Claude Code and Codex (agents.gene.code) ───────────────────────────
 
@@ -2104,8 +2151,8 @@ ReloadFiles { paths } =>
                     if row < 0, row = 0
                     changed_tab = tab + { lines = fresh.value, row = row, col = 0, want = 0 }
                     held = groups[at.group]
-                    tabs = held.tabs[0, at.tab) + [changed_tab] + held.tabs(at.tab, length)
-                    groups = groups[0, at.group) + [held + { tabs = tabs }] + groups(at.group, length)
+                    tabs = held.tabs[0, at.tab) + [changed_tab] + held.tabs (at.tab, length)
+                    groups = groups[0, at.group) + [held + { tabs = tabs }] + groups (at.group, length)
     emit Unstash to this
     emit Length { value = kept_edits } to core get { value as unsaved }
     if unsaved > 0
@@ -2219,6 +2266,23 @@ ProviderNames =>
 Log { source, level, message as logged } =>
     return Ignored
 
+| A public release registry answered one of CheckCliUpdates' requests.
+HttpResponse { status, body, _request_id } =>
+    check = cli_update_requests["$_request_id"]
+    if check = null or status ≠ 200, return Ignored
+    emit Parse { text = body } to jsons get package
+    if package ∈ Exception or package.value["version"] ∉ String, return Ignored
+    latest = package.value["version"]
+    emit VersionNewer { installed = check.installed, latest = latest } to this get newer
+    if newer ∉ Yes, return Ignored
+    notice = check.title + " update available: " + check.installed + " → " + latest
+    if cli_updates[check.name] = null, cli_update_count += 1
+    cli_updates = cli_updates + { "$check.name" = { title = check.title, installed = check.installed, latest = latest } }
+    if cli_update_count = 1, message = notice
+    if cli_update_count > 1, message = "CLI updates available — press Alt+M to review each CLI"
+    if running, emit Render to this
+    return Notified
+
 | Whether the provider `provider` (from ProviderFor) can be used now, the
 | models it offers — the ones settings list (`"models"`), else the ones it
 | says it has: a server's /v1/models, `codex debug models` — as ids, with
@@ -2323,7 +2387,10 @@ OpenModelPicker =>
         emit ProviderCheck { provider = provider } to this get check
         title = name
         if provider.title ≠ null, title = provider.title
-        found += { name = name, title = title, ready = check.ready, note = check.note, models = check.models, names = check.names, levels = check.levels, api = provider.runner = "api" }
+        note = check.note
+        update = cli_updates[name]
+        if update ≠ null, note = note + " · update available: " + update.installed + " → " + update.latest
+        found += { name = name, title = title, ready = check.ready, note = note, models = check.models, names = check.names, levels = check.levels, api = provider.runner = "api" }
         if name = settings["ai.provider"], at = i
     picker = { providers = found, col = 1, cursors = [at, 0, 0] }
     emit PickerAim to this
@@ -2399,7 +2466,7 @@ PickerKey { name } =>
         at = at - 10
         if at < 0, at = 0
     if at ≠ cursors[col]
-        picker = picker + { cursors = cursors[0, col) + [at] + cursors(col, length) }
+        picker = picker + { cursors = cursors[0, col) + [at] + cursors (col, length) }
         | Another AI under the cursor: its own choices in the other lists.
         if col = 0, emit PickerAim to this
     if (name = "enter" or name = "space") and count > 0
@@ -2433,7 +2500,6 @@ PickerSet { col, value } =>
     if not held.ready, message = "Error: AI: " + held.name + " is " + held.note
     return Set
 
-
 | ── Go Back / Go Forward ───────────────────────────────────────────────
 
 | Where the cursor is now, kept (see `spots`): a new spot when it is in
@@ -2448,7 +2514,7 @@ NoteSpot =>
         apart = here.row - last.row
         if apart < 0, apart = 0 - apart
         if apart < 10
-            spots = spots[0, spot_at) + [here] + spots(spot_at, length)
+            spots = spots[0, spot_at) + [here] + spots (spot_at, length)
             return Moved
     kept = spots[0, spot_at + 1) + [here]
     emit Length { value = kept } to core get { value as count }
@@ -2479,7 +2545,6 @@ GoSpot { step } =>
         file = file + { row = row, col = spot.col, want = spot.col }
     navigating = false
     return Went
-
 
 | ── Pane keys ──────────────────────────────────────────────────────────
 |
@@ -2562,7 +2627,7 @@ RestorePane { kind } =>
     emit FindView { groups = groups, path = focus_view.path, store = focus_view.store } to this get at
     if at.group ≥ 0
         held = groups[at.group] + { active = at.tab }
-        groups = groups[0, at.group) + [held] + groups(at.group, length)
+        groups = groups[0, at.group) + [held] + groups (at.group, length)
         current = at.group
     emit Unstash to this
     return Restored

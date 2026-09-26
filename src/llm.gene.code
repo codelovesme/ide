@@ -33,8 +33,8 @@
 
 types = {
     "openai-compatible" = { runner = "api", organelle = "localai" }
-    "claude-code" = { runner = "cli", title = "Claude Code" }
-    "codex" = { runner = "cli", title = "Codex" }
+    "claude-code" = { runner = "cli", title = "Claude Code", update_url = "https://registry.npmjs.org/%40anthropic-ai%2Fclaude-code/latest", version_word = 0 }
+    "codex" = { runner = "cli", title = "Codex", update_url = "https://registry.npmjs.org/%40openai%2Fcodex/latest", version_word = 1 }
 }
 
 default_context = 32768
@@ -66,7 +66,7 @@ ProviderFor { settings } =>
         if command ∉ String or command = ""
             command = "claude"
             if kind = "codex", command = "codex"
-        return Provider { name = name, type = kind, runner = "cli", title = types[kind].title, command = command, model = model, models = models, effort = effort, efforts = efforts, context_tokens = 200000, max_tokens = 8000, problem = "" }
+        return Provider { name = name, type = kind, runner = "cli", title = types[kind].title, command = command, update_url = types[kind].update_url, version_word = types[kind].version_word, model = model, models = models, effort = effort, efforts = efforts, context_tokens = 200000, max_tokens = 8000, problem = "" }
     endpoint = given["endpoint"]
     if endpoint = null or endpoint ∉ String or endpoint = ""
         return Provider { name = name, problem = "No AI model is set up: Settings > AI Model… and set ai.providers." + name + ".endpoint (e.g. http://localhost:8080)" }
