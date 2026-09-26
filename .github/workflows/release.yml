@@ -18,7 +18,7 @@ permissions:
 # what is latest (anonymous calls from shared runners get rate-limited).
 env:
   CDLVSM_EUGLENA_VERSION: v0.4.3
-  CDLVSM_CODE_VERSION: v2.9.0
+  CDLVSM_CODE_VERSION: v2.10.0
 
 jobs:
   release:
