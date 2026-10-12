@@ -1046,7 +1046,7 @@ LoadSettings =>
 | One setting changed from inside the ide (Ctrl+B, moving or resizing the
 | explorer): applied, and written to settings.json — which, if it is open
 | and unedited, shows the change too.
-StoreSetting { key, value } =>
+StoreSetting { key, value ∈ Any } =>
     settings = settings + { "$key" = value }
     emit WriteSettings { values = settings } to this get written_text
     emit WriteFile { path = "settings.json", content = written_text.text } to prefs get written
