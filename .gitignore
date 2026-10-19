@@ -25,3 +25,6 @@ dist/
 # tools/organelles.sh output
 organelles/
 standalone.code
+
+.test-mike/
+.test-mike-config/

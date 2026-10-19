@@ -309,7 +309,11 @@ Key { name, text } =>
 | A terminal's screen changed (pushed by the pty organelle): draw again.
 TerminalOutput { id } =>
     emit ChatOwner { request = null, pty = id } to this get owner
-    if owner.id ≠ "", emit InChat { id = owner.id, particle = AgentProgress } to this
+    if owner.id ≠ ""
+        | Acknowledge the hidden PTY output; otherwise its coalesced event
+        | stays pending and later structured tool requests never wake IDE.
+        emit Screen { id = id } to shells
+        emit InChat { id = owner.id, particle = AgentProgress } to this
     if running, emit Render to this
     return Drawn
 
@@ -653,6 +657,11 @@ NewTerminal { slot } =>
 PromptKey { name, text } =>
     asked = prompt
     | A command the AI wants to run: y runs it, n or Escape does not.
+    if asked.kind = "mike_question"
+        if name ≠ "y" and name ≠ "n" and name ≠ "escape", return Typed
+        prompt = null
+        emit InChat { id = asked.chat_id, particle = MikeAnswer { id = asked.id, yes = name = "y", local = asked.local } } to this
+        return Answered
     if asked.kind = "ai_run"
         if name ≠ "y" and name ≠ "n" and name ≠ "escape", return Typed
         prompt = null
@@ -709,6 +718,7 @@ OpenFolder { path } =>
         message = "Error: " + listing.message
         return Failed { reason = message }
     emit Children { entries = listing.entries, parent = "", depth = 0 } to this get kids
+    emit CloseMikeChats to this
     folder = configured.base_path
     tree = kids.nodes
     tree_sel = 0
@@ -792,7 +802,7 @@ OpenFile { path } =>
         return Failed
     emit Split { value = read.content, separator = "\n" } to texts get split
     emit EditorSlot to this get into
-    emit Show { buffer = { kind = "file", path = path, store = "workspace", lines = split.value, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false }, slot = into.slot } to this
+    emit Show { buffer = { kind = "file", path = path, store = "workspace", lines = split.value, disk_base = read.content, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false }, slot = into.slot } to this
     return Opened
 
 | `buffer` shown in the group in `slot`, in its tab, and focused.
@@ -931,7 +941,8 @@ SaveFile =>
     if written ∈ Failed
         message = "Error: " + written.reason
         return Failed
-    file = file + { dirty = false }
+    emit Join { value = file.lines, separator = "\n" } to texts get saved_text
+    file = file + { dirty = false, disk_base = saved_text.value }
     message = "Saved " + file.path
     | Saving settings.json is how an edit to it takes effect.
     if file.store = "prefs" and file.path = "settings.json"
@@ -1136,6 +1147,7 @@ TerminalScreens { placed } =>
     return Screens { screens = screens }
 
 Render =>
+    emit RestoreMikeQuestion to this
     if not running, return Skipped
     emit ChatNotice to this
     emit State to this get state
@@ -1211,6 +1223,9 @@ ChatNotice =>
         if provider.effort ≠ "", ai_status = ai_status + " · " + provider.effort
         chat_label = ai_status + " · " + mode + " (Alt+E) · Alt+M: switch"
         ai_status = ai_status + " · " + mode
+    if provider.problem = "" and provider.runner = "mike"
+        chat_label = "Mike · " + mode + " · shared local service"
+        ai_status = "Mike · " + mode
     if provider.problem = "" and provider.runner = "api"
         ai_status = provider.name
         if provider.model ≠ "", ai_status = ai_status + " · " + provider.model
@@ -1270,6 +1285,9 @@ AskAbout { question } =>
         return Failed
     emit Budget { context_tokens = provider.context_tokens, max_tokens = provider.max_tokens } to this get budget
     emit ShownFile to this get shown
+    if provider.runner = "mike"
+        emit AskMike { question = question, shown = shown.file } to this get started_mike
+        return started_mike
     emit GatherContext { question = question, shown = shown.file, budget = budget } to this get gathered
     if provider.runner = "cli"
         emit AskAgent { provider = provider, question = question, context = gathered.text } to this get started
@@ -1587,6 +1605,9 @@ TakeReply { content, reply_to } =>
 
 | A tool's result back to the model, which is asked again.
 ToolDone { tool, text } =>
+    if chat.agent ≠ null and chat.agent.type = "mike"
+        emit MikeResult { result = { state = "completed", text = text } } to this
+        return Told
     emit Clip { text = text, chars = chat.budget.tool } to this get cut
     note = "Result of " + tool + ":\n" + cut.text
     if chat.steps ≥ settings["ai.maxSteps"], note = note + "\n\nThat was the last step: answer now, with what you have."
@@ -1680,6 +1701,8 @@ FileLines { path } =>
     if file ≠ null and file.store = "workspace" and file.path = path, return Lines { lines = file.lines }
     emit FindView { groups = groups, path = path, store = "workspace" } to this get open_at
     if open_at.group ≥ 0, return Lines { lines = groups[open_at.group].tabs[open_at.tab].lines }
+    loop hidden over hidden_panes.file
+        if hidden.view.path = path and hidden.view.store = "workspace", return Lines { lines = hidden.view.lines }
     emit ReadFile { path = path } to files get read
     if read ∈ Exception, return Text { text = "Error: " + read.message }
     emit Split { value = read.content, separator = "\n" } to texts get split
@@ -1795,6 +1818,7 @@ DropProposal =>
     if pending = null, return Nothing
     chat = chat + { pending = null }
     if pending.tool = "run_command" and prompt ≠ null and prompt.kind = "ai_run", prompt = null
+    if prompt ≠ null and prompt.kind = "mike_question", prompt = null
     if pending.path ≠ null, emit CloseProposal { path = pending.path } to this
     return Dropped
 
@@ -1811,21 +1835,41 @@ DecideChange { accepted } =>
     if not accepted
         chat = chat + { turns = chat.turns + [{ role = "tool", text = "you rejected the change to " + pending.path }] }
         message = ""
+        if view.mike = true
+            emit MikeResult { result = { state = "rejected", text = "The user rejected this change. Nothing applied." } } to this
+            return Rejected
         emit ToolDone { tool = pending.tool, text = "The user rejected this change. Do not make it; say what you would do instead, or ask." } to this
         return Rejected
     emit ApplyChange { view = view } to this get applied
     if applied ∈ Text
         chat = chat + { turns = chat.turns + [{ role = "error", text = applied.text }] }
+        if view.mike = true
+            state = "conflict"
+            if applied.applied = true, state = "buffer_only"
+            emit MikeResult { result = { state = state, text = applied.text } } to this
+            return Failed
         emit ToolDone { tool = pending.tool, text = applied.text } to this
         return Failed
-    chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + pending.path + " (Ctrl+Z in the file undoes it; View > Undo AI Changes undoes them all)" }] }
-    emit ToolDone { tool = pending.tool, text = "The user accepted: " + pending.path + " is changed and saved." } to this
+    undo_note = "Ctrl+Z in the file undoes it; View > Undo AI Changes undoes them all"
+    if view.mike = true, undo_note = "Ctrl+Z undoes the buffer edit; save explicitly to put an undo on disk"
+    chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + pending.path + " (" + undo_note + ")" }] }
+    status = "changed and saved"
+    if view.mike = true and not view.save, status = "changed in the buffer only; not saved"
+    if view.mike = true
+        state = "buffer_only"
+        if view.save, state = "saved"
+        emit MikeResult { result = { state = state, text = "The user accepted: " + pending.path + " is " + status + "." } } to this
+        return Accepted
+    emit ToolDone { tool = pending.tool, text = "The user accepted: " + pending.path + " is " + status + "." } to this
     return Accepted
 
 | An accepted change made: a new file written, or an open (or opened)
 | file's lines replaced as one edit — Ctrl+Z undoes it — and saved. What
 | the file was first is kept, for Undo AI Changes.
 ApplyChange { view } =>
+    if view.mike = true
+        emit ApplyMikeChange { view = view } to this get applied_mike
+        return applied_mike
     path = view.target
     kept = false
     loop point over chat.checkpoints
@@ -2027,6 +2071,9 @@ AskAgent { provider, question, context } =>
 
 | What the agent has written since last time, into the chat.
 AgentProgress =>
+    if chat.agent ≠ null and chat.agent.type = "mike"
+        emit MikeProgress to this get progress
+        return progress
     agent = chat.agent
     if agent = null, return Nothing
     emit ReadFile { path = "runs/" + chat_id + "-out.jsonl" } to prefs get out
@@ -2050,6 +2097,12 @@ AgentProgress =>
 | The agent's program ended (or was stopped): the last of what it wrote,
 | why it failed if it did, and what it changed.
 AgentFinished =>
+    if chat.agent ≠ null and chat.agent.type = "mike"
+        emit MikeProgress to this
+        if not chat.agent.done, emit ChatFailed { text = "Mike editor connection closed; tools are unavailable. Accepted external work may still finish." } to this
+        if chat.agent.done and chat.agent.error = "", emit OfferPlan to this
+        chat = chat + { agent = null, busy = false }
+        return Finished
     emit AgentProgress to this
     agent = chat.agent
     if agent = null, return Nothing
@@ -2297,6 +2350,13 @@ ProviderCheck { provider } =>
     levels = {}
     ready = true
     note = "ready"
+    if provider.runner = "mike"
+        emit MikeBridgePath to this get bridge
+        emit Run { command = "/usr/bin/python3", args = [bridge.path, "--check"] } to procs get checked
+        if checked ∈ Exception, return Check { ready = false, note = "Mike transport unavailable (Python3)", models = [], names = {}, levels = {} }
+        emit Parse { text = checked.stdout } to jsons get state
+        if state ∈ Exception, return Check { ready = false, note = "Mike service unavailable", models = [], names = {}, levels = {} }
+        return Check { ready = state.value.ready, note = state.value.note, models = [], names = {}, levels = {} }
     if provider.type = "claude-code"
         emit Run { command = provider.command, args = ["auth", "status"], cwd = folder } to procs get auth
         if auth ∈ Exception, return Check { ready = false, note = provider.command + " is not installed", models = [], names = {}, levels = {} }
@@ -2493,6 +2553,7 @@ PickerSet { col, value } =>
                 if not takes, entry = entry + { effort = "" }
         if col = 2, entry = entry + { effort = value }
         emit StoreSetting { key = "ai.providers", value = all + { "$held.name" = entry } } to this
+    if held.name ≠ settings["ai.provider"], emit CloseMikeChats to this
     emit StoreSetting { key = "ai.provider", value = held.name } to this
     emit PickerAim to this
     emit ChatNotice to this
@@ -2642,3 +2703,277 @@ WithHidden =>
     loop item over away
         views += item.view
     return All { groups = groups + [{ slot = "hidden", tabs = views, active = 0 }] }
+
+| ── Mike: structured transport to the shared service, editor tools only ──
+
+mike_serial = 0
+mike_reads = []
+
+MikeBridgePath =>
+    configured_bridge = settings["ai.providers"]["mike"]["bridge"]
+    if configured_bridge ∈ String and configured_bridge ≠ "", return Bridge { path = configured_bridge }
+    emit Get { name = "IDE_MIKE_BRIDGE", default = "" } to vars get configured
+    if configured.value ≠ "", return Bridge { path = configured.value }
+    emit Run { command = "pwd", args = [] } to procs get here
+    emit Trim { value = here.stdout } to texts get clean
+    emit Run { command = "test", args = ["-f", clean.value + "/mike_bridge.py"] } to procs get bundled
+    if bundled ∉ Exception and bundled.success, return Bridge { path = clean.value + "/mike_bridge.py" }
+    return Bridge { path = clean.value + "/tools/mike_bridge.py" }
+
+AskMike { question, shown } =>
+    emit MikeBridgePath to this get bridge
+    emit Ambient { file = shown, focus = focus, tabs = [], recent = [], terminal = "", git = "" } to this get ambient
+    emit Clip { text = ambient.text, chars = 16000 } to this get bounded
+    path = null
+    if shown ≠ null, path = shown.path
+    emit InstructionPaths { path = path } to this get instructions
+    guidance = ""
+    loop candidate over instructions.paths
+        emit ReadFile { path = candidate } to files get read
+        if read ∉ Exception
+            emit Clip { text = read.content, chars = 1000 } to this get piece
+            guidance = guidance + "\n" + candidate + ":\n" + piece.text
+    emit Clip { text = guidance, chars = 4000 } to this get short_guidance
+    emit ModeNote { mode = settings["ai.agent.mode"] } to this get mode_note
+    request = { text = question, workspace = folder, editor = { mode = settings["ai.agent.mode"], context = bounded.text + "\nProject instructions:\n" + short_guidance.text + "\n" + mode_note.text } }
+    emit Stringify { value = request } to jsons get encoded
+    runs = settings_dir + "/runs"
+    emit CreateDir { path = "runs" } to prefs
+    emit Run { command = "chmod", args = ["700", runs] } to procs get secured
+    if secured ∈ Exception or not secured.success
+        emit ChatFailed { text = "Mike requires a private IDE runs directory" } to this
+        return Failed
+    prefix = "runs/" + chat_id + "-mike"
+    emit WriteFile { path = prefix + "-request.json", content = encoded.value } to prefs get wrote
+    if wrote ∈ Exception, return Failed
+    emit WriteFile { path = prefix + "-events.jsonl", content = "" } to prefs
+    emit WriteFile { path = prefix + "-reply.json", content = "{}" } to prefs
+    emit Open { cols = 80, rows = 10, cwd = folder, command = "/usr/bin/python3", args = [bridge.path, "--request", settings_dir + "/" + prefix + "-request.json", "--events", settings_dir + "/" + prefix + "-events.jsonl", "--reply", settings_dir + "/" + prefix + "-reply.json"] } to shells get opened
+    if opened ∈ Exception
+        emit ChatFailed { text = "Mike transport could not start: " + opened.message } to this
+        return Failed
+    chat = chat + { busy = true, request = -1, pending = null, agent = { pty = opened.id, type = "mike", title = "Mike", seen = 0, done = false, folder = folder, mode = settings["ai.agent.mode"], provider = settings["ai.provider"], turn = "", last_request = "", handled = [], error = "", steps = 0 } }
+    return Asked
+
+MikeProgress =>
+    agent = chat.agent
+    if agent = null, return Nothing
+    if agent.folder ≠ folder or agent.provider ≠ settings["ai.provider"] or agent.mode ≠ settings["ai.agent.mode"]
+        emit DropProposal to this
+        emit Close { id = agent.pty } to shells
+        chat = chat + { agent = agent + { done = true }, busy = false, pending = null, turns = chat.turns + [{ role = "error", text = "Mike context changed; old editor capabilities were detached." }] }
+        return Stopped
+    emit ReadFile { path = "runs/" + chat_id + "-mike-events.jsonl" } to prefs get events
+    if events ∈ Exception, return Nothing
+    emit Split { value = events.content, separator = "\n" } to texts get lines
+    emit Length { value = lines.value } to core get count
+    complete = count.value - 1
+    if complete ≤ agent.seen, return Nothing
+    | Advance before dispatch so redraw/result events cannot replay an edit.
+    chat = chat + { agent = agent + { seen = complete } }
+    loop line over lines.value[agent.seen, complete)
+        emit Parse { text = line } to jsons get parsed
+        if parsed ∈ Exception, continue
+        event = parsed.value
+        if event.kind = "started", chat = chat + { agent = chat.agent + { turn = event.turn_id }, session = event.turn_id }
+        if event.kind = "error"
+            if event.reset = true
+                chat = chat + { turns = [], messages = [], input = "", caret = null, queue = [], checkpoints = [], pending = null, mike_question = null, session = "" }
+                mike_reads = []
+            if prompt ≠ null and prompt.kind = "mike_question" and prompt.chat_id = chat_id, prompt = null
+            emit ChatFailed { text = event.text } to this
+            emit Close { id = chat.agent.pty } to shells
+            chat = chat + { agent = chat.agent + { done = true, error = event.text } }
+            return Failed
+        if event.kind = "progress"
+            view = event.view
+            if view.turn_id ≠ chat.agent.turn, continue
+            loop at, step over view.steps
+                if at ≥ chat.agent.steps
+                    chat = chat + { turns = chat.turns + [{ role = "tool", text = step.say + " [" + step.app + "/" + step.class + "]" }] }
+            emit Length { value = view.steps } to core get steps_count
+            chat = chat + { agent = chat.agent + { steps = steps_count.value } }
+            if view.stage = "confirm" and view.confirmation_id ≠ chat.agent.last_request
+                chat = chat + { agent = chat.agent + { last_request = view.confirmation_id } }
+                chat = chat + { turns = chat.turns + [{ role = "tool", text = view.say }] }
+                chat = chat + { mike_question = { kind = "mike_question", chat_id = chat_id, label = "Mike: y to approve, n to refuse: ", text = "", id = view.confirmation_id, local = false } }
+            if view.editor_request ∈ Object
+                seen_request = false
+                loop handled over chat.agent.handled
+                    if handled = view.editor_request.id, seen_request = true
+                if not seen_request
+                    chat = chat + { agent = chat.agent + { last_request = view.editor_request.id, handled = chat.agent.handled + [view.editor_request.id] } }
+                    emit MikeOperation { request = view.editor_request } to this
+            if view.stage = "done" or view.stage = "failed"
+                chat = chat + { mike_question = null }
+                if prompt ≠ null and prompt.kind = "mike_question" and prompt.chat_id = chat_id, prompt = null
+                role = "assistant"
+                error = ""
+                if view.stage = "failed"
+                    role = "error"
+                    error = view.reply
+                chat = chat + { busy = false, agent = chat.agent + { done = true, error = error }, turns = chat.turns + [{ role = role, text = view.reply }] }
+                emit RefreshMikeBuffers to this
+        if event.kind = "local" and event.work.approval_id ≠ chat.agent.last_request
+            chat = chat + { agent = chat.agent + { last_request = event.work.approval_id } }
+            emit Stringify { value = event.work.argv } to jsons get command
+            chat = chat + { turns = chat.turns + [{ role = "tool", text = "Local command in " + event.work.cwd + ": " + command.value }] }
+            chat = chat + { mike_question = { kind = "mike_question", chat_id = chat_id, label = "Mike local command: y to approve, n to refuse: ", text = "", id = event.work.approval_id, local = true } }
+    return Progressed
+
+MikeAnswer { id, yes, local } =>
+    if chat.agent = null or chat.agent.last_request ≠ id, return Ignored
+    chat = chat + { mike_question = null }
+    kind = "confirm"
+    if local, kind = "local"
+    emit MikeSend { value = { kind = kind, id = id, yes = yes, turn_id = chat.agent.turn } } to this
+    return Answered
+
+MikeSend { value } =>
+    emit Stringify { value = value } to jsons get encoded
+    emit WriteFile { path = "runs/" + chat_id + "-mike-reply.json", content = encoded.value } to prefs
+    return Sent
+
+MikeResult { result } =>
+    if chat.agent = null, return Unavailable
+    emit MikeSend { value = { kind = "editor", turn_id = chat.agent.turn, id = chat.agent.last_request, result = result } } to this
+    return Sent
+
+MikeOperation { request } =>
+    if chat.agent = null or folder ≠ chat.agent.folder, return Unavailable
+    if request.class = "ReadBuffer"
+        emit MikeRead { path = request.fields.path } to this get result
+        emit MikeResult { result = result } to this
+        return Read
+    if request.class = "SearchProject"
+        emit RunTool { tool = "grep", args = { pattern = request.fields.pattern } } to this get found
+        emit MikeResult { result = { state = "read", text = found.text } } to this
+        return Searched
+    if request.class = "EditBuffer"
+        emit MikeEdit { args = request.fields } to this get result
+        if result ∉ Waiting, emit MikeResult { result = result } to this
+        return result
+    emit MikeResult { result = { state = "unavailable", text = "No such editor tool is exposed." } } to this
+    return Unavailable
+
+MikeRead { path } =>
+    emit SafePath { path = path } to this get safe
+    if not safe.ok, return EditorResult { state = "refused", text = "Use a project-relative file path." }
+    emit FileLines { path = safe.path } to this get held
+    if held ∈ Text, return EditorResult { state = "unavailable", text = held.text }
+    emit Join { value = held.lines, separator = "\n" } to texts get text
+    emit Length { value = text.value } to core get size
+    if size.value > 16000, return EditorResult { state = "too_large", text = "File exceeds the bounded editor tool size (16000 characters). Narrow the request." }
+    emit ReadFile { path = safe.path } to files get disk
+    if disk ∈ Exception, return EditorResult { state = "unavailable", text = disk.message }
+    mike_serial += 1
+    revision = "editor-" + mike_serial
+    emit MikeBuffer { path = safe.path } to this get buffered
+    baseline = disk.content
+    if buffered.buffer ≠ null and buffered.buffer.disk_base ∈ String, baseline = buffered.buffer.disk_base
+    if baseline ≠ disk.content and buffered.buffer ≠ null and not buffered.buffer.dirty
+        emit RefreshMikeBuffers to this
+        return EditorResult { state = "conflict", text = "Disk changed; the clean buffer was refreshed. ReadBuffer again before editing." }
+    mike_reads += [{ id = revision, path = safe.path, folder = folder, turn = chat.agent.turn, chat = chat_id, lines = held.lines, disk = disk.content, baseline = baseline }]
+    emit Length { value = mike_reads } to core get cached
+    if cached.value > 64, mike_reads = mike_reads[cached.value - 64, length)
+    return EditorResult { state = "read", path = safe.path, revision = revision, content = text.value, unsaved = disk.content ≠ text.value, disk_changed_since_open = baseline ≠ disk.content, selection = "The current IDE supports a cursor, not a selection range." }
+
+MikeEdit { args } =>
+    if chat.agent = null or chat.agent.done = true or chat.agent.folder ≠ folder or chat.agent.provider ≠ settings["ai.provider"] or chat.agent.mode ≠ settings["ai.agent.mode"] or (chat.agent.mode ≠ "edit" and chat.agent.mode ≠ "auto"), return EditorResult { state = "refused", text = "Ask/Plan has no edit capability." }
+    before = null
+    loop read over mike_reads
+        if read.id = args.revision and read.path = args.path and read.folder = folder and read.turn = chat.agent.turn and read.chat = chat_id, before = read
+    if before = null, return EditorResult { state = "conflict", text = "ReadBuffer must supply the current file revision before editing." }
+    emit Length { value = args.content } to core get size
+    if size.value > 16000, return EditorResult { state = "refused", text = "Replacement exceeds 16000 characters." }
+    emit FileLines { path = args.path } to this get current_lines
+    if current_lines ∈ Text or current_lines.lines ≠ before.lines, return EditorResult { state = "conflict", text = "Buffer changed; re-read it and replan. Nothing applied." }
+    emit Split { value = args.content, separator = "\n" } to texts get split
+    emit DiffLines { old = before.lines, new = split.value, around = 3 } to this get diff
+    view = { kind = "diff", path = args.path + " ±", store = "ai", chat_id = chat_id, target = args.path, created = false, mike = true, expected = before, save = args.save = true, lines = split.value, diff = diff.lines, removed = diff.removed, added = diff.added, top = 0 }
+    if chat.agent.mode = "auto"
+        emit ApplyMikeChange { view = view } to this get applied
+        if applied ∈ Text
+            state = "conflict"
+            if applied.applied = true, state = "buffer_only"
+            return EditorResult { state = state, text = applied.text }
+        state = "buffer_only"
+        if view.save, state = "saved"
+        return EditorResult { state = state, text = "Applied " + args.path + "; " + state + ". Ctrl+Z undoes the buffer edit." }
+    emit EditorSlot to this get slot
+    emit Show { buffer = view, slot = slot.slot } to this
+    chat = chat + { pending = { tool = "mike_edit", path = args.path } }
+    message = "Mike proposes a change: a accepts, r rejects; revision checked again on acceptance"
+    return Waiting
+
+ApplyMikeChange { view } =>
+    if chat.agent = null or chat.agent.folder ≠ folder or chat.agent.mode ≠ settings["ai.agent.mode"] or chat.agent.provider ≠ settings["ai.provider"], return Text { text = "Editor scope changed; nothing applied." }
+    emit FileLines { path = view.target } to this get current_lines
+    if current_lines ∈ Text or current_lines.lines ≠ view.expected.lines, return Text { text = "Conflict: buffer changed while the diff waited. Re-read before editing." }
+    emit ReadFile { path = view.target } to files get disk
+    if disk ∈ Exception, return Text { text = "Could not check the current disk version." }
+    if view.save and view.expected.baseline ≠ view.expected.disk, return Text { text = "Conflict: disk changed since this buffer was opened. Reconcile the unsaved buffer with disk before saving." }
+    if view.save and disk.content ≠ view.expected.disk, return Text { text = "Conflict: disk changed. Buffer and disk were left untouched." }
+    loop hidden over hidden_panes.file
+        if hidden.view.path = view.target, emit RestorePane { kind = "file" } to this
+    emit OpenFile { path = view.target } to this
+    if file = null or file.path ≠ view.target, return Text { text = "File could not be opened; nothing applied." }
+    undo += { lines = file.lines, row = file.row, col = file.col }
+    file = file + { lines = view.lines, row = 0, col = 0, want = 0, dirty = true }
+    last_edit = ""
+    if view.save
+        emit SaveFile to this get saved
+        if saved ∉ Saved, return Text { text = "Buffer changed but save failed: " + message, applied = true }
+    return Applied
+
+RefreshMikeBuffers =>
+    | Disk changes never replace dirty buffers. Clean buffers refresh as the
+    | normal agent path does; dirty ones are re-read explicitly by ReadBuffer.
+    emit Stash to this
+    rebuilt = []
+    loop group over groups
+        tabs = []
+        loop tab over group.tabs
+            if tab.kind = "file" and tab.store = "workspace" and not tab.dirty
+                emit ReadFile { path = tab.path } to files get disk
+                if disk ∉ Exception
+                    emit Split { value = disk.content, separator = "\n" } to texts get read
+                    tab = tab + { lines = read.value, disk_base = disk.content }
+            tabs += tab
+        rebuilt += group + { tabs = tabs }
+    groups = rebuilt
+    emit Unstash to this
+    return Refreshed
+
+MikeBuffer { path } =>
+    if file ≠ null and file.store = "workspace" and file.path = path, return Buffered { buffer = file }
+    emit FindView { groups = groups, path = path, store = "workspace" } to this get at
+    if at.group ≥ 0, return Buffered { buffer = groups[at.group].tabs[at.tab] }
+    loop hidden over hidden_panes.file
+        if hidden.view.path = path and hidden.view.store = "workspace", return Buffered { buffer = hidden.view }
+    return Buffered { buffer = null }
+
+CloseMikeChats =>
+    ids = []
+    if chat.agent ≠ null and chat.agent.type = "mike", ids += chat_id
+    loop id, other over chats
+        if id ≠ chat_id and other.agent ≠ null and other.agent.type = "mike", ids += id
+    loop id over ids
+        emit InChat { id = id, particle = CloseMikeChat } to this
+    return Closed
+
+CloseMikeChat =>
+    if chat.agent = null or chat.agent.type ≠ "mike", return Nothing
+    emit DropProposal to this
+    emit Close { id = chat.agent.pty } to shells
+    if prompt ≠ null and prompt.kind = "mike_question" and prompt.chat_id = chat_id, prompt = null
+    chat = chat + { busy = false, agent = null, pending = null, mike_question = null, queue = [], turns = chat.turns + [{ role = "tool", text = "Mike editor scope detached; accepted external effects may still finish." }] }
+    return Closed
+
+RestoreMikeQuestion =>
+    | Never replace a user's unrelated save/open prompt with an AI approval.
+    if prompt ≠ null, return Waiting
+    if chat.agent ≠ null and chat.agent.type = "mike" and chat.agent.done ≠ true and chat.mike_question ∈ Object
+        prompt = chat.mike_question
+    return Restored

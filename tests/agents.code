@@ -118,7 +118,7 @@ emit HandleKey { name = "alt+m", text = "" } to this
 emit State to this get picking
 assert picking.picker.col = 1
 assert picking.picker_rows.held.name = "fake" and picking.picker_rows.held.ready
-assert picking.picker_rows.choices[0] = ["local", "claude", "codex", "fake"]
+assert picking.picker_rows.choices[0] = ["local", "claude", "codex", "mike", "fake"]
 assert picking.picker_rows.choices[1] = ["", "m1", "m2"]
 assert picking.picker_rows.choices[2] = ["", "low", "high"]
 emit Framed to this get picker_frame
@@ -151,7 +151,7 @@ assert local_frame ∈ Screen
 emit HandleKey { name = "end", text = "" } to this
 emit State to this get back_to_fake
 assert back_to_fake.picker_rows.chosen = ["fake", "m1", "high"]
-assert back_to_fake.picker.cursors = [3, 1, 2]
+assert back_to_fake.picker.cursors = [4, 1, 2]
 emit HandleKey { name = "escape", text = "" } to this
 emit State to this get closed_picker
 assert closed_picker.picker = null

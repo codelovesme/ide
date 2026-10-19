@@ -400,3 +400,12 @@ sends (no tmux or pyte needed).
 AI answers that appear as they are written, a meaning-based search index,
 suggestions as you type, remote providers. And Ctrl+P, find, the
 clipboard, the mouse, diagnostics from the language server, extensions.
+
+## Mike through the shared local service
+
+Alt+M now also offers **Mike**. It connects directly to the shared local
+service; Mike CLI is not required. Current editor buffers travel as bounded
+context, and Mike reads/edits through revision-aware editor tools. Ask/Plan
+are read-only; Edit uses the normal diff; Auto uses the same conflict checks.
+See [docs/mike.md](docs/mike.md) for sign-in, optional installation, scope,
+unsaved buffers, decisions, disconnect behavior and validation.
