@@ -2352,7 +2352,7 @@ ProviderCheck { provider } =>
     note = "ready"
     if provider.runner = "mike"
         emit MikeBridgePath to this get bridge
-        emit Run { command = "/usr/bin/python3", args = [bridge.path, "--check"] } to procs get checked
+        emit Run { command = "/usr/bin/python3", args = ["-I", bridge.path, "--check"] } to procs get checked
         if checked ∈ Exception, return Check { ready = false, note = "Mike transport unavailable (Python3)", models = [], names = {}, levels = {} }
         emit Parse { text = checked.stdout } to jsons get state
         if state ∈ Exception, return Check { ready = false, note = "Mike service unavailable", models = [], names = {}, levels = {} }
@@ -2748,7 +2748,7 @@ AskMike { question, shown } =>
     if wrote ∈ Exception, return Failed
     emit WriteFile { path = prefix + "-events.jsonl", content = "" } to prefs
     emit WriteFile { path = prefix + "-reply.json", content = "{}" } to prefs
-    emit Open { cols = 80, rows = 10, cwd = folder, command = "/usr/bin/python3", args = [bridge.path, "--request", settings_dir + "/" + prefix + "-request.json", "--events", settings_dir + "/" + prefix + "-events.jsonl", "--reply", settings_dir + "/" + prefix + "-reply.json"] } to shells get opened
+    emit Open { cols = 80, rows = 10, cwd = folder, command = "/usr/bin/python3", args = ["-I", bridge.path, "--request", settings_dir + "/" + prefix + "-request.json", "--events", settings_dir + "/" + prefix + "-events.jsonl", "--reply", settings_dir + "/" + prefix + "-reply.json"] } to shells get opened
     if opened ∈ Exception
         emit ChatFailed { text = "Mike transport could not start: " + opened.message } to this
         return Failed
