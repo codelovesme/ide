@@ -13,15 +13,46 @@ local-protocol client. Python is supplied/checked by that dependency. In a
 checkout the adapter also finds the adjacent `mike-desktop/client`; an explicit
 `MIKE_SERVICE_CLIENT_DIR` selects a development service client.
 
-Start/sign in to the shared service first. Existing Desktop pairing/session
-can be reused. IDE plus service is sufficient: alternatively load an account
-session token into `MIKE_IDE_TOKEN` from a protected environment before IDE
-starts. The transport passes it to the service for normal account verification,
-never to settings, project files, the model, command arguments or event logs.
-Never paste credentials into a shell command. A headless device enrollment
-alone is not permission to read an account's chat. Missing/stopped service,
-older protocol, missing editor capability or refused sign-in are shown as
-errors; IDE does not install/start a different service to conceal them.
+## Signing in
+
+Mike in IDE uses your codelovesme account. **Settings → Account: Sign In
+(codelovesme)** opens the ordinary browser page (`/desktop/connect`, the
+same handoff Mike Desktop and the desktop app windows use: one-use state,
+the session in a loopback POST body, never in a URL). Sign in there and press
+Connect. IDE plus the shared service is enough: no Mike Desktop or CLI, no
+copied token, no environment token. If the service is not running, sign-in
+(or a Mike question) starts the installed one — the user unit, else the
+launcher CDLVSM resolved (`.cdlvsm-deps/mike-service`), a checkout's, or
+`mike-service` on PATH; when none is installed IDE says so and starts nothing
+else.
+
+The session goes from the browser straight to the service's normal `attach`;
+IDE keeps only the account name (`account.json` beside settings, 0600) and
+never writes the token to settings, project files, run files, argv or logs.
+Every Mike question checks that the service is connected as that same
+account; otherwise it stops with the reason:
+
+| State | What IDE says / does |
+|---|---|
+| never signed in, or signed out of IDE | sign in |
+| browser closed / Account: Sign In again while waiting | sign-in cancelled, nothing changed (also after 5 min) |
+| session refused or expired | sign in again; the same account refreshes the service's session |
+| gateway unreachable | offline; IDE keeps its account, nothing is switched |
+| service signed in to a different account | refused, never switched |
+| service access revoked | sign in with Account: Switch Shared Mike Service |
+
+**Account: Sign Out of IDE** is IDE-local: Mike chats end, the account record
+is removed; the shared service, Desktop, CLI and other apps stay signed in.
+**Account: Switch Shared Mike Service…** is the explicit choice to move this
+computer's service to the account you sign in with (the service ends the old
+account's generation for every client, as Desktop's Connect does). A sign-in
+or account change closes running Mike chats; the transport also stops a turn
+whose service or IDE account changes. Signing in grants no local tool
+permissions and is not headless device enrollment. Open files and unsaved
+buffers are untouched by any of it.
+
+Missing/stopped service, older protocol or missing editor capability are
+shown as errors.
 
 ## Context and tools
 
@@ -107,7 +138,14 @@ it is executable client code and has the same trust as the user's IDE config.
   and local-model regressions and `tests/mike.code` (buffers, conflicts, save,
   undo, modes, versioned questions, account reset).
 - `python3 -m unittest discover -s tools -p test_mike_bridge.py`: structured
-  missing-service/protocol errors, no secret output or silent start.
+  missing-service/protocol errors, no secret output or silent start; the
+  sign-in handoff (state, origin, one use, cancel, refused, mismatch, switch,
+  no approvals) and the per-question account checks.
+- `tests/account.code`: the Account commands, cancel, sign-out ending a Mike
+  turn with the unsaved buffer kept.
+- `tools/mike-login-e2e.py`: a CDLVSM-shaped install (released mike-service,
+  no systemd bus, no Desktop/CLI) signing in through the real connect page in
+  Chromium, then a live Mike edit — see ticket 168.
 - `tools/mike-e2e.py`: real IDE binary/PTY, local service, central Mike/model,
   live buffer read, existing diff acceptance and buffer-only result against an
   isolated scratch stack. See ticket 162 for actual results and limitations.

@@ -137,6 +137,9 @@ commands = [
     { id = "ai.mode.auto", title = "AI Chat: Auto mode — changes and commands without asking" }
     { id = "ai.goAhead", title = "AI Chat: carry out the plan just made" }
     { id = "ai.switchModel", title = "AI Chat: pick the AI and its model (each checked: ready, signed in, reachable)" }
+    { id = "account.signIn", title = "Account: sign in to IDE with your codelovesme account (browser); again to cancel" }
+    { id = "account.signOut", title = "Account: sign out of IDE only; the shared Mike service stays signed in" }
+    { id = "account.switchService", title = "Account: sign in and explicitly move the shared Mike service to this account" }
     { id = "help.keys", title = "This list" }
     { id = "help.about", title = "About" }
 ]

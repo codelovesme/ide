@@ -96,6 +96,10 @@ copied = ""
 | The user's settings (see settings.gene.code), and where they are kept.
 settings = null
 settings_dir = ""
+| IDE account sign-in (codelovesme browser handoff, see mike_bridge.py
+| --login): the hidden terminal running it, or null. Only the account name
+| is kept, in account.json beside settings — never a token.
+login_pty = null
 | The side tracks' sizes (see layout.gene.code), from settings.
 sizes = { left = 30, right = 40, top = 10, bottom = 12 }
 | The key table (see keys.gene.code): the defaults and keybindings.json.
@@ -308,6 +312,9 @@ Key { name, text } =>
 
 | A terminal's screen changed (pushed by the pty organelle): draw again.
 TerminalOutput { id } =>
+    if login_pty ≠ null and id = login_pty
+        emit Screen { id = id } to shells
+        return Drawn
     emit ChatOwner { request = null, pty = id } to this get owner
     if owner.id ≠ ""
         | Acknowledge the hidden PTY output; otherwise its coalesced event
@@ -319,6 +326,10 @@ TerminalOutput { id } =>
 
 | A terminal's shell ended: its tab closes, as in VS Code.
 TerminalExited { id, code } =>
+    if login_pty ≠ null and id = login_pty
+        emit AccountSignedIn to this
+        if running, emit Render to this
+        return Finished
     still_hidden = []
     loop kept over hidden_panes.terminal
         if kept.view.id ≠ id, still_hidden += kept
@@ -476,6 +487,9 @@ Run { command } =>
     if command = "ai.goAhead", emit GoAhead to this
     if command = "ai.toggleMode", emit ToggleAgentMode to this
     if command = "ai.switchModel", emit OpenModelPicker to this
+    if command = "account.signIn", emit AccountSignIn { switch = false } to this
+    if command = "account.switchService", emit AccountSignIn { switch = true } to this
+    if command = "account.signOut", emit AccountSignOut to this
     if command = "terminal.scrollUp" or command = "terminal.scrollDown"
         emit Active { groups = groups, current = current } to this get scrolling
         if scrolling.buffer ≠ null and scrolling.buffer.kind = "terminal"
@@ -2352,7 +2366,7 @@ ProviderCheck { provider } =>
     note = "ready"
     if provider.runner = "mike"
         emit MikeBridgePath to this get bridge
-        emit Run { command = "/usr/bin/python3", args = ["-I", bridge.path, "--check"] } to procs get checked
+        emit Run { command = "/usr/bin/python3", args = ["-I", bridge.path, "--check", "--account-file", settings_dir + "/account.json"] } to procs get checked
         if checked ∈ Exception, return Check { ready = false, note = "Mike transport unavailable (Python3)", models = [], names = {}, levels = {} }
         emit Parse { text = checked.stdout } to jsons get state
         if state ∈ Exception, return Check { ready = false, note = "Mike service unavailable", models = [], names = {}, levels = {} }
@@ -2748,7 +2762,7 @@ AskMike { question, shown } =>
     if wrote ∈ Exception, return Failed
     emit WriteFile { path = prefix + "-events.jsonl", content = "" } to prefs
     emit WriteFile { path = prefix + "-reply.json", content = "{}" } to prefs
-    emit Open { cols = 80, rows = 10, cwd = folder, command = "/usr/bin/python3", args = ["-I", bridge.path, "--request", settings_dir + "/" + prefix + "-request.json", "--events", settings_dir + "/" + prefix + "-events.jsonl", "--reply", settings_dir + "/" + prefix + "-reply.json"] } to shells get opened
+    emit Open { cols = 80, rows = 10, cwd = folder, command = "/usr/bin/python3", args = ["-I", bridge.path, "--request", settings_dir + "/" + prefix + "-request.json", "--events", settings_dir + "/" + prefix + "-events.jsonl", "--reply", settings_dir + "/" + prefix + "-reply.json", "--account-file", settings_dir + "/account.json"] } to shells get opened
     if opened ∈ Exception
         emit ChatFailed { text = "Mike transport could not start: " + opened.message } to this
         return Failed
@@ -2953,6 +2967,61 @@ MikeBuffer { path } =>
     loop hidden over hidden_panes.file
         if hidden.view.path = path and hidden.view.store = "workspace", return Buffered { buffer = hidden.view }
     return Buffered { buffer = null }
+
+| ── IDE account: codelovesme sign-in for Mike ──
+|
+| Sign-in runs the existing browser handoff in a hidden terminal; running it
+| again while it waits cancels it. `switch` is the explicit choice to move
+| the shared Mike service to this account (never done silently). Sign-out is
+| IDE-local: the service and other apps on this computer stay signed in.
+AccountSignIn { switch } =>
+    if login_pty ≠ null
+        emit Close { id = login_pty } to shells
+        login_pty = null
+        message = "Sign-in cancelled; nothing changed"
+        return Cancelled
+    emit MikeBridgePath to this get bridge
+    emit CreateDir { path = "runs" } to prefs
+    emit Run { command = "chmod", args = ["700", settings_dir + "/runs"] } to procs get secured
+    if secured ∈ Exception or not secured.success
+        message = "Sign-in needs a private IDE runs directory"
+        return Failed
+    emit DeleteFile { path = "runs/login.json" } to prefs
+    line = ["-I", bridge.path, "--login", "--account-file", settings_dir + "/account.json", "--result", settings_dir + "/runs/login.json"]
+    if switch, line += "--switch"
+    emit Open { cols = 80, rows = 10, cwd = settings_dir, command = "/usr/bin/python3", args = line } to shells get opened
+    if opened ∈ Exception
+        message = "Sign-in could not start: " + opened.message
+        return Failed
+    login_pty = opened.id
+    message = "Finish signing in to codelovesme in your browser (Account: Sign In again cancels)"
+    return Started
+
+AccountSignedIn =>
+    login_pty = null
+    emit ReadFile { path = "runs/login.json" } to prefs get read
+    emit DeleteFile { path = "runs/login.json" } to prefs
+    if read ∈ Exception
+        message = "Sign-in ended without an answer; nothing changed"
+        return Failed
+    emit Parse { text = read.content } to jsons get outcome
+    if outcome ∈ Exception or outcome.value ∉ Object or outcome.value["note"] ∉ String
+        message = "Sign-in ended without an answer; nothing changed"
+        return Failed
+    message = outcome.value["note"]
+    | A new account (or a refreshed one) starts Mike afresh: old-account
+    | editor connections end here, as well as in the transport.
+    if outcome.value["signed_in"] = true, emit CloseMikeChats to this
+    return Done
+
+AccountSignOut =>
+    if login_pty ≠ null
+        emit Close { id = login_pty } to shells
+        login_pty = null
+    emit CloseMikeChats to this
+    emit DeleteFile { path = "account.json" } to prefs
+    message = "Signed out of IDE. The shared Mike service and other apps stay signed in."
+    return Done
 
 CloseMikeChats =>
     ids = []

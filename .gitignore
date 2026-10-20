@@ -28,3 +28,5 @@ standalone.code
 
 .test-mike/
 .test-mike-config/
+.test-account/
+.test-account-config/

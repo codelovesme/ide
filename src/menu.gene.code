@@ -51,6 +51,9 @@ menus = [
             { label = "AI: Switch Model…", command = "ai.switchModel" }
             { label = "AI: Next Mode (Ask, Plan, Edit, Auto)", command = "ai.toggleMode" }
             { label = "AI: Go Ahead with the Plan", command = "ai.goAhead" }
+            { label = "Account: Sign In (codelovesme)", command = "account.signIn" }
+            { label = "Account: Sign Out of IDE", command = "account.signOut" }
+            { label = "Account: Switch Shared Mike Service…", command = "account.switchService" }
         ]
     }
     {

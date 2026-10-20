@@ -404,7 +404,8 @@ clipboard, the mouse, diagnostics from the language server, extensions.
 ## Mike through the shared local service
 
 Alt+M now also offers **Mike**. It connects directly to the shared local
-service; Mike CLI is not required. Current editor buffers travel as bounded
+service; Mike Desktop and CLI are not required. Sign in with **Settings →
+Account: Sign In (codelovesme)** (your browser opens). Current editor buffers travel as bounded
 context, and Mike reads/edits through revision-aware editor tools. Ask/Plan
 are read-only; Edit uses the normal diff; Auto uses the same conflict checks.
 See [docs/mike.md](docs/mike.md) for sign-in, optional installation, scope,
