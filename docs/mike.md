@@ -143,9 +143,11 @@ it is executable client code and has the same trust as the user's IDE config.
   no approvals) and the per-question account checks.
 - `tests/account.code`: the Account commands, cancel, sign-out ending a Mike
   turn with the unsaved buffer kept.
-- `tools/mike-login-e2e.py`: a CDLVSM-shaped install (released mike-service,
+- `tools/mike-login-e2e.py` (and `E2E_PHASE=expiry` on a stack up with
+  `--token-seconds 90`): a CDLVSM-shaped install (released mike-service,
   no systemd bus, no Desktop/CLI) signing in through the real connect page in
-  Chromium, then a live Mike edit — see ticket 168.
+  Chromium, a live Mike edit, then offline, refused account, refresh, explicit
+  switch, revocation, expiry and sign-out on the real service — see ticket 168.
 - `tools/mike-e2e.py`: real IDE binary/PTY, local service, central Mike/model,
   live buffer read, existing diff acceptance and buffer-only result against an
   isolated scratch stack. See ticket 162 for actual results and limitations.

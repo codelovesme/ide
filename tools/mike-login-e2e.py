@@ -25,6 +25,7 @@ STACK = Path(os.environ.get('STACK_DIR', '/var/tmp/m168/stack'))
 PACKAGES = Path(os.environ['IDE_PACKAGES'])
 BUNDLE = PACKAGES / 'ide' / os.environ.get('IDE_VERSION', 'dev')
 stack = json.loads((STACK / 'stack.json').read_text())
+PHASE = os.environ.get('E2E_PHASE', 'main')  # main | expiry (needs a stack up with --token-seconds)
 os.environ['STACK_DIR'] = str(STACK)
 headless = runpy.run_path(str(MIKE / 'tools/headless-e2e.py'))
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -61,6 +62,18 @@ def chat():
     screen.keys(b'\x0c', 0.8)
     if 'shared local service' not in screen.screen.text():
         screen.keys(b'\x0c', 0.8)
+
+
+def until(probe, seconds, every=1.0):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            if probe():
+                return True
+        except Exception:
+            pass
+        screen.pump(every)
+    return False
 
 
 def opened_url(area, previous=''):
@@ -111,10 +124,11 @@ with tempfile.TemporaryDirectory(prefix='ide-login-e2e-') as temporary:
     recorder = area / 'browser.sh'
     recorder.write_text('#!/bin/sh\nprintf "%s\\n" "$1" >> ' + str(area / 'opened.txt') + '\n')
     recorder.chmod(0o700)
+    relay = headless['Relay'](int(stack['web'].rsplit(':', 1)[1]))  # the gateway, as the service reaches it
     keep = {k: v for k, v in os.environ.items() if k in ('LANG', 'LC_ALL', 'USER', 'LOGNAME')}
     env = dict(keep, HOME=str(home), XDG_CONFIG_HOME=str(home / '.config'), XDG_RUNTIME_DIR=str(runtime),
                PATH='/usr/bin:/bin', TERM='xterm-256color', BROWSER=str(recorder),
-               MIKE_SERVICE_HOST_URL=stack['web'])
+               MIKE_SERVICE_HOST_URL=f'http://127.0.0.1:{relay.port}')
     service_env = dict(env)  # what the IDE's own processes see; used for the observer below
     observer = None
     email, _ = headless['account']('ide168')    # account exists; its API token is not used
@@ -151,48 +165,103 @@ with tempfile.TemporaryDirectory(prefix='ide-login-e2e-') as temporary:
         check(json.loads((config / 'account.json').read_text()) == {'account': email}, 'IDE keeps only the account name')
         check(oct((config / 'account.json').stat().st_mode & 0o777) == '0o600', 'account record is private')
 
-        chat()
-        question = ('In the active a.code use ReadBuffer and EditBuffer to replace disk-value with done, preserving the UNSAVED- prefix. '
-                    'Use save=false (buffer only). Do not use terminal commands. Finish with IDE168DONE.')
-        screen.keys(question.encode() + b'\r', 1)
-        check(screen.wait_for('Mike proposes a change', 240), 'Mike answers through the shared service with live editor tools')
-        check(target.read_text() == 'disk-value\n', 'proposal has not changed disk')
-        screen.keys(b'a', 1)
-        check(screen.wait_for('IDE168DONE', 180), 'diff acceptance returns to Mike, which finishes')
-        check('UNSAVED-done' in screen.screen.text(), 'the IDE buffer holds the change; unsaved work kept')
-        check(target.read_text() == 'disk-value\n', 'buffer-only change not saved to disk')
+        if PHASE == 'expiry':
+            # Stack started with --token-seconds: the account session runs out.
+            observer = mike_service.MikeService('ide168-observer', approvals=False)
+            observer.attach(None, 'none')
+            check(until(lambda: observer.state().get('connection') == 'session_expired', 300, 5), 'service reports the session expired')
+            chat()
+            screen.keys(b'after expiry\r', 1)
+            check(screen.wait_for('session expired', 30), 'expiry is explicit in IDE')
+            menu(7)
+            again = opened_url(area, second)
+            check(browser(again, email).get('ok'), 'browser login again after expiry')
+            check(screen.wait_for('Signed in as ' + email, 30), 'same-account sign-in refreshes the expired session')
+            check(until(lambda: observer.state().get('connection') == 'connected', 90), 'service connected with the fresh session')
+        else:
+            chat()
+            question = ('In the active a.code use ReadBuffer and EditBuffer to replace disk-value with done, preserving the UNSAVED- prefix. '
+                        'Use save=false (buffer only). Do not use terminal commands. Finish with IDE168DONE.')
+            screen.keys(question.encode() + b'\r', 1)
+            check(screen.wait_for('Mike proposes a change', 240), 'Mike answers through the shared service with live editor tools')
+            check(target.read_text() == 'disk-value\n', 'proposal has not changed disk')
+            screen.keys(b'a', 1)
+            check(screen.wait_for('IDE168DONE', 180), 'diff acceptance returns to Mike, which finishes')
+            check('UNSAVED-done' in screen.screen.text(), 'the IDE buffer holds the change; unsaved work kept')
+            check(target.read_text() == 'disk-value\n', 'buffer-only change not saved to disk')
 
-        # A different account is refused, never switched silently.
-        menu(7)
-        third = opened_url(area, second)
-        check(browser(third, other).get('ok'), 'browser login as a second account')
-        check(screen.wait_for('Not switched: shared Mike uses ' + email, 30), 'a different account is refused explicitly')
-        observer = mike_service.MikeService('ide168-observer', approvals=False)
-        check(observer.attach(None, 'none').get('account') == email, 'shared service stays on the first account')
-        check(json.loads((config / 'account.json').read_text()) == {'account': email}, 'IDE account unchanged')
+            # A different account is refused, never switched silently.
+            menu(7)
+            third = opened_url(area, second)
+            check(browser(third, other).get('ok'), 'browser login as a second account')
+            check(screen.wait_for('Not switched: shared Mike uses ' + email, 30), 'a different account is refused explicitly')
+            observer = mike_service.MikeService('ide168-observer', approvals=False)
+            check(observer.attach(None, 'none').get('account') == email, 'shared service stays on the first account')
+            check(json.loads((config / 'account.json').read_text()) == {'account': email}, 'IDE account unchanged')
 
-        # Signing in again as the same account refreshes the service's session.
-        menu(7)
-        fourth = opened_url(area, third)
-        check(browser(fourth, email).get('ok'), 'browser login again as the same account')
-        check(screen.wait_for('Signed in as ' + email, 30), 'same-account sign-in refreshes, no switch')
-        check(observer.state().get('account') == email, 'other client kept across the refresh')
+            # Signing in again as the same account refreshes the service's session.
+            menu(7)
+            fourth = opened_url(area, third)
+            check(browser(fourth, email).get('ok'), 'browser login again as the same account')
+            check(screen.wait_for('Signed in as ' + email, 30), 'same-account sign-in refreshes, no switch')
+            check(observer.state().get('account') == email, 'other client kept across the refresh')
 
-        # IDE-local sign-out leaves the service and its other clients alone.
-        menu(8)
-        check(screen.wait_for('Signed out of IDE. The shared Mike service', 10), 'IDE-local sign-out')
-        check(observer.state().get('account') == email, 'other client still attached and signed in')
-        chat()
-        screen.keys(b'after sign-out\r', 1)
-        check(screen.wait_for('Signed out of IDE;', 30), 'after sign-out Mike is blocked in the IDE')
+            # Gateway offline: the service says so, IDE keeps its account, nothing switches.
+            relay.cut()
+            check(until(lambda: observer.state().get('connection') == 'offline', 120), 'service sees the gateway offline')
+            chat()
+            screen.keys(b'while offline\r', 1)
+            check(screen.wait_for('Mike is offline', 30), 'offline is an explicit state in IDE')
+            relay.restore()
+            check(until(lambda: observer.state().get('connection') == 'connected', 120), 'service reconnects by itself')
+            check(json.loads((config / 'account.json').read_text()) == {'account': email}, 'IDE account kept while offline')
 
-        tree = ''.join(p.read_text(errors='replace') for p in config.rglob('*') if p.is_file())
-        check('eyJ' not in tree, 'no session token in IDE settings, account or run files')
-        check(not any('eyJ' in line for line in processes()), 'no session token in any process argv')
-        mine = [line for line in processes() if str(area) in line or str(PACKAGES) in line]
-        check(not any('mike-desktop' in line or 'mike-cli' in line or 'desktop_webview' in line for line in mine),
-              'no Mike Desktop or CLI process')
-        check(sum(1 for line in mine if 'service/main.code' in line or 'mike-service run' in line) <= 1, 'one shared service, no second executor')
+            # The explicit switch moves the shared service; old sessions end.
+            menu(9)
+            fifth = opened_url(area, fourth)
+            check(browser(fifth, other).get('ok'), 'browser login as the second account for an explicit switch')
+            check(screen.wait_for('Signed in as ' + other, 30), 'explicit switch signs IDE in as the second account')
+            try:
+                observer.state(); ended = ''
+            except mike_service.ServiceError as error:
+                ended = error.error + ' ' + str(error.body.get('reason', ''))
+            check('account_changed' in ended or 'session_ended' in ended, 'old-account sessions end on the switch: ' + ended)
+            observer = mike_service.MikeService('ide168-observer', approvals=False)
+            check(observer.attach(None, 'none').get('account') == other, 'shared service now on the second account')
+
+            # Revoked access: explicit state; plain sign-in refuses, the switch reconnects.
+            observer.revoke()
+            observer = mike_service.MikeService('ide168-observer', approvals=False)
+            check(until(lambda: observer.attach(None, 'none').get('connection') in ('revoked', 'signed_out'), 30), 'device revoked')
+            chat()
+            screen.keys(b'after revoke\r', 1)
+            check(screen.wait_for('revoked', 30) or screen.wait_for('service is signed out', 5), 'revoked access is explicit in IDE')
+            menu(7)
+            sixth = opened_url(area, fifth)
+            check(browser(sixth, other).get('ok'), 'browser login after revocation')
+            check(screen.wait_for('access was revoked; use Account: Switch', 30), 'plain sign-in does not re-pair silently')
+            menu(9)
+            seventh = opened_url(area, sixth)
+            check(browser(seventh, other).get('ok'), 'browser login for the explicit reconnect')
+            check(screen.wait_for('Signed in as ' + other, 30), 'explicit switch reconnects the computer')
+            observer = mike_service.MikeService('ide168-observer', approvals=False)
+            check(observer.attach(None, 'none').get('connection') == 'connected', 'service connected again')
+
+            # IDE-local sign-out leaves the service and its other clients alone.
+            menu(8)
+            check(screen.wait_for('Signed out of IDE. The shared Mike service', 10), 'IDE-local sign-out')
+            check(observer.state().get('account') == other, 'other client still attached and signed in')
+            chat()
+            screen.keys(b'after sign-out\r', 1)
+            check(screen.wait_for('Signed out of IDE;', 30), 'after sign-out Mike is blocked in the IDE')
+
+            tree = ''.join(p.read_text(errors='replace') for p in config.rglob('*') if p.is_file())
+            check('eyJ' not in tree, 'no session token in IDE settings, account or run files')
+            check(not any('eyJ' in line for line in processes()), 'no session token in any process argv')
+            mine = [line for line in processes() if str(area) in line or str(PACKAGES) in line]
+            check(not any('mike-desktop' in line or 'mike-cli' in line or 'desktop_webview' in line for line in mine),
+                  'no Mike Desktop or CLI process')
+            check(sum(1 for line in mine if 'service/main.code' in line or 'mike-service run' in line) <= 1, 'one shared service, no second executor')
         screen.keys(b'\x11', 0.3)  # Ctrl+Q; refuse the unsaved prompt
         screen.keys(b'n', 0.3)
     finally:
