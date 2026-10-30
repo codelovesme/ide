@@ -213,6 +213,53 @@ everything sent is cut to fit it. Other kinds of providers (Anthropic,
 OpenAI's own) will be more `type`s, next to this one
 ([src/llm.gene.code](src/llm.gene.code)).
 
+### Voice input: Ctrl+Shift+Space
+
+Press Ctrl+Shift+Space (View > Voice Input) and speak; press it again
+when done. What you said lands in the AI chat's input box, at the cursor —
+not sent: read it, fix it, and Enter sends it to whichever AI is chosen
+(Claude Code, Codex, Mike, local). Escape while recording throws it away.
+The status bar shows `● REC` while it records; the ide keeps working while
+it records and while the recording is turned into words. It works from a
+terminal tab too.
+
+What turns the recording into words is yours to choose
+(`ai.voice.provider`); nobody has to sign up for anything:
+
+| | where the words are made | needs |
+|---|---|---|
+| `offline` | on this computer, by [whisper.cpp](https://github.com/ggml-org/whisper.cpp)'s `whisper-cli` (shipped beside the ide); nothing leaves it | its model, downloaded once — the ide asks first (ggml-base, 142 MB; sha256-checked) into `~/.cache/codelovesme-ide/models` |
+| `openai-compatible` | any `/v1/audio/transcriptions` — OpenAI, LocalAI, a whisper server | `ai.voice.endpoint`, `ai.voice.model`, and `ai.voice.apiKeyEnv` naming the variable that holds the key |
+| `mike` | Mike, through the shared Mike service | the IDE signed in to codelovesme (Settings > Account) |
+| `auto` (default) | Mike when signed in; else the endpoint when one is set; else offline | |
+
+```json
+"ai.voice.provider": "auto",
+"ai.voice.language": "",
+"ai.voice.offlineModel": "base",
+"ai.voice.endpoint": "",
+"ai.voice.model": "whisper-1",
+"ai.voice.apiKeyEnv": "",
+"ai.voice.recordCommand": ["pw-record", "--rate", "16000", "--channels", "1"],
+"ai.voice.maxSeconds": 60
+```
+
+`ai.voice.language` (`"tr"`, `"en"`, …; `""` guesses) makes short phrases
+heard better and faster. `ai.voice.offlineModel` is `"base"`, `"small"`
+(466 MB: better, about three times slower), or the full path of a model
+file of your own; `ai.voice.modelDir` and `ai.voice.whisperCommand` put
+them elsewhere. The recorder is PipeWire's `pw-record`, on the default
+microphone — `"--target", "<source>"` in `ai.voice.recordCommand` picks
+another (`pactl list short sources`); it stops by itself after
+`ai.voice.maxSeconds`. A key never goes into a file or onto a command
+line: the shell hands it to curl on its input.
+
+Claude Code's and Codex's own voice features cannot be used from here:
+they live inside their own screens (Claude's `/voice`, Codex's voice key),
+and their editor extensions talk to private services with the
+subscription's token. Run in an ide terminal tab (Ctrl+J), they keep their
+own voice.
+
 ### Tabs and editor groups
 
 Every open file has a tab; the active tab's file is shown, and opening a
@@ -257,6 +304,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+T | Another of what has the keys: a terminal in a terminal, an AI chat in the chat |
 | Ctrl+Shift+N | New Window: another ide on this folder |
 | Alt+M | The AI, its model and its effort |
+| Ctrl+Shift+Space | Voice input: record; again stops, and the words go into the AI chat's box (Escape throws the recording away) |
 
 In the editor: arrows, Home (first non-space, then column 0), End,
 PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab indents by
@@ -285,6 +333,7 @@ explorer writes it for you.
   "ai.providers": { "local": { "type": "openai-compatible", "endpoint": "http://localhost:8080", "…": "" } },
   "ai.chat.location": "r",
   "ai.maxSteps": 12,
+  "ai.voice.provider": "auto",
   "terminal.integrated.commandsToSkipShell": ["terminal.toggle", "focus.next", "…"]
 }
 ```
@@ -332,6 +381,7 @@ Enter, Ctrl+I is Tab, Ctrl+M is Enter.)
 | `context` | what the model is told: what is on screen, the instructions, the project map, the tools |
 | `llm` | which model, from settings: provider types and the particles each takes |
 | `agents` | Claude Code and Codex: the command that runs each, and their events read into the chat |
+| `voice` | voice input: which engine hears, the lines that record and hear, what came back, the words put in the box |
 
 Everything but `ide` is pure: a particle in, a particle out. State lives in
 one gene because a gene's top level is its handlers' whole world. A handler
@@ -353,6 +403,7 @@ curl -sSf https://raw.githubusercontent.com/codelovesme/cdlvsm/main/install.sh |
 cdlvsm install euglena      # brings code too
 cdlvsm euglena install      # the organelles pinned in .code/lock.json
 tools/organelles.sh         # …laid out where the ide links them from
+tools/whisper.sh            # whisper-cli for offline voice (git, cmake, a C++ compiler)
 cdlvsm euglena test
 IDE_FOLDER=~/some/project cdlvsm euglena run
 ```
@@ -363,9 +414,12 @@ A `v*` tag runs [the release workflow](.github/workflows/release.yml), which
 does exactly the above on a clean machine. Then
 [tools/package.sh](tools/package.sh) builds the ide as a program (`code
 build`) and lays out `ide-<tag>-x86_64-linux.tar.gz`: the program, [its
-launcher](bin/ide), and the ten organelles beside it. It needs no `code`
-interpreter to run. The smoke test proves that — it runs the bundle with no
-`code` on the machine and no module cache — before it is published.
+launcher](bin/ide), the organelles beside it, and `whisper-cli` for
+offline voice ([tools/whisper.sh](tools/whisper.sh): whisper.cpp at a pinned
+commit, no shared libraries of its own, x86-64 with AVX2). It needs no
+`code` interpreter to run. The smoke test proves that — it runs the bundle
+with no `code` on the machine and no module cache, voice input included —
+before it is published.
 
 The organelles are linked while the ide runs (`Organelles` in
 [src/ide.gene.code](src/ide.gene.code)), not when it is built: a top-level
@@ -387,8 +441,15 @@ the project map, providers from settings),
 [tests/agents.code](tests/agents.code) (Claude Code's and Codex's events,
 recorded from real runs in tests/fixtures, and the ide running
 [a stand-in agent](tests/fake-agent.sh): asked, continued, editing, its
-changes shown and undone, a missing program, stopped), all without a
-terminal.
+changes shown and undone, a missing program, stopped),
+[tests/voice.code](tests/voice.code) (the engine `auto` picks, the lines
+that record and hear — no key on a command line — the answers read, the
+words at the cursor, and the ide recording with
+[a stand-in recorder](tests/fake-recorder.sh) and
+[whisper-cli](tests/fake-whisper.sh): stopped by the same key, the words in
+the box, Escape, the model offered first, a missing recorder), all without
+a terminal. `python3 tools/test_mike_bridge.py` covers the Mike bridge,
+voice included.
 
 In a real terminal: `python3 tools/smoke.py` (from a checkout) or
 `python3 tools/smoke.py <bundle>/ide` — a pty, keys pressed, the screen read

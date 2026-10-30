@@ -27,8 +27,14 @@ else:
 config = tempfile.mkdtemp(prefix="ide-smoke-config-")
 os.makedirs(config + "/codelovesme-ide")
 open(config + "/codelovesme-ide/keybindings.json", "w").write('[ { "key": "ctrl+g", "command": "view.explorer" } ]\n')
-# The local model has no endpoint; "fake" stands in for Claude Code.
-open(config + "/codelovesme-ide/settings.json", "w").write('{ "ai.providers": { "local": { "type": "openai-compatible", "endpoint": "" }, "fake": { "type": "claude-code", "command": "%s/tests/fake-agent.sh" } } }\n' % app)
+# The local model has no endpoint; "fake" stands in for Claude Code. Voice
+# input is offline, with the tests' stand-in recorder and whisper-cli and a
+# model file that is not one.
+os.makedirs(config + "/models")
+open(config + "/models/ggml-base.bin", "w").write("not really a model\n")
+open(config + "/codelovesme-ide/settings.json", "w").write(('{ "ai.providers": { "local": { "type": "openai-compatible", "endpoint": "" }, "fake": { "type": "claude-code", "command": "%s/tests/fake-agent.sh" } }, '
+    '"ai.voice.provider": "offline", "ai.voice.modelDir": "%s/models", "ai.voice.recordCommand": ["%s/tests/fake-recorder.sh"], '
+    '"ai.voice.whisperCommand": "%s/tests/fake-whisper.sh" }\n') % (app, config, app, app))
 s = Session(argv, cwd, {"IDE_FOLDER": folder, "TERM": "xterm-256color", "XDG_CONFIG_HOME": config})
 failures = []
 def check(ok, what):
@@ -98,6 +104,21 @@ s.keys(b"\x0c", 0.8)                      # ctrl+l again gives the chat the keys
 s.keys(b"\x17", 0.8)                      # and ctrl+w closes its tab
 check(not any(" AI Chat " in s.screen.row(r) for r in range(1, 39)), "ctrl+w closes the chat")
 
+# Voice input: ctrl+shift+space as kitty's protocol sends it (cdlvsm-console
+# does, when asked) records; again stops it; the words land in the chat's
+# box, not sent.
+s.keys(b"\x1b[32;6u", 0.8)
+check("● REC" in s.screen.row(39) and "Recording" in s.screen.row(39), "ctrl+shift+space records: " + s.screen.row(39).strip()[:60])
+s.keys(b"\x1b[32;6u", 0.3)
+check(s.wait_for("Heard you", 10), "the same key stops it, and the words are heard")
+check(any("› open the readme" in s.screen.row(r) for r in range(30, 39)), "the words wait in the chat's box")
+s.keys(b"\x15\x1b", 0.8)                  # ctrl+u clears them; escape back to the files
+s.keys(b"\x0c", 0.8)
+s.keys(b"\x17", 0.8)
+if len(sys.argv) > 1:
+    whisper = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "whisper-cli")
+    check(os.access(whisper, os.X_OK) and os.system('"%s" --help > /dev/null 2>&1' % whisper) == 0, "the bundle carries whisper-cli, and it runs")
+
 # An agent behind the chat (the stand-in for Claude Code): switched to from
 # the Settings menu; the ide keeps answering keys while it works.
 s.keys(b"\x1bm", 0.2)                      # alt+m: the AIs, models, efforts side by side
@@ -135,7 +156,7 @@ s.keys(b"\x03", 0.8)
 s.keys(b"echo after-interrupt\r", 1.5)
 check("after-interrupt" in bottom().replace("echo after-interrupt", ""), "ctrl+c reaches the shell")
 s.keys(b"\x1bv", 0.6)                       # View menu (works from a terminal)
-s.keys(b"\x1b[B" * 11 + b"\r", 0.6)         # Move Tab…
+s.keys(b"\x1b[B" * 12 + b"\r", 0.6)         # Move Tab… (past Voice Input)
 s.keys(b"r\r", 1.5)
 right_half = "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
 check(" Terminal 1 " in right_half and "hello-ide" in right_half, "move tab: the terminal goes to the right, shell and all")

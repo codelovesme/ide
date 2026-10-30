@@ -74,7 +74,7 @@ max_spots = 50
 hidden_panes = { terminal = [], file = [] }
 | The pane keys run from inside a terminal too, whatever
 | terminal.integrated.commandsToSkipShell says.
-pane_commands = { "view.explorer" = true, "terminal.toggle" = true, "ai.toggle" = true, "editor.toggle" = true, "terminal.scrollUp" = true, "terminal.scrollDown" = true, "tab.newHere" = true, "window.new" = true }
+pane_commands = { "view.explorer" = true, "terminal.toggle" = true, "ai.toggle" = true, "editor.toggle" = true, "terminal.scrollUp" = true, "terminal.scrollDown" = true, "tab.newHere" = true, "window.new" = true, "ai.voice" = true }
 | How far back each terminal is scrolled (Shift+PgUp), by its id.
 terminal_scrolls = {}
 
@@ -100,6 +100,11 @@ settings_dir = ""
 | --login): the hidden terminal running it, or null. Only the account name
 | is kept, in account.json beside settings — never a token.
 login_pty = null
+| Voice input (voice.gene.code): `{ stage, pty, engine }` while the
+| recorder, the engine that hears, or the model's download runs in a
+| hidden terminal — stage "recording", "hearing" or "downloading" — else
+| null.
+voice = null
 | The side tracks' sizes (see layout.gene.code), from settings.
 sizes = { left = 30, right = 40, top = 10, bottom = 12 }
 | The key table (see keys.gene.code): the defaults and keybindings.json.
@@ -190,6 +195,7 @@ UseOrganelles { from } =>
     emit ChatUses { json = linked.json, strings = linked.strings } to this
     emit ContextUses { strings = linked.strings } to this
     emit AgentsUses { json = linked.json, strings = linked.strings } to this
+    emit VoiceUses { json = linked.json, strings = linked.strings } to this
     emit SettingsUses { json = linked.json } to this
     emit KeysUses { json = linked.json, strings = linked.strings } to this
     emit EditorUses { texts = linked.strings } to this
@@ -315,6 +321,9 @@ TerminalOutput { id } =>
     if login_pty ≠ null and id = login_pty
         emit Screen { id = id } to shells
         return Drawn
+    if voice ≠ null and id = voice.pty
+        emit Screen { id = id } to shells
+        return Drawn
     emit ChatOwner { request = null, pty = id } to this get owner
     if owner.id ≠ ""
         | Acknowledge the hidden PTY output; otherwise its coalesced event
@@ -328,6 +337,10 @@ TerminalOutput { id } =>
 TerminalExited { id, code } =>
     if login_pty ≠ null and id = login_pty
         emit AccountSignedIn to this
+        if running, emit Render to this
+        return Finished
+    if voice ≠ null and id = voice.pty
+        emit VoiceStepDone to this
         if running, emit Render to this
         return Finished
     still_hidden = []
@@ -368,6 +381,10 @@ HandleKey { name, text } =>
         emit MenuKey { open = menu, name = name } to this get chosen
         menu = chosen.open
         if chosen.command ≠ null, emit Run { command = chosen.command } to this
+        return Handled
+    | Escape while recording throws the recording away, wherever the keys are.
+    if name = "escape" and voice ≠ null and voice.stage = "recording"
+        emit VoiceCancel to this
         return Handled
     | A terminal gets every key but the few commands that skip the shell,
     | so Ctrl+C, Ctrl+E, Ctrl+W… are the shell's, as in VS Code.
@@ -487,6 +504,8 @@ Run { command } =>
     if command = "ai.goAhead", emit GoAhead to this
     if command = "ai.toggleMode", emit ToggleAgentMode to this
     if command = "ai.switchModel", emit OpenModelPicker to this
+    if command = "ai.voice", emit VoiceToggle to this
+    if command = "ai.voice.cancel", emit VoiceCancel to this
     if command = "account.signIn", emit AccountSignIn { switch = false } to this
     if command = "account.switchService", emit AccountSignIn { switch = true } to this
     if command = "account.signOut", emit AccountSignOut to this
@@ -680,6 +699,13 @@ PromptKey { name, text } =>
         if name ≠ "y" and name ≠ "n" and name ≠ "escape", return Typed
         prompt = null
         emit InChat { id = asked.chat_id, particle = AnswerRun { yes = name = "y" } } to this
+        return Answered
+    | The offline speech model, fetched only when y says so.
+    if asked.kind = "voice_download"
+        if name ≠ "y" and name ≠ "n" and name ≠ "escape", return Typed
+        prompt = null
+        if name = "y", emit VoiceDownload to this
+        if name ≠ "y", message = "No speech model fetched; ai.voice.provider can name a speech server or Mike instead"
         return Answered
     if name = "escape"
         prompt = null
@@ -1105,6 +1131,8 @@ OpenPrefsFile { name } =>
 | Everything the screen is drawn from, in one particle.
 State =>
     emit Stash to this
+    voice_stage = ""
+    if voice ≠ null, voice_stage = voice.stage
     picker_rows = null
     if picker ≠ null
         emit PickerRows to this get rows_now
@@ -1134,6 +1162,7 @@ State =>
         chat_notice = chat_notice
         chat_label = chat_label
         ai_status = ai_status
+        voice = voice_stage
         settings = settings
     }
 
@@ -3046,3 +3075,230 @@ RestoreMikeQuestion =>
     if chat.agent ≠ null and chat.agent.type = "mike" and chat.agent.done ≠ true and chat.mike_question ∈ Object
         prompt = chat.mike_question
     return Restored
+
+| ── Voice input (voice.gene.code) ─────────────────────────────────────
+
+| Ctrl+Shift+Space: start recording, or stop the recording under way. The
+| engine that will hear it is picked first, so a missing offline model is
+| offered before anything is recorded.
+VoiceToggle =>
+    if voice ≠ null and voice.stage = "recording"
+        emit Type { id = voice.pty, name = "ctrl+c", text = "" } to shells
+        message = "Stopping the recording…"
+        return Stopping
+    if voice ≠ null and voice.stage = "hearing"
+        message = "Still turning the last recording into words…"
+        return Busy
+    if voice ≠ null
+        message = "Still downloading the speech model…"
+        return Busy
+    emit ReadFile { path = "account.json" } to prefs get account
+    emit VoiceEngine { settings = settings, signed_in = account ∉ Exception } to this get engine
+    if engine.title = null
+        message = "Error: ai.voice.provider is \"auto\", \"offline\", \"openai-compatible\" or \"mike\""
+        return Failed
+    if engine.name = "offline"
+        emit OfflineModel to this get model
+        if not model.present and model.ours
+            prompt = { kind = "voice_download", label = "Offline voice needs the speech model " + model.file + " (" + model.size + ", once) — download it now? (y / n) ", text = "" }
+            return Asking
+        if not model.present
+            message = "Error: Voice: no speech model at " + model.path + " (ai.voice.offlineModel)"
+            return Failed
+        emit WhisperPath to this get whisper
+        if whisper.path = ""
+            message = "Error: Voice: whisper-cli is missing — reinstall the ide, or name it in ai.voice.whisperCommand"
+            return Failed
+    emit VoiceRuns to this get runs
+    if runs ∉ Runs
+        message = "Error: Voice needs a private IDE runs directory"
+        return Failed
+    emit DeleteFile { path = "runs/voice.wav" } to prefs
+    emit RecordLine { settings = settings, wav = runs.dir + "/voice.wav", err = runs.dir + "/voice-err.txt" } to this get line
+    emit Open { cols = 80, rows = 5, cwd = runs.dir, command = line.command, args = line.args } to shells get opened
+    if opened ∈ Exception
+        message = "Error: Voice: the recorder could not start: " + opened.message
+        return Failed
+    voice = { stage = "recording", pty = opened.id, engine = engine.name, title = engine.title }
+    emit VoiceKey to this get key
+    message = "● Recording — " + key.text + " stops, Escape throws it away"
+    return Recording
+
+| The key that runs ai.voice, as shown.
+VoiceKey =>
+    label = keytable.labels["ai.voice"]
+    if label = null, return Text { text = "View > Voice Input" }
+    return Text { text = label }
+
+| The recording thrown away, or the hearing or download given up.
+VoiceCancel =>
+    if voice = null, return Nothing
+    emit Close { id = voice.pty } to shells
+    voice = null
+    emit VoiceTidy to this
+    message = "Voice input cancelled"
+    return Cancelled
+
+| The runs folder, private, as a full path.
+VoiceRuns =>
+    emit CreateDir { path = "runs" } to prefs
+    emit Run { command = "pwd", args = [], cwd = settings_dir + "/runs" } to procs get here
+    if here ∈ Exception or not here.success, return Failed
+    emit Trim { value = here.stdout } to texts get dir
+    emit Run { command = "chmod", args = ["700", dir.value] } to procs get secured
+    if secured ∈ Exception or not secured.success, return Failed
+    return Runs { dir = dir.value }
+
+| The recording and what was heard, removed.
+VoiceTidy =>
+    emit DeleteFile { path = "runs/voice.wav" } to prefs
+    emit DeleteFile { path = "runs/voice.json" } to prefs
+    emit DeleteFile { path = "runs/voice-err.txt" } to prefs
+    return Tidied
+
+| The offline model settings name: where it is, whether it is there, and
+| whether it is one of ours (then it can be fetched).
+OfflineModel =>
+    dir = settings["ai.voice.modelDir"]
+    if dir = ""
+        emit Get { name = "XDG_CACHE_HOME", default = "" } to vars get cache
+        dir = cache.value
+        if dir = ""
+            emit Get { name = "HOME", default = "/" } to vars get home
+            dir = home.value + "/.cache"
+        dir = dir + "/codelovesme-ide/models"
+    emit OfflineModelAt { name = settings["ai.voice.offlineModel"], dir = dir } to this get model
+    emit Run { command = "test", args = ["-s", model.path] } to procs get there
+    return Model { path = model.path, file = model.file, size = model.size, sha256 = model.sha256, url = model.url, ours = model.ours, present = there ∉ Exception and there.success }
+
+| whisper-cli: as settings name it, else beside the ide (a release bundle),
+| else in organelles/ (a checkout, tools/whisper.sh), else on the PATH;
+| "" when there is none.
+WhisperPath =>
+    named = settings["ai.voice.whisperCommand"]
+    if named ≠ "", return Whisper { path = named }
+    emit Run { command = "pwd", args = [] } to procs get here
+    emit Trim { value = here.stdout } to texts get clean
+    loop candidate over [clean.value + "/whisper-cli", clean.value + "/organelles/whisper-cli"]
+        emit Run { command = "test", args = ["-x", candidate] } to procs get found
+        if found ∉ Exception and found.success, return Whisper { path = candidate }
+    emit Run { command = "sh", args = ["-c", "command -v whisper-cli"] } to procs get on_path
+    if on_path ∉ Exception and on_path.success
+        emit Trim { value = on_path.stdout } to texts get path
+        return Whisper { path = path.value }
+    return Whisper { path = "" }
+
+| The hidden terminal voice is waiting on ended: the next step.
+VoiceStepDone =>
+    stage = voice.stage
+    if stage = "recording", emit VoiceRecorded to this
+    if stage = "hearing", emit VoiceHeard to this
+    if stage = "downloading", emit VoiceModelFetched to this
+    return Stepped
+
+| What the step's program said on stderr, its last line.
+VoiceComplaint =>
+    emit ReadFile { path = "runs/voice-err.txt" } to prefs get err
+    if err ∈ Exception, return Text { text = "" }
+    emit Trim { value = err.content } to texts get trimmed
+    emit LastLines { text = trimmed.value, count = 1 } to this get last
+    emit Clip { text = last.text, chars = 160 } to this get short
+    return Text { text = short.text }
+
+| The recorder stopped: hand the WAV to the engine, unless nothing was
+| recorded (a tenth of a second is 3200 bytes).
+VoiceRecorded =>
+    engine = voice.engine
+    title = voice.title
+    voice = null
+    emit VoiceRuns to this get runs
+    if runs ∉ Runs
+        message = "Error: Voice needs a private IDE runs directory"
+        return Failed
+    wav = runs.dir + "/voice.wav"
+    emit Run { command = "sh", args = ["-c", "test \"\$(wc -c < \"\$1\")\" -gt 3244", "sh", wav] } to procs get long_enough
+    if long_enough ∈ Exception or not long_enough.success
+        emit VoiceComplaint to this get why
+        message = "Error: Voice: nothing was recorded"
+        if why.text ≠ "", message = message + " — " + why.text
+        emit VoiceTidy to this
+        return Failed
+    emit DeleteFile { path = "runs/voice.json" } to prefs
+    emit DeleteFile { path = "runs/voice-err.txt" } to prefs
+    model_path = ""
+    whisper_path = ""
+    if engine = "offline"
+        emit OfflineModel to this get model
+        model_path = model.path
+        emit WhisperPath to this get whisper
+        whisper_path = whisper.path
+    emit MikeBridgePath to this get bridge
+    emit TranscribeLine { engine = engine, settings = settings, wav = wav, out = runs.dir + "/voice.json", err = runs.dir + "/voice-err.txt", model = model_path, whisper = whisper_path, bridge = bridge.path, account_file = settings_dir + "/account.json" } to this get line
+    if line ∈ Problem
+        message = "Error: Voice: " + line.text
+        emit VoiceTidy to this
+        return Failed
+    emit Open { cols = 80, rows = 5, cwd = runs.dir, command = line.command, args = line.args } to shells get opened
+    if opened ∈ Exception
+        message = "Error: Voice: " + title + " could not start: " + opened.message
+        emit VoiceTidy to this
+        return Failed
+    voice = { stage = "hearing", pty = opened.id, engine = engine, title = title }
+    message = "… Turning the recording into words (" + title + ")"
+    return Hearing
+
+| The engine ended: its words into the chat's box, at the cursor, and the
+| chat shown — nothing is sent; Enter does that.
+VoiceHeard =>
+    engine = voice.engine
+    title = voice.title
+    voice = null
+    emit ReadFile { path = "runs/voice.json" } to prefs get out
+    if out ∈ Exception
+        emit VoiceComplaint to this get why
+        message = "Error: Voice: " + title + " gave no answer"
+        if why.text ≠ "", message = message + " — " + why.text
+        emit VoiceTidy to this
+        return Failed
+    emit VoiceReply { engine = engine, content = out.content } to this get reply
+    emit VoiceTidy to this
+    if reply ∈ NotHeard
+        message = "Error: Voice: " + reply.reason
+        return Failed
+    emit ShowChat to this
+    emit InsertSpoken { input = chat.input, caret = chat.caret, text = reply.text } to this get put
+    chat = chat + { input = put.input, caret = put.caret }
+    message = "Heard you — Enter sends it to the AI, or change it first"
+    return Heard
+
+| y to the offer: the model fetched in a hidden terminal, the ide working on.
+VoiceDownload =>
+    if voice ≠ null, return Busy
+    emit OfflineModel to this get model
+    emit VoiceRuns to this get runs
+    if runs ∉ Runs
+        message = "Error: Voice needs a private IDE runs directory"
+        return Failed
+    emit DownloadLine { model = model, err = runs.dir + "/voice-err.txt" } to this get line
+    emit Open { cols = 80, rows = 5, cwd = runs.dir, command = line.command, args = line.args } to shells get opened
+    if opened ∈ Exception
+        message = "Error: Voice: the download could not start: " + opened.message
+        return Failed
+    voice = { stage = "downloading", pty = opened.id, engine = "offline", title = "offline" }
+    message = "Downloading the speech model " + model.file + " (" + model.size + ") — the ide keeps working"
+    return Downloading
+
+| The download ended: the model there (its sha256 checked), or why not.
+VoiceModelFetched =>
+    voice = null
+    emit OfflineModel to this get model
+    emit VoiceKey to this get key
+    if model.present
+        message = "The speech model is ready — " + key.text + " and speak"
+        emit DeleteFile { path = "runs/voice-err.txt" } to prefs
+        return Fetched
+    emit VoiceComplaint to this get why
+    message = "Error: Voice: the speech model could not be downloaded"
+    if why.text ≠ "", message = message + " — " + why.text
+    emit DeleteFile { path = "runs/voice-err.txt" } to prefs
+    return Failed

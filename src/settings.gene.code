@@ -48,6 +48,19 @@ defaults = {
     | What Alt+G carries a plan out in: "edit" or "auto".
     "ai.agent.planFollowup" = "edit"
     "ai.agent.allowCommands" = []
+    | Voice input (voice.gene.code): what turns speech into words — "auto"
+    | (Mike when signed in, else the endpoint when set, else offline),
+    | "offline", "openai-compatible" or "mike" — and each one's settings.
+    "ai.voice.provider" = "auto"
+    "ai.voice.language" = ""
+    "ai.voice.endpoint" = ""
+    "ai.voice.model" = "whisper-1"
+    "ai.voice.apiKeyEnv" = ""
+    "ai.voice.offlineModel" = "base"
+    "ai.voice.modelDir" = ""
+    "ai.voice.whisperCommand" = ""
+    "ai.voice.recordCommand" = ["pw-record", "--rate", "16000", "--channels", "1"]
+    "ai.voice.maxSeconds" = 60
     "terminal.integrated.commandsToSkipShell" = [
         "terminal.toggle"
         "focus.next"
@@ -74,6 +87,9 @@ sizes = [
     { key = "workbench.layout.top", least = 3, old = "" }
     { key = "workbench.layout.bottom", least = 3, old = "workbench.panel.height" }
 ]
+
+| The voice settings that are any text.
+voice_texts = ["ai.voice.language", "ai.voice.endpoint", "ai.voice.model", "ai.voice.apiKeyEnv", "ai.voice.modelDir", "ai.voice.whisperCommand"]
 
 | The `json` organelle, handed over when the ide links it.
 parser = null
@@ -170,6 +186,38 @@ ReadSettings { text } =>
             if one ∉ String, good_allow = false
     if good_allow, values = values + { "ai.agent.allowCommands" = allow }
     if allow ≠ null and not good_allow, wrong += "ai.agent.allowCommands (a list, e.g. [\"Bash(cargo test:*)\"])"
+    | Voice input.
+    voice_provider = given["ai.voice.provider"]
+    known_voice = { auto = true, offline = true, "openai-compatible" = true, mike = true }
+    good_voice = voice_provider ∈ String
+    if good_voice, good_voice = known_voice[voice_provider] = true
+    if good_voice, values = values + { "ai.voice.provider" = voice_provider }
+    if voice_provider ≠ null and not good_voice, wrong += "ai.voice.provider (\"auto\", \"offline\", \"openai-compatible\" or \"mike\")"
+    loop key over voice_texts
+        one = given[key]
+        if one ∈ String, values = values + { "$key" = one }
+        if one ≠ null and one ∉ String, wrong += key + " (text)"
+    offline_model = given["ai.voice.offlineModel"]
+    good_model = offline_model = "base" or offline_model = "small"
+    if offline_model ∈ String and not good_model
+        emit Length { value = offline_model } to core get { value as model_size }
+        good_model = model_size > 4 and offline_model[0, 1) = "/" and offline_model[model_size - 4, model_size) = ".bin"
+    if good_model, values = values + { "ai.voice.offlineModel" = offline_model }
+    if offline_model ≠ null and not good_model, wrong += "ai.voice.offlineModel (\"base\", \"small\", or a model file's full path)"
+    recorder = given["ai.voice.recordCommand"]
+    good_recorder = recorder ∈ Array
+    if good_recorder
+        emit Length { value = recorder } to core get { value as recorder_size }
+        good_recorder = recorder_size > 0
+        loop one over recorder
+            if one ∉ String, good_recorder = false
+    if good_recorder, values = values + { "ai.voice.recordCommand" = recorder }
+    if recorder ≠ null and not good_recorder, wrong += "ai.voice.recordCommand (the recorder and its arguments, e.g. [\"pw-record\", \"--rate\", \"16000\", \"--channels\", \"1\"])"
+    seconds = given["ai.voice.maxSeconds"]
+    good_seconds = seconds ∈ Number
+    if good_seconds, good_seconds = seconds ≥ 1 and seconds ≤ 600
+    if good_seconds, values = values + { "ai.voice.maxSeconds" = seconds }
+    if seconds ≠ null and not good_seconds, wrong += "ai.voice.maxSeconds (1 to 600)"
     problem = ""
     loop i, what over wrong
         if i = 0, problem = "settings.json: using the default for " + what

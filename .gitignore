@@ -30,3 +30,9 @@ standalone.code
 .test-mike-config/
 .test-account/
 .test-account-config/
+.test-voice/
+.test-voice-config/
+.test-voice-models/
+
+# tools/whisper.sh: whisper.cpp source and build
+.whisper-build/

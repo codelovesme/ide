@@ -28,6 +28,7 @@ menus = [
             { label = "AI Chat", command = "ai.toggle" }
             { label = "New AI Chat", command = "ai.newChat" }
             { label = "New AI Chat Tab", command = "ai.newTab" }
+            { label = "Voice Input", command = "ai.voice" }
             { label = "Show AI Changes", command = "ai.showChanges" }
             { label = "Undo AI Changes", command = "ai.undoTurn" }
             { label = "Move Tab…", command = "view.moveTab" }

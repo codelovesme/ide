@@ -100,6 +100,19 @@ uncooperative process writing at that exact instant. Terminal commands retain
 the shared service's documented OS-user boundary, not an imaginary workspace
 sandbox. They operate on disk, not on unsaved IDE buffers.
 
+## Voice input
+
+With `"ai.voice.provider": "mike"` — or `"auto"` while the IDE is signed
+in — Ctrl+Shift+Space's recording is heard by Mike: `mike_bridge.py
+--hear` checks the IDE account against the service exactly as a question
+does, sends the WAV to the service's `POST /v1/chat/hear`, and the service
+hands it to Mike's `Hear` with its own session (the token never reaches
+IDE). The words come back into the chat's box; nothing is asked of Mike
+until Enter, so a spoken question and a typed one take the same road. A
+minute of audio at most; nothing is kept. A service older than this route
+says so ("too old to hear; upgrade it"). Signed out, `auto` hears offline
+instead (see the README).
+
 ## Decisions and lifetime
 
 Structured progress and real questions use the existing chat/status/diff UI.

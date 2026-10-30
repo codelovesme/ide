@@ -8,8 +8,12 @@ existing asynchronous pty reader; business data is structured JSON events.
 (/desktop/connect, one-use state, token in a loopback POST body) and the
 token handed straight to the shared service's attach. The IDE keeps only the
 account name (`--account-file`, 0600); the token lives in this process only.
+
+`--hear` is voice input: a WAV recording to the service's /v1/chat/hear (Mike's
+Hear), the words written to `--result` (0600). Nothing is asked of Mike.
 """
 import argparse
+import base64
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import importlib.util
 import json
@@ -193,6 +197,41 @@ def login(module, account_file, switch, timeout):
     return {'signed_in': True, 'account': account, 'note': 'Signed in as ' + account}
 
 
+# The service takes up to 4,000,000 base64 characters: about a minute of
+# 16 kHz mono WAV.
+HEAR_MOST_BYTES = 3_000_000
+
+HEAR_ERRORS = {
+    'unknown_route': 'The shared Mike service is too old to hear; upgrade it (cdlvsm upgrade mike-service)',
+    'too_large': 'The recording is too long for Mike; keep it under a minute',
+    'signed_out': 'The shared Mike service is signed out; ' + SIGN_IN,
+    'mike_unavailable': 'Mike could not make out the recording',
+}
+
+
+def hear(module, wav, account_file):
+    """A recording as words through the shared service, for this IDE account."""
+    audio = Path(wav).read_bytes()
+    if len(audio) > HEAR_MOST_BYTES:
+        return {'error': 'too_large', 'note': HEAR_ERRORS['too_large']}
+    start_service(module)
+    service, _ = attach(module, account_file)
+    try:
+        answer = service.call('/v1/chat/hear', {'audio_base64': base64.b64encode(audio).decode('ascii'), 'format': 'wav'}, timeout=45)
+    except module.ServiceError as error:
+        return {'error': error.error, 'note': HEAR_ERRORS.get(error.error, 'Mike could not hear it: ' + error.error)}
+    finally:
+        service.detach()
+    text = answer.get('text') if isinstance(answer, dict) else None
+    if not isinstance(text, str): return {'error': 'failed', 'note': 'Mike answered without words'}
+    return {'text': text}
+
+
+def write_private(path, value):
+    fd = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_TRUNC|os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as opened: json.dump(value, opened)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
@@ -200,7 +239,15 @@ def main():
     parser.add_argument('--account-file'); parser.add_argument('--login', action='store_true')
     parser.add_argument('--switch', action='store_true'); parser.add_argument('--result')
     parser.add_argument('--timeout', type=float, default=300)
+    parser.add_argument('--hear')
     args = parser.parse_args()
+    if args.hear:
+        if not args.account_file or not args.result: parser.error('--hear needs --account-file and --result')
+        try: outcome = hear(sdk(), args.hear, args.account_file)
+        except Exception as error: outcome = {'error': 'unavailable', 'note': str(error)[:300]}
+        write_private(args.result, outcome)
+        print('done', flush=True)
+        return 0 if 'text' in outcome else 1
     if args.login:
         if not args.account_file or not args.result: parser.error('--login needs --account-file and --result')
         try: outcome = login(sdk(), args.account_file, args.switch, args.timeout)

@@ -70,6 +70,8 @@ defaults = [
     { key = "alt+m", command = "ai.switchModel" }
     { key = "alt+e", command = "ai.toggleMode" }
     { key = "alt+g", command = "ai.goAhead" }
+    | Speak to the AI chat: once to record, again to stop (voice.gene.code).
+    { key = "ctrl+shift+space", command = "ai.voice" }
     { key = "ctrl+k shift+tab", command = "edit.outdent" }
 ]
 
@@ -137,6 +139,8 @@ commands = [
     { id = "ai.mode.auto", title = "AI Chat: Auto mode — changes and commands without asking" }
     { id = "ai.goAhead", title = "AI Chat: carry out the plan just made" }
     { id = "ai.switchModel", title = "AI Chat: pick the AI and its model (each checked: ready, signed in, reachable)" }
+    { id = "ai.voice", title = "Voice Input: record; again stops, and the words go into the AI chat's box" }
+    { id = "ai.voice.cancel", title = "Voice Input: throw the recording away (Escape while recording)" }
     { id = "account.signIn", title = "Account: sign in to IDE with your codelovesme account (browser); again to cancel" }
     { id = "account.signOut", title = "Account: sign out of IDE only; the shared Mike service stays signed in" }
     { id = "account.switchService", title = "Account: sign in and explicitly move the shared Mike service to this account" }

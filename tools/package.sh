@@ -5,6 +5,7 @@
 #     ide            the launcher (bin/ide)
 #     ide-bin        the program, built by `code build`
 #     *.so           the organelles `euglena install` fetched, beside it
+#     whisper-cli    whisper.cpp, for offline voice input (tools/whisper.sh)
 #     VERSION, README.md
 #
 # The program is main.code without its organelle links: those would be
@@ -31,6 +32,7 @@ mkdir -p "$stage/docs"
 cp "$root/docs/mike.md" "$stage/docs/"
 printf 'format=1\nfeature.mike=mike-service >=0.5.0 <0.6.0 pin=v0.5.0\n' > "$stage/cdlvsm-package.info"
 "$root/tools/organelles.sh" "$stage"
+"$root/tools/whisper.sh" "$stage"
 echo "$version" > "$stage/VERSION"
 tar -C "$out" -czf "$out/$name.tar.gz" "$name"
 echo "$out/$name.tar.gz"

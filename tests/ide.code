@@ -15,6 +15,7 @@ link "../src/render.gene.code"
 link "../src/settings.gene.code"
 link "../src/tabs.gene.code"
 link "../src/tree.gene.code"
+link "../src/voice.gene.code"
 
 | A frame, the way Render makes one.
 Framed {} =>

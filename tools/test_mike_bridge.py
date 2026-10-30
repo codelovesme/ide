@@ -151,4 +151,37 @@ class AccessTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'not installed'):bridge.start_service(Absent())
         finally:os.environ.pop('MIKE_SERVICE_LAUNCHER')
 
+class HearSdk(FakeSdk):
+    """FakeSdk whose session also answers /v1/chat/hear."""
+    def __init__(self,account='me@example.invalid',answer=None,error=None):
+        super().__init__(account=account);self.calls=[];sdk=self;base=self.MikeService
+        class Service(base):
+            def call(self,path,payload=None,timeout=20):
+                sdk.calls.append((path,payload));
+                if error:raise FakeServiceError(error)
+                return answer
+        self.MikeService=Service
+
+class HearTest(unittest.TestCase):
+    def run_hear(self,sdk,audio=b'RIFF'+b'\0'*4000,ide_account='me@example.invalid'):
+        bridge=load_bridge()
+        with tempfile.TemporaryDirectory() as area:
+            wav=Path(area)/'voice.wav';wav.write_bytes(audio)
+            account=Path(area)/'account.json'
+            if ide_account:account.write_text(json.dumps({'account':ide_account}))
+            return bridge.hear(sdk,str(wav),str(account))
+    def test_recording_goes_to_hear_as_base64_wav(self):
+        sdk=HearSdk(answer={'text':'open the readme'})
+        self.assertEqual(self.run_hear(sdk),{'text':'open the readme'})
+        path,payload=sdk.calls[0]
+        self.assertEqual(path,'/v1/chat/hear');self.assertEqual(payload['format'],'wav')
+        import base64;self.assertEqual(base64.b64decode(payload['audio_base64'])[:4],b'RIFF')
+    def test_another_account_or_signed_out_ide_is_refused(self):
+        with self.assertRaisesRegex(RuntimeError,'other@example.invalid'):self.run_hear(HearSdk(account='other@example.invalid'))
+        with self.assertRaisesRegex(RuntimeError,'Signed out of IDE'):self.run_hear(HearSdk(),ide_account='')
+    def test_old_service_and_long_recordings_say_why(self):
+        self.assertIn('too old',self.run_hear(HearSdk(error='unknown_route'))['note'])
+        sdk=HearSdk(answer={'text':'x'})
+        self.assertEqual(self.run_hear(sdk,audio=b'\0'*3_000_001)['error'],'too_large');self.assertEqual(sdk.calls,[])
+
 if __name__=='__main__':unittest.main()
