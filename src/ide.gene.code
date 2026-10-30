@@ -468,6 +468,19 @@ Run { command } =>
     if command = "file.new", emit NewFile to this
     if command = "file.quickOpen", emit QuickOpen to this
     if command = "edit.find", emit FindStart to this
+    if command = "edit.replace" or command = "edit.goToLine"
+        if file = null, message = "That works in a file — open one first"
+        if file ≠ null and command = "edit.goToLine", prompt = { kind = "goto", label = "Go to line (12, or 12:5): ", text = "" }
+        if file ≠ null and command = "edit.replace"
+            emit SelectedText { buffer = file } to this get picked
+            emit IndexIn { text = picked.text, part = "\n", from = 0 } to this get several
+            first = ""
+            if several.value < 0, first = picked.text
+            prompt = { kind = "replace_find", label = "Replace — find: ", text = first }
+    if command = "view.wordWrap"
+        wrap = "on"
+        if settings["editor.wordWrap"] = "on", wrap = "off"
+        emit StoreSetting { key = "editor.wordWrap", value = wrap } to this
     if command = "file.openFolder"
         prompt = { kind = "open_folder", label = "Open folder: ", text = folder + "/" }
     if command = "view.explorer", emit TogglePane { kind = "explorer" } to this
@@ -752,6 +765,18 @@ PromptKey { name, text } =>
             prompt = asked + { text = typed }
             emit FindGo { query = typed, step = 0 } to this
         return Typed
+    if asked.kind = "goto" or asked.kind = "replace_find" or asked.kind = "replace_with"
+        if name = "enter"
+            prompt = null
+            if asked.kind = "goto", emit GoToLine { text = asked.text } to this
+            if asked.kind = "replace_find" and asked.text ≠ "", prompt = { kind = "replace_with", label = "Replace “" + asked.text + "” with: ", find = asked.text, text = "" }
+            if asked.kind = "replace_with", emit ReplaceAll { find = asked.find, put = asked.text } to this
+            return Answered
+        if name = "backspace"
+            prompt = asked + { text = asked.text[0, length - 1) }
+            return Typed
+        if text ≠ "", prompt = asked + { text = asked.text + text }
+        return Typed
     if asked.kind = "open_folder" or asked.kind = "move" or asked.kind = "new_file"
         if name = "enter"
             prompt = null
@@ -1000,6 +1025,80 @@ FindGo { query, step } =>
     prompt = prompt + { label = "Find (" + (pick + 1) + " of " + count + "): " }
     return Found
 
+| The whole number `text` is, or -1 when it is not one.
+WholeNumber { text } =>
+    digits = { "0" = 0, "1" = 1, "2" = 2, "3" = 3, "4" = 4, "5" = 5, "6" = 6, "7" = 7, "8" = 8, "9" = 9 }
+    emit Trim { value = text } to texts get trimmed
+    emit Length { value = trimmed.value } to core get { value as size }
+    if size = 0, return Whole { value = -1 }
+    n = 0
+    i = 0
+    loop
+        if i ≥ size, break
+        d = digits[trimmed.value[i]]
+        if d = null, return Whole { value = -1 }
+        n = n * 10 + d
+        i += 1
+    return Whole { value = n }
+
+| Ctrl+G: `12` or `12:5` — the line (and column), counted from 1; past
+| the end, the last.
+GoToLine { text } =>
+    if file = null, return Nothing
+    emit Split { value = text, separator = ":" } to texts get parts
+    emit WholeNumber { text = parts.value[0] } to this get line_no
+    if line_no.value < 1
+        message = "Not a line number: " + text
+        return Nothing
+    emit Length { value = file.lines } to core get { value as count }
+    row = line_no.value - 1
+    if row > count - 1, row = count - 1
+    col = 0
+    if parts.value[1] ≠ null
+        emit WholeNumber { text = parts.value[1] } to this get col_no
+        if col_no.value ≥ 1, col = col_no.value - 1
+    emit Length { value = file.lines[row] } to core get { value as size }
+    if col > size, col = size
+    file = file + { row = row, col = col, want = col, anchor = null, extra = null }
+    return Went
+
+| Ctrl+H: every `find` in the file (case left aside, as Find) made `put`,
+| as one undo step.
+ReplaceAll { find, put } =>
+    if file = null, return Nothing
+    if file.readonly
+        message = "This file is read-only."
+        return Refused
+    emit Lower { value = find } to texts get lowered
+    want = lowered.value
+    emit Length { value = want } to core get { value as size }
+    lines = []
+    count = 0
+    loop line over file.lines
+        emit Lower { value = line } to texts get low
+        out = ""
+        at = 0
+        loop
+            emit IndexIn { text = low.value, part = want, from = at } to this get spot
+            if spot.value < 0, break
+            out = out + line[at, spot.value) + put
+            at = spot.value + size
+            count += 1
+        lines += out + line[at, length)
+    if count = 0
+        message = "No “" + find + "” in the file"
+        return Nothing
+    undo += { lines = file.lines, row = file.row, col = file.col }
+    redo = []
+    last_edit = ""
+    emit Length { value = lines[file.row] } to core get { value as here }
+    col = file.col
+    if col > here, col = here
+    file = file + { lines = lines, col = col, want = col, anchor = null, extra = null, dirty = true }
+    message = "Replaced " + count
+    emit NoteEdit to this
+    return Replaced
+
 | `buffer` shown in the group in `slot`, in its tab, and focused.
 Show { buffer, slot } =>
     emit Stash to this
@@ -1073,7 +1172,7 @@ EditorKey { name, text } =>
         emit InsertText { buffer = file, text = pasted.text } to this get put_in
         edited = put_in
     if edited = null
-        emit Edit { buffer = file, name = name, text = text, page = editor_page } to this get keyed
+        emit EditAll { buffer = file, name = name, text = text, page = editor_page } to this get keyed
         edited = keyed
     if edited ∈ Exception
         message = "Error: " + edited.message
@@ -1125,7 +1224,7 @@ Undo =>
     emit Length { value = undo } to core get { value as count }
     if file = null or count = 0, return Nothing
     redo += { lines = file.lines, row = file.row, col = file.col }
-    file = file + undo[count - 1] + { dirty = true }
+    file = file + undo[count - 1] + { dirty = true, anchor = null, extra = null }
     file = file + { want = file.col }
     undo = undo[0, count - 1)
     last_edit = ""
@@ -1135,7 +1234,7 @@ Redo =>
     emit Length { value = redo } to core get { value as count }
     if file = null or count = 0, return Nothing
     undo += { lines = file.lines, row = file.row, col = file.col }
-    file = file + redo[count - 1] + { dirty = true }
+    file = file + redo[count - 1] + { dirty = true, anchor = null, extra = null }
     file = file + { want = file.col }
     redo = redo[0, count - 1)
     last_edit = ""

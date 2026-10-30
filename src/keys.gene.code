@@ -19,6 +19,10 @@ defaults = [
     { key = "ctrl+n", command = "file.new" }
     { key = "ctrl+p", command = "file.quickOpen" }
     { key = "ctrl+f", command = "edit.find" }
+    | Ctrl+H — a terminal that sends Ctrl+Backspace as ^H makes them one key
+    | (it is Ctrl+Backspace then); Edit > Replace… is the other way.
+    { key = "ctrl+h", command = "edit.replace" }
+    { key = "ctrl+g", command = "edit.goToLine" }
     { key = "ctrl+k ctrl+o", command = "file.openFolder" }
     { key = "ctrl+s", command = "file.save" }
     { key = "ctrl+w", command = "file.close" }
@@ -84,6 +88,9 @@ commands = [
     { id = "file.new", title = "New File… (in the folder picked in the explorer)" }
     { id = "file.quickOpen", title = "Go to File… (the project's files, by name)" }
     { id = "edit.find", title = "Find in the file (Enter next, Shift+Enter previous)" }
+    { id = "edit.replace", title = "Replace in the file: what, then with what — every one" }
+    { id = "edit.goToLine", title = "Go to Line… (12, or 12:5 for the column too)" }
+    { id = "view.wordWrap", title = "Word Wrap: long lines on in the rows below, or off the side" }
     { id = "file.openFolder", title = "Open Folder…" }
     { id = "file.save", title = "Save" }
     { id = "file.close", title = "Close the tab" }
@@ -323,7 +330,10 @@ Shortcuts { table } =>
         "  Editor: arrows, Home, End, PgUp, PgDn, Ctrl+Home / End, Ctrl+Left / Right,"
         "  Tab indents by four spaces; Ctrl+K Shift+Tab takes a level back."
         "  Shift+arrows select, Ctrl+A everything; Ctrl+C copy, Ctrl+X cut, Ctrl+V paste"
-        "  (Ctrl+V in the AI chat's box too)."
+        "  (Ctrl+V in the AI chat's box too). Ctrl+Backspace / Ctrl+Delete a word."
+        "  Ctrl+D the word, again the next one too (a cursor at each; Escape: one)."
+        "  Alt+Up / Alt+Down move the line; Ctrl+/ comments it out or in."
+        "  Brackets and quotes close themselves; the matching bracket is lit."
         "  Menus: arrows, Enter, Escape."
     ]
     return ShortcutLines { lines = lines }

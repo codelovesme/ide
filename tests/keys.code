@@ -50,10 +50,10 @@ emit ReadBindings { text = "[{ \"key\": \"ctrl+s\", \"command\": \"-app.quit\" }
 assert kept.keys["ctrl+s"] = "file.save"
 
 | Bad entries are left out, and said.
-emit ReadBindings { text = "[{ \"key\": \"ctrl+s\" }, { \"key\": \"ctrl+g\", \"command\": \"nope\" }]" } to this get bad
+emit ReadBindings { text = "[{ \"key\": \"ctrl+s\" }, { \"key\": \"f9\", \"command\": \"nope\" }]" } to this get bad
 assert bad.problem = "keybindings.json: entry 1 needs a \"key\" and a \"command\"; entry 2: no command \"nope\""
 assert bad.keys["ctrl+s"] = "file.save"
-assert bad.keys["ctrl+g"] = null
+assert bad.keys["f9"] = null
 emit ReadBindings { text = "{}" } to this get not_list
 assert not_list.problem = "keybindings.json: keybindings.json should be a list"
 emit ReadBindings { text = "[" } to this get broken

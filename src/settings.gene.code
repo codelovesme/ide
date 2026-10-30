@@ -14,6 +14,8 @@ defaults = {
     "workbench.layout.top" = 10
     "workbench.layout.bottom" = 12
     "terminal.integrated.shell" = ""
+    | "on": a long line goes on in the rows below (View > Word Wrap).
+    "editor.wordWrap" = "off"
     "ai.provider" = "local"
     "ai.providers" = {
         | LocalAI's own address, and the variable its key is in (unset: no
@@ -170,6 +172,9 @@ ReadSettings { text } =>
     if good_steps, good_steps = steps ≥ 1 and steps ≤ 50
     if good_steps, values = values + { "ai.maxSteps" = steps }
     if steps ≠ null and not good_steps, wrong += "ai.maxSteps (1 to 50)"
+    wrap = given["editor.wordWrap"]
+    if wrap = "on" or wrap = "off", values = values + { "editor.wordWrap" = wrap }
+    if wrap ≠ null and wrap ≠ "on" and wrap ≠ "off", wrong += "editor.wordWrap (\"on\" or \"off\")"
     agent_mode = given["ai.agent.mode"]
     known_modes = { ask = true, plan = true, edit = true, auto = true }
     good_mode = agent_mode ∈ String

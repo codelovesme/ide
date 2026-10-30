@@ -101,3 +101,77 @@ emit Edit { buffer = w1.buffer, name = "ctrl+right", text = "", page = 10 } to t
 assert w2.buffer.col = 10
 emit Edit { buffer = w2.buffer, name = "ctrl+left", text = "", page = 10 } to this get w3
 assert w3.buffer.col = 5
+
+| Ctrl+Backspace / Ctrl+Delete take a word back / forward; at the start of
+| a line Ctrl+Backspace joins it to the one above.
+emit Edit { buffer = { lines = ["emit Print to con"], row = 0, col = 10, want = 10 }, name = "ctrl+backspace", text = "", page = 10 } to this get word_back
+assert word_back.changed and word_back.buffer.lines = ["emit  to con"] and word_back.buffer.col = 5
+emit Edit { buffer = { lines = ["emit Print to con"], row = 0, col = 5, want = 5 }, name = "ctrl+delete", text = "", page = 10 } to this get word_on
+assert word_on.buffer.lines = ["emit  to con"] and word_on.buffer.col = 5
+emit Edit { buffer = { lines = ["ab", "cd"], row = 1, col = 0, want = 0 }, name = "ctrl+backspace", text = "", page = 10 } to this get word_join
+assert word_join.buffer.lines = ["abcd"] and word_join.buffer.row = 0 and word_join.buffer.col = 2
+
+| Alt+↑ / Alt+↓ move the line, or the selected lines, the cursor with it.
+emit Edit { buffer = { lines = ["a", "b", "c"], row = 1, col = 1, want = 1 }, name = "alt+up", text = "", page = 10 } to this get line_up
+assert line_up.changed and line_up.buffer.lines = ["b", "a", "c"] and line_up.buffer.row = 0 and line_up.buffer.col = 1
+emit Edit { buffer = { lines = ["a", "b", "c"], row = 2, col = 1, want = 1, anchor = { row = 1, col = 0 } }, name = "alt+up", text = "", page = 10 } to this get block_up
+assert block_up.buffer.lines = ["b", "c", "a"] and block_up.buffer.row = 1 and block_up.buffer.anchor = { row = 0, col = 0 }
+emit Edit { buffer = { lines = ["a", "b", "c"], row = 0, col = 0, want = 0 }, name = "alt+down", text = "", page = 10 } to this get line_down
+assert line_down.buffer.lines = ["b", "a", "c"] and line_down.buffer.row = 1
+emit Edit { buffer = { lines = ["a", "b"], row = 0, col = 0, want = 0 }, name = "alt+up", text = "", page = 10 } to this get top_stays
+assert not top_stays.changed and top_stays.buffer.lines = ["a", "b"]
+
+| Ctrl+/ comments the lines out with the language's mark, at the least
+| indentation; again, back in.
+emit Edit { buffer = { lines = ["Greet =>", "    return Hi"], row = 1, col = 5, want = 5, anchor = { row = 0, col = 0 }, path = "x.code" }, name = "ctrl+/", text = "", page = 10 } to this get commented
+assert commented.changed and commented.buffer.lines = ["| Greet =>", "|     return Hi"]
+emit Edit { buffer = commented.buffer, name = "ctrl+/", text = "", page = 10 } to this get uncommented
+assert uncommented.buffer.lines = ["Greet =>", "    return Hi"]
+emit Edit { buffer = { lines = ["    x = 1"], row = 0, col = 6, want = 6, path = "a.py" }, name = "ctrl+/", text = "", page = 10 } to this get py_commented
+assert py_commented.buffer.lines = ["    # x = 1"] and py_commented.buffer.col = 8
+emit Edit { buffer = { lines = ["let x = 1;"], row = 0, col = 0, want = 0, path = "a.ts" }, name = "ctrl+/", text = "", page = 10 } to this get ts_commented
+assert ts_commented.buffer.lines = ["// let x = 1;"]
+
+| Brackets and quotes close themselves; the closer typed steps over;
+| Backspace in an empty pair takes both; a selection is wrapped.
+emit Edit { buffer = { lines = ["ab"], row = 0, col = 2, want = 2 }, name = "(", text = "(", page = 10 } to this get opened_pair
+assert opened_pair.buffer.lines = ["ab()"] and opened_pair.buffer.col = 3
+emit Edit { buffer = opened_pair.buffer, name = ")", text = ")", page = 10 } to this get stepped
+assert stepped.buffer.lines = ["ab()"] and stepped.buffer.col = 4
+emit Edit { buffer = opened_pair.buffer, name = "backspace", text = "", page = 10 } to this get pair_gone
+assert pair_gone.buffer.lines = ["ab"] and pair_gone.buffer.col = 2
+emit Edit { buffer = { lines = ["ab"], row = 0, col = 1, want = 1 }, name = "(", text = "(", page = 10 } to this get before_word
+assert before_word.buffer.lines = ["a(b"]
+emit Edit { buffer = { lines = ["x = "], row = 0, col = 4, want = 4 }, name = "\"", text = "\"", page = 10 } to this get quoted
+assert quoted.buffer.lines = ["x = \"\""] and quoted.buffer.col = 5
+emit Edit { buffer = { lines = ["don"], row = 0, col = 3, want = 3 }, name = "'", text = "'", page = 10 } to this get apostrophe
+assert apostrophe.buffer.lines = ["don'"]
+emit Edit { buffer = { lines = ["abc"], row = 0, col = 3, want = 3, anchor = { row = 0, col = 0 } }, name = "[", text = "[", page = 10 } to this get wrapped
+assert wrapped.buffer.lines = ["[abc]"] and wrapped.buffer.anchor = { row = 0, col = 1 } and wrapped.buffer.col = 4
+
+| Ctrl+D: the word at the cursor; again, the next same text, with a cursor
+| of its own; typing then goes in at every cursor; Escape keeps the first.
+multi = { lines = ["foo bar foo", "foo"], row = 0, col = 1, want = 1 }
+emit EditAll { buffer = multi, name = "ctrl+d", text = "", page = 10 } to this get pick1
+assert pick1.buffer.anchor = { row = 0, col = 0 } and pick1.buffer.col = 3 and not pick1.changed
+emit EditAll { buffer = pick1.buffer, name = "ctrl+d", text = "", page = 10 } to this get pick2
+assert pick2.buffer.anchor = { row = 0, col = 8 } and pick2.buffer.col = 11
+assert pick2.buffer.extra = [{ row = 0, col = 3, want = 3, anchor = { row = 0, col = 0 } }]
+emit EditAll { buffer = pick2.buffer, name = "ctrl+d", text = "", page = 10 } to this get pick3
+assert pick3.buffer.row = 1 and pick3.buffer.anchor = { row = 1, col = 0 }
+emit Length { value = pick3.buffer.extra } to core get { value as extras }
+assert extras = 2
+emit EditAll { buffer = pick3.buffer, name = "x", text = "x", page = 10 } to this get typed_all
+assert typed_all.changed and typed_all.buffer.lines = ["x bar x", "x"]
+assert typed_all.buffer.row = 1 and typed_all.buffer.col = 1
+emit EditAll { buffer = typed_all.buffer, name = "escape", text = "", page = 10 } to this get one_left
+assert one_left.buffer.extra = [] and one_left.buffer.row = 1
+| Enter and the moves at every cursor, each line counted again.
+two = { lines = ["ab", "cd"], row = 0, col = 1, want = 1, extra = [{ row = 1, col = 1, want = 1, anchor = null }] }
+emit EditAll { buffer = two, name = "enter", text = "", page = 10 } to this get split_all
+assert split_all.buffer.lines = ["a", "b", "c", "d"] and split_all.buffer.row = 1 and split_all.buffer.col = 0
+assert split_all.buffer.extra[0].row = 3 and split_all.buffer.extra[0].col = 0
+emit EditAll { buffer = split_all.buffer, name = "end", text = "", page = 10 } to this get ends
+assert ends.buffer.col = 1 and ends.buffer.extra[0].col = 1
+emit EditAll { buffer = ends.buffer, name = "backspace", text = "", page = 10 } to this get back_all
+assert back_all.buffer.lines = ["a", "", "c", ""]

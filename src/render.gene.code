@@ -361,63 +361,193 @@ TabStrip { tabs, active, width, focused } =>
 
 | The selection's background (VS Code's).
 selection_bg = [38, 79, 120]
+| An extra cursor's cell, and the brackets that match.
+extra_cursor_bg = [174, 175, 173]
+bracket_bg = [70, 70, 70]
+opening = { "(" = ")", "[" = "]", "{" = "}" }
+closing = { ")" = "(", "]" = "[", "}" = "{" }
 
 | A file's lines with numbers in `pane` (below its tab strip), scrolled to
-| keep the cursor in sight, coloured when the file is code.
-EditorView { pane, buffer, focused } =>
+| keep the cursor in sight, coloured when the file is code. With `wrap`, a
+| long line goes on in the rows below (no number on them) instead of off
+| the side. The selection, every extra cursor (and its selection), and the
+| bracket matching the one at the cursor are lit over the text.
+EditorView { pane, buffer, focused, wrap } =>
     out = []
     h = pane.height - 1
     tw = pane.width - gutter
+    if tw < 1, tw = 1
     t = buffer.top
+    if t = null, t = 0
     if buffer.row < t, t = buffer.row
     if buffer.row ≥ t + h, t = buffer.row - h + 1
     if t < 0, t = 0
     l = buffer.left
+    if l = null, l = 0
     if buffer.col < l, l = buffer.col
     if buffer.col ≥ l + tw, l = buffer.col - tw + 1
     if l < 0, l = 0
+    if wrap
+        l = 0
+        | The top moved down until the cursor's own row is in sight.
+        loop
+            if t ≥ buffer.row, break
+            used = 0
+            r = t
+            loop
+                if r ≥ buffer.row, break
+                emit Length { value = buffer.lines[r] } to core get { value as n }
+                emit Pieces { size = n, width = tw } to this get rows_of
+                used += rows_of.count
+                r += 1
+            emit Pieces { size = buffer.col + 1, width = tw } to this get cursor_rows
+            used += cursor_rows.count
+            if used ≤ h, break
+            t += 1
 
     emit Selection { buffer = buffer } to this get picked
+    extras = buffer.extra
+    if extras = null, extras = []
+    marks = []
+    loop one over extras
+        emit Selection { buffer = { row = one.row, col = one.col, anchor = one.anchor } } to this get theirs
+        marks += { row = one.row, col = one.col, start = theirs.start, stop = theirs.stop, empty = theirs.empty }
+    emit BracketPair { lines = buffer.lines, row = buffer.row, col = buffer.col } to this get pair
+
     coloured = null
     if buffer.path[length - 5, length) = ".code"
         emit Join { value = buffer.lines, separator = "\n" } to texts get source
         emit Highlight { source = source.value, from = t, until = t + h } to colours get lit
         if lit ∈ Highlighted, coloured = lit.lines
 
+    cursor_row = 2 + pane.y
+    cursor_col = pane.x + gutter
     i = 0
+    r = t
     loop
         if i ≥ h, break
-        r = t + i
         line = buffer.lines[r]
         if line = null, break
-        number_style = "line_number"
-        if r = buffer.row, number_style = "line_number_active"
-        segments = [{ text = line[l, l + tw), style = "plain" }]
-        if coloured ≠ null
-            emit LineSpans { line = line, spans = coloured[i], left = l, width = tw } to this get cut
-            segments = cut.spans
-        numbers = [{ text = "" + (r + 1), width = gutter - 1, align = "right", style = number_style }, { text = " ", style = "plain" }]
-        out += { row = 2 + pane.y + i, col = pane.x, spans = numbers + segments }
-        | The selection, lit over the line (a line it runs past: one cell
-        | more, for its line break).
-        if not picked.empty and r ≥ picked.start.row and r ≤ picked.stop.row
-            emit Length { value = line } to core get { value as line_size }
-            a = 0
-            if r = picked.start.row, a = picked.start.col
-            b = line_size + 1
-            if r = picked.stop.row, b = picked.stop.col
-            if a < l, a = l
-            if b > l + tw, b = l + tw
-            if b > a, out += { row = 2 + pane.y + i, col = pane.x + gutter + a - l, spans = [{ text = line[a, b), width = b - a, style = "plain", bg = selection_bg }] }
-        i += 1
+        emit Length { value = line } to core get { value as line_size }
+        pieces = 1
+        if wrap
+            emit Pieces { size = line_size, width = tw } to this get rows_of
+            pieces = rows_of.count
+        p = 0
+        loop
+            if p ≥ pieces or i ≥ h, break
+            s = l
+            if wrap, s = p * tw
+            y = 2 + pane.y + i
+            x = pane.x + gutter
+            number_style = "line_number"
+            if r = buffer.row and p = 0, number_style = "line_number_active"
+            number = ""
+            if p = 0, number = "" + (r + 1)
+            segments = [{ text = line[s, s + tw), style = "plain" }]
+            if coloured ≠ null
+                emit LineSpans { line = line, spans = coloured[r - t], left = s, width = tw } to this get cut
+                segments = cut.spans
+            numbers = [{ text = number, width = gutter - 1, align = "right", style = number_style }, { text = " ", style = "plain" }]
+            out += { row = y, col = pane.x, spans = numbers + segments }
+            if not picked.empty
+                emit LitRange { start = picked.start, stop = picked.stop, r = r, size = line_size, s = s, tw = tw } to this get lit_range
+                if lit_range.ok, out += { row = y, col = x + lit_range.a - s, spans = [{ text = line[lit_range.a, lit_range.upto), width = lit_range.b - lit_range.a, style = "plain", bg = selection_bg }] }
+            loop mark over marks
+                if not mark.empty
+                    emit LitRange { start = mark.start, stop = mark.stop, r = r, size = line_size, s = s, tw = tw } to this get mark_range
+                    if mark_range.ok, out += { row = y, col = x + mark_range.a - s, spans = [{ text = line[mark_range.a, mark_range.upto), width = mark_range.b - mark_range.a, style = "plain", bg = selection_bg }] }
+                if mark.row = r and mark.col ≥ s and (mark.col < s + tw or p = pieces - 1)
+                    under = line[mark.col]
+                    if under = null, under = " "
+                    out += { row = y, col = x + mark.col - s, spans = [{ text = under, width = 1, style = "plain", fg = [30, 30, 30], bg = extra_cursor_bg }] }
+            if pair.found
+                loop end_at over [pair.here, pair.there]
+                    if end_at.row = r and end_at.col ≥ s and end_at.col < s + tw
+                        out += { row = y, col = x + end_at.col - s, spans = [{ text = line[end_at.col], width = 1, style = "plain", bg = bracket_bg }] }
+            if r = buffer.row and buffer.col ≥ s and (buffer.col < s + tw or p = pieces - 1)
+                cursor_row = y
+                cursor_col = x + buffer.col - s
+            i += 1
+            p += 1
+        r += 1
     return PaneView {
         overlays = out
         top = t
         left = l
         page = h
-        cursor_row = 2 + pane.y + buffer.row - t
-        cursor_col = pane.x + gutter + buffer.col - l
+        cursor_row = cursor_row
+        cursor_col = cursor_col
     }
+
+| How many rows of `width` a line of `size` takes (one, even empty).
+Pieces { size, width } =>
+    n = 1
+    k = width
+    loop
+        if k ≥ size, break
+        n += 1
+        k += width
+    return Count { count = n }
+
+| The part of row `r` (a line of `size`, shown from column `s`, `tw` wide)
+| that the range `start` … `stop` lights: columns `a` … `b`, the text up
+| to `upto` (a line the range runs past: one cell more, its line break).
+LitRange { start, stop, r, size, s, tw } =>
+    if r < start.row or r > stop.row, return Lit { ok = false, a = 0, b = 0, upto = 0 }
+    a = 0
+    if r = start.row, a = start.col
+    b = size + 1
+    if r = stop.row, b = stop.col
+    if a < s, a = s
+    if b > s + tw, b = s + tw
+    if b ≤ a, return Lit { ok = false, a = 0, b = 0, upto = 0 }
+    upto = b
+    if upto > size, upto = size
+    return Lit { ok = true, a = a, b = b, upto = upto }
+
+| The bracket at the cursor (or just before it) and the one that matches
+| it, looked for at most 2000 lines away. `found` false when there is none.
+BracketPair { lines, row, col } =>
+    none = Pair { found = false, here = null, there = null }
+    line = lines[row]
+    if line = null, return none
+    at = col
+    ch = line[at]
+    if ch = null or (opening[ch] = null and closing[ch] = null)
+        at = col - 1
+        if at < 0, return none
+        ch = line[at]
+        if ch = null or (opening[ch] = null and closing[ch] = null), return none
+    step = 1
+    other = opening[ch]
+    if other = null
+        step = -1
+        other = closing[ch]
+    depth = 0
+    r = row
+    c = at
+    seen = 0
+    loop
+        if seen > 2000, return none
+        text = lines[r]
+        if text = null, return none
+        emit Length { value = text } to core get { value as size }
+        loop
+            if c < 0 or c ≥ size, break
+            here = text[c]
+            if here = ch, depth += 1
+            if here = other
+                depth = depth - 1
+                if depth = 0, return Pair { found = true, here = { row = row, col = at }, there = { row = r, col = c } }
+            c += step
+        r += step
+        seen += 1
+        if r < 0, return none
+        c = 0
+        if step < 0 and lines[r] ≠ null
+            emit Length { value = lines[r] } to core get { value as above }
+            c = above - 1
 
 | Ctrl+P's list, under the menu bar: the files that match, the one Enter
 | opens lit.
@@ -527,7 +657,9 @@ GroupView { area, group, index, state, screens } =>
         buffer = view
         if index = state.current and state.file ≠ null, buffer = state.file
         | EditorView starts its lines a row down: the strip's row is that row.
-        emit EditorView { pane = pane, buffer = buffer, focused = focused } to this get rows
+        wrap = false
+        if state.settings ≠ null, wrap = state.settings["editor.wordWrap"] = "on"
+        emit EditorView { pane = pane, buffer = buffer, focused = focused, wrap = wrap } to this get rows
         result = result + { overlays = out + rows.overlays, scroll = { group = index, top = rows.top, left = rows.left }, page = rows.page }
         if focused, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
     if view.kind = "diff"

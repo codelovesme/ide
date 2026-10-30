@@ -289,6 +289,11 @@ the editor (center); the grid is ready for more.
 | Ctrl+P | Go to File…: the project's files that match what is typed (the name's own letters first); ↑/↓ pick, Enter opens |
 | Ctrl+F | Find in the file: as it is typed, the next match is selected and counted ("2 of 5"); Enter the next, Shift+Enter the one before, Escape leaves the cursor there |
 | Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste the selection (Shift+arrows, Ctrl+A), through the desktop's clipboard; Ctrl+V in the AI chat's box too. In a terminal they are the shell's |
+| Ctrl+H / Ctrl+G | Replace (what, then with what — every one, one undo step) / Go to Line (`12`, or `12:5`). A terminal that sends Ctrl+Backspace as ^H makes Ctrl+H Ctrl+Backspace there; Edit > Replace… still works |
+| Ctrl+Backspace / Ctrl+Delete | Delete a word back / forward |
+| Ctrl+D | The word at the cursor; again, the next same text too, with a cursor of its own — typing, Enter, Backspace and the moves act at every cursor; Escape keeps one |
+| Alt+↑ / Alt+↓ | Move the line, or the selected lines, up / down |
+| Ctrl+/ | Comment the line(s) out, or back in, with the language's mark (`#`, `//`, `--` …) |
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |
 | Alt+← / Alt+→ | Go Back / Go Forward: where the cursor has been — another file, or a jump of 10 lines or more (View menu too) |
@@ -303,6 +308,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+, | Settings (settings.json) |
 | Ctrl+K and an arrow | Move the focused side's edge (the left grows with →, the bottom with ↑) |
 | Ctrl+K M | Move the tab to another place |
+| (View > Word Wrap) | Long lines go on in the rows below (`editor.wordWrap`: "on" / "off") |
 | Ctrl+K T | A new terminal |
 | Ctrl+T | Another of what has the keys: a terminal in a terminal, an AI chat in the chat |
 | Ctrl+Shift+N | New Window: another ide on this folder |
@@ -312,7 +318,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+Shift+D | Show what the AI changed since the last question |
 | Ctrl+Shift+Space | Voice input: record; again stops, and the words go into the AI chat's box (Escape throws the recording away) |
 
-In the editor: arrows, Home (first non-space, then column 0), End,
+In the editor: brackets and quotes close themselves, the matching bracket is lit; arrows, Home (first non-space, then column 0), End,
 PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab indents by
 four spaces and Ctrl+K Shift+Tab takes a level back (code refuses tabs); Enter keeps the indentation and
 adds a level after a block header (`… =>`, `if …`, `loop …` without a

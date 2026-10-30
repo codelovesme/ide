@@ -11,6 +11,8 @@ menus = [
             { label = "Open Folder…", command = "file.openFolder" }
             { label = "Go to File…", command = "file.quickOpen" }
             { label = "Find…", command = "edit.find" }
+            { label = "Replace…", command = "edit.replace" }
+            { label = "Go to Line…", command = "edit.goToLine" }
             { label = "Save", command = "file.save" }
             { label = "Close Editor", command = "file.close" }
             { label = "New Window", command = "window.new" }
@@ -35,6 +37,7 @@ menus = [
             { label = "Undo AI Changes", command = "ai.undoTurn" }
             { label = "Move Tab…", command = "view.moveTab" }
             { label = "Split Editor", command = "editor.split" }
+            { label = "Word Wrap", command = "view.wordWrap" }
             { label = "Go Back", command = "nav.back" }
             { label = "Go Forward", command = "nav.forward" }
             { label = "Next Tab", command = "tab.next" }

@@ -78,6 +78,54 @@ WordMove { line, col, step } =>
             at += 1
     return Moved { col = at }
 
+| What closes each bracket and quote typed (it closes itself), and which
+| are quotes (not closed after a letter: don't).
+pairs = { "(" = ")", "[" = "]", "{" = "}", "\"" = "\"", "'" = "'", "`" = "`" }
+closers = { ")" = true, "]" = true, "}" = true, "\"" = true, "'" = true, "`" = true }
+quotes = { "\"" = true, "'" = true, "`" = true }
+
+| The comment mark of each language, by the file's extension (or its name,
+| for those that have none).
+comment_marks = {
+    code = "|"
+    py = "#"
+    sh = "#"
+    bash = "#"
+    zsh = "#"
+    yaml = "#"
+    yml = "#"
+    toml = "#"
+    rb = "#"
+    pl = "#"
+    r = "#"
+    conf = "#"
+    Makefile = "#"
+    Dockerfile = "#"
+    js = "//"
+    mjs = "//"
+    cjs = "//"
+    jsx = "//"
+    ts = "//"
+    tsx = "//"
+    rs = "//"
+    go = "//"
+    c = "//"
+    h = "//"
+    cc = "//"
+    cpp = "//"
+    hpp = "//"
+    java = "//"
+    kt = "//"
+    swift = "//"
+    cs = "//"
+    dart = "//"
+    php = "//"
+    scss = "//"
+    sql = "--"
+    lua = "--"
+    hs = "--"
+}
+
 | The keys that move the cursor — with Shift, they select.
 moves = { left = true, right = true, up = true, down = true, home = true, "end" = true, pageup = true, pagedown = true, "ctrl+left" = true, "ctrl+right" = true, "ctrl+home" = true, "ctrl+end" = true }
 
@@ -159,6 +207,14 @@ InsertText { buffer, text } =>
 | out first; any other key lets it go. Ctrl+A selects everything.
 Edit { buffer, name, text, page } =>
     emit Length { value = buffer.lines } to core get { value as count }
+    if name = "alt+up" or name = "alt+down"
+        step = 1
+        if name = "alt+up", step = -1
+        emit MoveLines { buffer = buffer, step = step } to this get shifted
+        return shifted
+    if name = "ctrl+/"
+        emit ToggleComment { buffer = buffer } to this get toggled
+        return toggled
     if name = "ctrl+a"
         emit Length { value = buffer.lines[count - 1] } to core get { value as last }
         return Edited { buffer = buffer + { anchor = { row = 0, col = 0 }, row = count - 1, col = last, want = last }, changed = false }
@@ -171,10 +227,23 @@ Edit { buffer, name, text, page } =>
         emit EditPlain { buffer = buffer, name = base_key, text = "", page = page } to this get moved
         return Edited { buffer = moved.buffer + { anchor = keep }, changed = false }
     emit Selection { buffer = buffer } to this get picked
-    takes = text ≠ "" or name = "enter" or name = "backspace" or name = "delete"
+    | A bracket or quote typed over a selection wraps it.
+    if not picked.empty and pairs[text] ≠ null
+        start = picked.start
+        stop = picked.stop
+        lines = buffer.lines
+        closed = lines[stop.row][0, stop.col) + pairs[text] + lines[stop.row][stop.col, length)
+        lines = lines[0, stop.row) + [closed] + lines(stop.row, length)
+        opened = lines[start.row][0, start.col) + text + lines[start.row][start.col, length)
+        lines = lines[0, start.row) + [opened] + lines(start.row, length)
+        stop_col = stop.col
+        if stop.row = start.row, stop_col += 1
+        return Edited { buffer = buffer + { lines = lines, anchor = { row = start.row, col = start.col + 1 }, row = stop.row, col = stop_col, want = stop_col }, changed = true }
+    rubs = name = "backspace" or name = "delete" or name = "ctrl+backspace" or name = "ctrl+delete"
+    takes = text ≠ "" or name = "enter" or rubs
     if not picked.empty and takes
         emit DeleteSelection { buffer = buffer } to this get cleared
-        if name = "backspace" or name = "delete", return cleared
+        if rubs, return cleared
         emit EditPlain { buffer = cleared.buffer, name = name, text = text, page = page } to this get then
         return Edited { buffer = then.buffer + { anchor = null }, changed = true }
     emit EditPlain { buffer = buffer + { anchor = null }, name = name, text = text, page = page } to this get plain
@@ -190,8 +259,22 @@ EditPlain { buffer, name, text, page } =>
     emit Length { value = line } to core get { value as size }
     emit Length { value = lines } to core get { value as count }
 
-    | Typing.
+    | Typing. The closer typed where it already is steps over it; a
+    | bracket or quote closes itself before a space, a closer or the end
+    | (a quote not after a letter).
     if text ≠ ""
+        next = line[col]
+        if next = null, next = ""
+        if closers[text] = true and next = text
+            return Edited { buffer = buffer + { col = col + 1, want = col + 1 }, changed = false }
+        closer = pairs[text]
+        if closer ≠ null
+            closes = next = "" or next = " " or closers[next] = true
+            if quotes[text] = true and col > 0 and separators[line[col - 1]] ≠ true, closes = false
+            if closes
+                line = line[0, col) + text + closer + line[col, length)
+                lines = lines[0, row) + [line] + lines(row, length)
+                return Edited { buffer = buffer + { lines = lines, col = col + 1, want = col + 1 }, changed = true }
         emit Length { value = text } to core get { value as typed }
         line = line[0, col) + text + line[col, length)
         lines = lines[0, row) + [line] + lines(row, length)
@@ -229,7 +312,36 @@ EditPlain { buffer, name, text, page } =>
         lines = lines[0, row) + [line[take, length)] + lines(row, length)
         return Edited { buffer = buffer + { lines = lines, col = at, want = at }, changed = true }
 
+    | Ctrl+Backspace / Ctrl+Delete: a word back / forward; at a line's edge,
+    | what Backspace / Delete do.
+    if name = "ctrl+backspace"
+        if col = 0
+            if row = 0, return Edited { buffer = buffer, changed = false }
+            above = lines[row - 1]
+            emit Length { value = above } to core get { value as joined_at }
+            lines = lines[0, row - 1) + [above + line] + lines(row, length)
+            return Edited { buffer = buffer + { lines = lines, row = row - 1, col = joined_at, want = joined_at }, changed = true }
+        emit WordMove { line = line, col = col, step = -1 } to this get back_to
+        line = line[0, back_to.col) + line[col, length)
+        lines = lines[0, row) + [line] + lines(row, length)
+        return Edited { buffer = buffer + { lines = lines, col = back_to.col, want = back_to.col }, changed = true }
+
+    if name = "ctrl+delete"
+        if col = size
+            if row = count - 1, return Edited { buffer = buffer, changed = false }
+            lines = lines[0, row) + [line + lines[row + 1]] + lines(row + 1, length)
+            return Edited { buffer = buffer + { lines = lines }, changed = true }
+        emit WordMove { line = line, col = col, step = 1 } to this get on_to
+        line = line[0, col) + line[on_to.col, length)
+        lines = lines[0, row) + [line] + lines(row, length)
+        return Edited { buffer = buffer + { lines = lines }, changed = true }
+
     if name = "backspace"
+        | Between an empty pair: both go.
+        if col > 0 and line[col] ≠ null and pairs[line[col - 1]] = line[col]
+            line = line[0, col - 1) + line[col + 1, length)
+            lines = lines[0, row) + [line] + lines(row, length)
+            return Edited { buffer = buffer + { lines = lines, col = col - 1, want = col - 1 }, changed = true }
         if col > 0
             take = 1
             emit Trim { value = line[0, col) } to texts get before
@@ -335,3 +447,230 @@ EditPlain { buffer, name, text, page } =>
         return Edited { buffer = buffer + { row = target, col = col }, changed = false }
 
     return Edited { buffer = buffer, changed = false }
+
+| The rows a line command works on: the selection's (one that ends at the
+| start of a line leaves that line out), else the cursor's.
+LineSpanOf { buffer } =>
+    emit Selection { buffer = buffer } to this get picked
+    first = buffer.row
+    last = buffer.row
+    if not picked.empty
+        first = picked.start.row
+        last = picked.stop.row
+        if picked.stop.col = 0 and last > first, last = last - 1
+    return Rows { first = first, last = last }
+
+| Alt+↑ / Alt+↓: the line, or the selected lines, a line up (`step` -1) or
+| down (1), the cursor and the selection going with them.
+MoveLines { buffer, step } =>
+    emit LineSpanOf { buffer = buffer } to this get span
+    first = span.first
+    last = span.last
+    lines = buffer.lines
+    emit Length { value = lines } to core get { value as count }
+    if step < 0 and first = 0, return Edited { buffer = buffer, changed = false }
+    if step > 0 and last = count - 1, return Edited { buffer = buffer, changed = false }
+    block = lines[first, last + 1)
+    if step < 0, lines = lines[0, first - 1) + block + [lines[first - 1]] + lines(last, length)
+    if step > 0, lines = lines[0, first) + [lines[last + 1]] + block + lines(last + 1, length)
+    moved = buffer + { lines = lines, row = buffer.row + step }
+    if buffer.anchor ≠ null, moved = moved + { anchor = { row = buffer.anchor.row + step, col = buffer.anchor.col } }
+    return Edited { buffer = moved, changed = true }
+
+| The comment mark for `path`'s language, "" when it has none known.
+CommentMark { path } =>
+    if path = null, return Mark { text = "" }
+    emit Split { value = path, separator = "/" } to texts get parts
+    name = parts.value[length - 1]
+    emit Split { value = name, separator = "." } to texts get dotted
+    emit Length { value = dotted.value } to core get { value as pieces }
+    kind = name
+    if pieces > 1, kind = dotted.value[pieces - 1]
+    mark = comment_marks[kind]
+    if mark = null, return Mark { text = "" }
+    return Mark { text = mark }
+
+| Ctrl+/: the lines (LineSpanOf) commented out with the language's mark at
+| the least indentation among them — or, when every one with text is a
+| comment already, back in. Blank lines are left as they are.
+ToggleComment { buffer } =>
+    emit CommentMark { path = buffer.path } to this get mark
+    if mark.text = "", return Edited { buffer = buffer, changed = false }
+    token = mark.text
+    emit Length { value = token } to core get { value as token_size }
+    emit LineSpanOf { buffer = buffer } to this get span
+    lines = buffer.lines
+    least = -1
+    all_marked = true
+    r = span.first
+    loop
+        if r > span.last, break
+        emit Indent { line = lines[r] } to this get indent
+        emit Trim { value = lines[r] } to texts get trimmed
+        if trimmed.value ≠ ""
+            if least < 0 or indent.width < least, least = indent.width
+            if trimmed.value[0, token_size) ≠ token, all_marked = false
+        r += 1
+    if least < 0, return Edited { buffer = buffer, changed = false }
+    row = buffer.row
+    col = buffer.col
+    anchor = buffer.anchor
+    r = span.first
+    loop
+        if r > span.last, break
+        line = lines[r]
+        emit Indent { line = line } to this get indent
+        emit Trim { value = line } to texts get trimmed
+        if trimmed.value ≠ ""
+            shift = token_size + 1
+            at = least
+            if all_marked
+                at = indent.width
+                body = line[at + token_size, length)
+                shift = token_size
+                if body[0, 1) = " "
+                    body = body[1, length)
+                    shift += 1
+                line = line[0, at) + body
+                shift = 0 - shift
+            if not all_marked, line = line[0, least) + token + " " + line[least, length)
+            if row = r and col ≥ at
+                col = col + shift
+                if col < at, col = at
+            if anchor ≠ null and anchor.row = r and anchor.col ≥ at
+                moved_col = anchor.col + shift
+                if moved_col < at, moved_col = at
+                anchor = { row = anchor.row, col = moved_col }
+            lines = lines[0, r) + [line] + lines(r, length)
+        r += 1
+    return Edited { buffer = buffer + { lines = lines, col = col, want = col, anchor = anchor }, changed = true }
+
+| ── Several cursors ────────────────────────────────────────────────────
+|
+| Besides the cursor (`row`, `col`, `want`, `anchor`), a buffer may have
+| `extra`: more cursors, each `{ row, col, want, anchor }`. Ctrl+D adds
+| them; a key then acts at every one (EditAll); Escape leaves the first.
+
+| Ctrl+D: nothing selected — the word at the cursor; something selected on
+| one line — the next place with the same text gets a cursor and is
+| selected, the newest the cursor the screen follows; round past the end.
+SelectNext { buffer } =>
+    emit Selection { buffer = buffer } to this get picked
+    lines = buffer.lines
+    emit Length { value = lines } to core get { value as count }
+    if picked.empty
+        line = lines[buffer.row]
+        a = buffer.col
+        loop
+            if a = 0 or separators[line[a - 1]] = true, break
+            a = a - 1
+        b = buffer.col
+        loop
+            if line[b] = null or separators[line[b]] = true, break
+            b += 1
+        if b = a, return Edited { buffer = buffer, changed = false }
+        return Edited { buffer = buffer + { anchor = { row = buffer.row, col = a }, col = b, want = b }, changed = false }
+    if picked.start.row ≠ picked.stop.row, return Edited { buffer = buffer, changed = false }
+    emit SelectedText { buffer = buffer } to this get needle
+    emit Length { value = needle.text } to core get { value as size }
+    extras = buffer.extra
+    if extras = null, extras = []
+    taken = { "$picked.start.row:$picked.start.col" = true }
+    loop one over extras
+        emit Selection { buffer = { row = one.row, col = one.col, anchor = one.anchor } } to this get theirs
+        taken = taken + { "$theirs.start.row:$theirs.start.col" = true }
+    k = 0
+    loop
+        if k > count, break
+        r = picked.stop.row + k
+        if r ≥ count, r = r - count
+        from = 0
+        if k = 0, from = picked.stop.col
+        loop
+            emit IndexIn { text = lines[r], part = needle.text, from = from } to this get found
+            if found.value < 0, break
+            spot = found.value
+            if taken["$r:$spot"] ≠ true
+                kept = extras + [{ row = buffer.row, col = buffer.col, want = buffer.want, anchor = buffer.anchor }]
+                return Edited { buffer = buffer + { anchor = { row = r, col = spot }, row = r, col = spot + size, want = spot + size, extra = kept }, changed = false }
+            from = spot + 1
+        k += 1
+    return Edited { buffer = buffer, changed = false }
+
+| `cursors` latest first (row, then column).
+LatestFirst { cursors } =>
+    out = []
+    loop c over cursors
+        placed = []
+        put = false
+        loop o over out
+            if not put and (c.row > o.row or (c.row = o.row and c.col > o.col))
+                placed += c
+                put = true
+            placed += o
+        if not put, placed += c
+        out = placed
+    return Cursors { cursors = out }
+
+| A key at every cursor. One cursor: Edit. Several: each in turn, the
+| latest first, so an edit never moves a cursor not yet seen; the ones
+| seen are moved by what each edit did to the text before them. Cursors
+| that end in the same place become one. Escape leaves only the first.
+EditAll { buffer, name, text, page } =>
+    if name = "ctrl+d"
+        emit SelectNext { buffer = buffer } to this get added
+        return added
+    extras = buffer.extra
+    if extras = null or extras = []
+        emit Edit { buffer = buffer, name = name, text = text, page = page } to this get alone
+        return alone
+    if name = "escape", return Edited { buffer = buffer + { extra = [] }, changed = false }
+    all = [{ row = buffer.row, col = buffer.col, want = buffer.want, anchor = buffer.anchor, first = true }]
+    loop one over extras
+        all += one + { first = false }
+    emit LatestFirst { cursors = all } to this get ordered
+    lines = buffer.lines
+    changed = false
+    done = []
+    loop c over ordered.cursors
+        emit Length { value = lines } to core get { value as before_count }
+        emit Edit { buffer = buffer + { lines = lines, row = c.row, col = c.col, want = c.want, anchor = c.anchor, extra = null }, name = name, text = text, page = page } to this get one
+        after = one.buffer
+        | Where this edit ends in the old text: the later of cursor and anchor.
+        ref = { row = c.row, col = c.col }
+        if c.anchor ≠ null and (c.anchor.row > c.row or (c.anchor.row = c.row and c.anchor.col > c.col)), ref = c.anchor
+        if one.changed
+            changed = true
+            emit Length { value = after.lines } to core get { value as after_count }
+            delta = after_count - before_count
+            moved = []
+            loop p over done
+                emit ShiftPlace { place = { row = p.row, col = p.col }, ref = ref, landed = { row = after.row, col = after.col }, delta = delta } to this get place
+                q = p + { row = place.row, col = place.col, want = place.col }
+                if p.anchor ≠ null
+                    emit ShiftPlace { place = p.anchor, ref = ref, landed = { row = after.row, col = after.col }, delta = delta } to this get anchored
+                    q = q + { anchor = { row = anchored.row, col = anchored.col } }
+                moved += q
+            done = moved
+        lines = after.lines
+        dup = false
+        loop p over done
+            if p.row = after.row and p.col = after.col, dup = true
+        if not dup or c.first, done += { row = after.row, col = after.col, want = after.want, anchor = after.anchor, first = c.first }
+    primary = null
+    kept = []
+    loop p over done
+        if p.first and primary = null, primary = p
+        if not p.first
+            clash = primary ≠ null and primary.row = p.row and primary.col = p.col
+            if not clash, kept += { row = p.row, col = p.col, want = p.want, anchor = p.anchor }
+    if primary = null, primary = done[0]
+    return Edited { buffer = buffer + { lines = lines, row = primary.row, col = primary.col, want = primary.want, anchor = primary.anchor, extra = kept }, changed = changed }
+
+| `place` after an edit that ended at `ref` in the old text and left its
+| cursor at `landed`, `delta` lines more: on ref's row, it keeps its distance
+| from the cursor; below, it moves by delta; above, it stays.
+ShiftPlace { place, ref, landed, delta } =>
+    if place.row = ref.row, return Place { row = landed.row, col = place.col - ref.col + landed.col }
+    if place.row > ref.row, return Place { row = place.row + delta, col = place.col }
+    return Place { row = place.row, col = place.col }
