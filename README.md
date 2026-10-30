@@ -286,6 +286,9 @@ the editor (center); the grid is ready for more.
 | | |
 |---|---|
 | Ctrl+N | New File… — in the folder picked in the Explorer (a file picked: its folder; nothing picked, or the Explorer hidden: the root). Only the name is asked; a name ending in `/` makes a folder |
+| Ctrl+P | Go to File…: the project's files that match what is typed (the name's own letters first); ↑/↓ pick, Enter opens |
+| Ctrl+F | Find in the file: as it is typed, the next match is selected and counted ("2 of 5"); Enter the next, Shift+Enter the one before, Escape leaves the cursor there |
+| Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste the selection (Shift+arrows, Ctrl+A), through the desktop's clipboard; Ctrl+V in the AI chat's box too. In a terminal they are the shell's |
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |
 | Alt+← / Alt+→ | Go Back / Go Forward: where the cursor has been — another file, or a jump of 10 lines or more (View menu too) |
@@ -462,8 +465,8 @@ sends (no tmux or pyte needed).
 ## Next
 
 AI answers that appear as they are written, a meaning-based search index,
-suggestions as you type, remote providers. And Ctrl+P, find, the
-clipboard, the mouse, diagnostics from the language server, extensions.
+suggestions as you type, remote providers. And find across the project,
+the mouse, diagnostics from the language server, extensions.
 
 ## Mike through the shared local service
 

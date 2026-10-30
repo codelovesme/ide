@@ -92,6 +92,8 @@ prefs = null
 | own, is all there is.
 clipboard = null
 copied = ""
+| How many files Ctrl+P lists at most.
+quick_most = 50
 
 | The user's settings (see settings.gene.code), and where they are kept.
 settings = null
@@ -223,6 +225,12 @@ PasteText =>
     emit Paste {} to clipboard get got
     if got ∈ Exception, return Text { text = copied }
     return Text { text = got.text }
+
+| The ide's own clipboard only, the desktop's let go (the tests use it,
+| so the desktop's is never touched).
+UnlinkClipboard =>
+    clipboard = null
+    return Unlinked
 
 EuglenaHasBeenBorn { cell_name } =>
     emit UseOrganelles { from = "." } to this get bundled
@@ -458,6 +466,8 @@ Run { command } =>
     if command[0, 10) = "view.edge."
         emit ResizeEdge { direction = command[10, length) } to this
     if command = "file.new", emit NewFile to this
+    if command = "file.quickOpen", emit QuickOpen to this
+    if command = "edit.find", emit FindStart to this
     if command = "file.openFolder"
         prompt = { kind = "open_folder", label = "Open folder: ", text = folder + "/" }
     if command = "view.explorer", emit TogglePane { kind = "explorer" } to this
@@ -710,6 +720,38 @@ PromptKey { name, text } =>
     if name = "escape"
         prompt = null
         return Cancelled
+    if asked.kind = "quick_open"
+        if name = "enter"
+            prompt = null
+            chosen = asked.matches[asked.sel]
+            if chosen ≠ null, emit OpenFile { path = chosen } to this
+            return Answered
+        emit Length { value = asked.matches } to core get { value as listed }
+        sel = asked.sel
+        if name = "down" and sel < listed - 1, sel += 1
+        if name = "up" and sel > 0, sel = sel - 1
+        typed = asked.text
+        if name = "backspace", typed = typed[0, length - 1)
+        if text ≠ "", typed = typed + text
+        if typed = asked.text
+            prompt = asked + { sel = sel }
+            return Typed
+        emit QuickMatches { files = asked.files, query = typed, most = quick_most } to this get matched
+        prompt = asked + { text = typed, matches = matched.paths, sel = 0 }
+        return Typed
+    if asked.kind = "find"
+        if name = "enter" or name = "shift+enter"
+            step = 1
+            if name = "shift+enter", step = -1
+            emit FindGo { query = asked.text, step = step } to this
+            return Typed
+        typed = asked.text
+        if name = "backspace", typed = typed[0, length - 1)
+        if text ≠ "", typed = typed + text
+        if typed ≠ asked.text
+            prompt = asked + { text = typed }
+            emit FindGo { query = typed, step = 0 } to this
+        return Typed
     if asked.kind = "open_folder" or asked.kind = "move" or asked.kind = "new_file"
         if name = "enter"
             prompt = null
@@ -845,6 +887,119 @@ OpenFile { path } =>
     emit Show { buffer = { kind = "file", path = path, store = "workspace", lines = split.value, disk_base = read.content, row = 0, col = 0, want = 0, top = 0, left = 0, dirty = false, readonly = false }, slot = into.slot } to this
     return Opened
 
+| Ctrl+P: the project's files, listed once when asked; what is typed then
+| narrows them (QuickMatches).
+QuickOpen =>
+    emit ProjectFiles to this get listed
+    emit Split { value = listed.text, separator = "\n" } to texts get lines
+    paths = []
+    loop one over lines.value
+        path = one
+        if path[0, 2) = "./", path = path[2, length)
+        if path ≠ "", paths += path
+    emit QuickMatches { files = paths, query = "", most = quick_most } to this get matched
+    prompt = { kind = "quick_open", label = "Go to file: ", text = "", files = paths, matches = matched.paths, sel = 0 }
+    return Asked
+
+| The files that match `query`, at most `most`, case left aside: those
+| whose own name (after the last /) has it first, then those whose path
+| has it, then those whose path has its letters in order.
+QuickMatches { files as paths, query, most } =>
+    emit Lower { value = query } to texts get lowered
+    want = lowered.value
+    emit Length { value = want } to core get { value as want_size }
+    named = []
+    inside = []
+    spread = []
+    loop path over paths
+        emit Lower { value = path } to texts get low
+        here = low.value
+        emit IndexIn { text = here, part = want, from = 0 } to this get has
+        if has.value ≥ 0
+            emit BaseName { path = here } to this get own
+            emit IndexIn { text = own.name, part = want, from = 0 } to this get named_has
+            if named_has.value ≥ 0, named += path
+            if named_has.value < 0, inside += path
+        if has.value < 0
+            at = 0
+            fits = true
+            i = 0
+            loop
+                if i ≥ want_size, break
+                emit IndexIn { text = here, part = want[i, i + 1), from = at } to this get spot
+                if spot.value < 0
+                    fits = false
+                    break
+                at = spot.value + 1
+                i += 1
+            if fits, spread += path
+    out = []
+    loop path over named + inside + spread
+        emit Length { value = out } to core get { value as taken }
+        if taken ≥ most, break
+        out += path
+    return Matches { paths = out }
+
+| Ctrl+F: find in the open file — what is selected on one line is the
+| first thing looked for.
+FindStart =>
+    if file = null
+        message = "Find works in a file — open one first"
+        return Nothing
+    emit SelectedText { buffer = file } to this get picked
+    emit IndexIn { text = picked.text, part = "\n", from = 0 } to this get several
+    first = ""
+    if several.value < 0, first = picked.text
+    prompt = { kind = "find", label = "Find: ", text = first }
+    if first ≠ "", emit FindGo { query = first, step = 0 } to this
+    return Asked
+
+| `query` looked for in the file, case left aside, from where the
+| selection starts: `step` 0 the first match there or after (as it is
+| typed), 1 the next one, -1 the one before — round past either end. The
+| match is selected, the cursor at its end; the box says which of how many.
+FindGo { query, step } =>
+    if file = null or prompt = null, return Nothing
+    emit Selection { buffer = file } to this get picked
+    from = picked.start
+    if query = ""
+        file = file + { anchor = null }
+        prompt = prompt + { label = "Find: " }
+        return Found
+    emit Lower { value = query } to texts get lowered
+    want = lowered.value
+    emit Length { value = want } to core get { value as size }
+    found = []
+    loop r, line over file.lines
+        emit Lower { value = line } to texts get low
+        at = 0
+        loop
+            emit IndexIn { text = low.value, part = want, from = at } to this get spot
+            if spot.value < 0, break
+            found += { row = r, col = spot.value }
+            at = spot.value + size
+        emit Length { value = found } to core get { value as so_far }
+        if so_far ≥ 1000, break
+    emit Length { value = found } to core get { value as count }
+    if count = 0
+        file = file + { anchor = null, row = from.row, col = from.col, want = from.col }
+        prompt = prompt + { label = "Find (no results): " }
+        return Found
+    pick = -1
+    loop i, spot over found
+        after = spot.row > from.row or (spot.row = from.row and spot.col > from.col)
+        same = spot.row = from.row and spot.col = from.col
+        before = not after and not same
+        if pick < 0 and step = 0 and (after or same), pick = i
+        if pick < 0 and step = 1 and after, pick = i
+        if step = -1 and before, pick = i
+    if pick < 0 and step ≥ 0, pick = 0
+    if pick < 0, pick = count - 1
+    spot = found[pick]
+    file = file + { anchor = { row = spot.row, col = spot.col }, row = spot.row, col = spot.col + size, want = spot.col + size }
+    prompt = prompt + { label = "Find (" + (pick + 1) + " of " + count + "): " }
+    return Found
+
 | `buffer` shown in the group in `slot`, in its tab, and focused.
 Show { buffer, slot } =>
     emit Stash to this
@@ -898,7 +1053,28 @@ ShowShortcuts =>
     return Shown
 
 EditorKey { name, text } =>
-    emit Edit { buffer = file, name = name, text = text, page = editor_page } to this get edited
+    | The clipboard: Ctrl+C copies the selection, Ctrl+X cuts it, Ctrl+V
+    | pastes over it — not keybindings, so the chat's and the shell's
+    | Ctrl+C stay theirs.
+    if name = "ctrl+c" or name = "ctrl+x"
+        emit SelectedText { buffer = file } to this get picked
+        if picked.text = ""
+            message = "Nothing is selected — Shift+arrows or Ctrl+A select"
+            return Refused
+        emit CopyText { text = picked.text } to this
+        if name = "ctrl+c", return Copied
+    edited = null
+    if name = "ctrl+x"
+        emit DeleteSelection { buffer = file } to this get cut
+        edited = cut
+    if name = "ctrl+v"
+        emit PasteText to this get pasted
+        if pasted.text = "", return Nothing
+        emit InsertText { buffer = file, text = pasted.text } to this get put_in
+        edited = put_in
+    if edited = null
+        emit Edit { buffer = file, name = name, text = text, page = editor_page } to this get keyed
+        edited = keyed
     if edited ∈ Exception
         message = "Error: " + edited.message
         return Failed
@@ -1286,7 +1462,11 @@ ChatKey { name, text } =>
     if name = "ctrl+c"
         emit Run { command = "ai.cancel" } to this
         return Handled
-    emit ChatInput { input = chat.input, caret = chat.caret, name = name, text = text, page = chat_page } to this get typed
+    typed_text = text
+    if name = "ctrl+v"
+        emit PasteText to this get pasted
+        typed_text = pasted.text
+    emit ChatInput { input = chat.input, caret = chat.caret, name = name, text = typed_text, page = chat_page } to this get typed
     | ↑ on the first line, ↓ on the last: the questions asked before.
     if typed.edge
         step = -1
@@ -1427,6 +1607,19 @@ RunQuiet { command, args } =>
     emit Trim { value = ran.stdout } to texts get out
     return Text { text = out.value }
 
+| The project's files, a path a line: ripgrep's list (it keeps to
+| .gitignore), else git's, else find's without the usual heavy folders.
+ProjectFiles =>
+    emit RunQuiet { command = "rg", args = ["--files", "--no-ignore-parent", "--sort", "path", "."] } to this get listed
+    listing = listed.text
+    if listing = ""
+        emit RunQuiet { command = "git", args = ["ls-files"] } to this get tracked
+        listing = tracked.text
+    if listing = ""
+        emit RunQuiet { command = "find", args = [".", "-type", "f", "-not", "-path", "*/.git/*", "-not", "-path", "*/node_modules/*", "-not", "-path", "*/target/*"] } to this get walked
+        listing = walked.text
+    return Text { text = listing }
+
 outline_patterns = [
     "^[A-Z][A-Za-z0-9]* *(\\{.*\\})? *=>"
     "^\\s*(pub(\\([a-z]+\\))? )?(export )?(default )?(async )?(fn|struct|enum|trait|impl|mod|class|def|function|interface|type|func) [A-Za-z_]"
@@ -1445,14 +1638,8 @@ ProjectKnowledge { shown, budget } =>
             emit ReadFile { path = candidate } to files get read
             if read ∉ Exception, found = found + "## " + candidate + "\n" + read.content + "\n\n"
     emit Clip { text = found, chars = budget.instructions } to this get instructions
-    emit RunQuiet { command = "rg", args = ["--files", "--no-ignore-parent", "--sort", "path", "."] } to this get listed
-    listing = listed.text
-    if listing = ""
-        emit RunQuiet { command = "git", args = ["ls-files"] } to this get tracked
-        listing = tracked.text
-    if listing = ""
-        emit RunQuiet { command = "find", args = [".", "-type", "f", "-not", "-path", "*/.git/*", "-not", "-path", "*/node_modules/*", "-not", "-path", "*/target/*"] } to this get walked
-        listing = walked.text
+    emit ProjectFiles to this get project_files
+    listing = project_files.text
     outline_args = ["--no-ignore-parent", "-n", "--no-heading", "--with-filename", "--color", "never", "--sort", "path", "--max-count", "40", "--max-columns", "160", "-g", "!*.lock", "-g", "!*.json", "-g", "!*.min.*"]
     loop pattern over outline_patterns
         outline_args = outline_args + ["-e", pattern]

@@ -9,6 +9,8 @@ menus = [
         items = [
             { label = "New File…", command = "file.new" }
             { label = "Open Folder…", command = "file.openFolder" }
+            { label = "Go to File…", command = "file.quickOpen" }
+            { label = "Find…", command = "edit.find" }
             { label = "Save", command = "file.save" }
             { label = "Close Editor", command = "file.close" }
             { label = "New Window", command = "window.new" }

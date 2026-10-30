@@ -57,6 +57,17 @@ s.keys(b"yo ", 0.8)
 check("●" in s.screen.row(1), "typing marks the file dirty")
 s.keys(b"\x13", 0.8)
 check(open(folder + "/src/hello.code").read().startswith("yo | hi"), "ctrl+s saves")
+s.keys(b"\x10", 0.8)                        # ctrl+p: the project's files by name
+s.keys(b"note", 0.8)
+check("Go to File" in s.screen.text() and "notes.md" in s.screen.row(3), "ctrl+p lists the files that match")
+s.keys(b"\x1b", 0.6)
+s.keys(b"\x06", 0.6)                        # ctrl+f
+s.keys(b"hi", 0.8)
+check("Find (1 of 2)" in s.screen.row(39), "ctrl+f finds and counts: " + s.screen.row(39).strip()[:30])
+s.keys(b"\x1b\x1b[1;5H", 0.6)               # escape, ctrl+home
+s.keys(b"\x1b[1;2F\x03\x1b[1;5F\x16", 1.0)   # shift+end, ctrl+c, ctrl+end, ctrl+v
+check("4 yo | hi" in s.screen.text(), "ctrl+c / ctrl+v copy and paste a line")
+s.keys(b"\x1a\x13\x1b[1;5H", 0.8)           # ctrl+z, ctrl+s (as it was), ctrl+home
 s.keys(b"\x02", 0.6)                        # ctrl+b: the explorer is shown — the keys to it
 s.keys(b"\x1b[B\r", 1.0)
 check("notes.md" in s.screen.row(1), "ctrl+b goes to the explorer; down, enter opens the next file")

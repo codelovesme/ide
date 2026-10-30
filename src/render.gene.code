@@ -359,6 +359,9 @@ TabStrip { tabs, active, width, focused } =>
         spans += { text = label, style = style }
     return TabSpans { spans = spans }
 
+| The selection's background (VS Code's).
+selection_bg = [38, 79, 120]
+
 | A file's lines with numbers in `pane` (below its tab strip), scrolled to
 | keep the cursor in sight, coloured when the file is code.
 EditorView { pane, buffer, focused } =>
@@ -374,6 +377,7 @@ EditorView { pane, buffer, focused } =>
     if buffer.col ≥ l + tw, l = buffer.col - tw + 1
     if l < 0, l = 0
 
+    emit Selection { buffer = buffer } to this get picked
     coloured = null
     if buffer.path[length - 5, length) = ".code"
         emit Join { value = buffer.lines, separator = "\n" } to texts get source
@@ -394,6 +398,17 @@ EditorView { pane, buffer, focused } =>
             segments = cut.spans
         numbers = [{ text = "" + (r + 1), width = gutter - 1, align = "right", style = number_style }, { text = " ", style = "plain" }]
         out += { row = 2 + pane.y + i, col = pane.x, spans = numbers + segments }
+        | The selection, lit over the line (a line it runs past: one cell
+        | more, for its line break).
+        if not picked.empty and r ≥ picked.start.row and r ≤ picked.stop.row
+            emit Length { value = line } to core get { value as line_size }
+            a = 0
+            if r = picked.start.row, a = picked.start.col
+            b = line_size + 1
+            if r = picked.stop.row, b = picked.stop.col
+            if a < l, a = l
+            if b > l + tw, b = l + tw
+            if b > a, out += { row = 2 + pane.y + i, col = pane.x + gutter + a - l, spans = [{ text = line[a, b), width = b - a, style = "plain", bg = selection_bg }] }
         i += 1
     return PaneView {
         overlays = out
@@ -403,6 +418,30 @@ EditorView { pane, buffer, focused } =>
         cursor_row = 2 + pane.y + buffer.row - t
         cursor_col = pane.x + gutter + buffer.col - l
     }
+
+| Ctrl+P's list, under the menu bar: the files that match, the one Enter
+| opens lit.
+QuickOpenView { prompt, cols, height } =>
+    width = cols - 6
+    if width > 90, width = 90
+    left = (cols - width) / 2
+    if left < 0, left = 0
+    out = [{ row = 2, col = left, spans = [{ text = " Go to File — ↑/↓ pick · Enter open · Esc close", width = width, style = "menu_active" }] }]
+    room = height - 6
+    if room < 1, room = 1
+    top = 0
+    if prompt.sel ≥ room, top = prompt.sel - room + 1
+    i = 0
+    loop
+        if i ≥ room, break
+        path = prompt.matches[top + i]
+        if path = null, break
+        style = "menu_item"
+        if top + i = prompt.sel, style = "menu_item_active"
+        out += { row = 3 + i, col = left, spans = [{ text = "  " + path, width = width, style = style }] }
+        i += 1
+    if i = 0, out += { row = 3, col = left, spans = [{ text = "  No file matches", width = width, style = "menu_item" }] }
+    return Overlays { overlays = out }
 
 welcome = [
     ""
@@ -552,6 +591,10 @@ Frame { state, placement, screens } =>
     if state.prompt ≠ null
         cursor_row = state.rows - 1
         cursor_col = status.cursor_col
+
+    if state.prompt ≠ null and state.prompt.kind = "quick_open"
+        emit QuickOpenView { prompt = state.prompt, cols = state.cols, height = state.rows } to this get quick
+        overlays = overlays + quick.overlays
 
     if state.picker ≠ null
         emit PickerView { picker = state.picker, rows = state.picker_rows, cols = state.cols, height = state.rows } to this get picked

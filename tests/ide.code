@@ -746,5 +746,127 @@ emit State to this get nothing_ahead
 assert nothing_ahead.message = "Nowhere further to go" and nothing_ahead.file.row = 0
 emit DeleteFile { path = "long.code" } to files
 
+
+| Ctrl+P: the project's files by name, as it is typed — those whose own
+| name has it first, then those with its letters in order; ↑/↓ pick,
+| Enter opens, Escape closes.
+emit WriteFile { path = "src/hello_test.code", content = "x" } to files
+emit HandleKey { name = "ctrl+p", text = "" } to this
+emit State to this get quick
+assert quick.prompt.kind = "quick_open" and quick.prompt.label = "Go to file: "
+emit TypeText { value = "hello" } to this
+emit State to this get quick_typed
+assert quick_typed.prompt.matches = ["hello.code", "src/hello_test.code"] and quick_typed.prompt.sel = 0
+emit Framed to this get quick_frame
+quick_listed = false
+loop o over quick_frame.overlays
+    loop span over o.spans
+        if span.text = "  src/hello_test.code", quick_listed = true
+assert quick_listed
+emit HandleKey { name = "down", text = "" } to this
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get quick_opened
+assert quick_opened.prompt = null and quick_opened.file.path = "src/hello_test.code" and quick_opened.focus = "editor"
+emit HandleKey { name = "ctrl+p", text = "" } to this
+emit TypeText { value = "hlc" } to this
+emit State to this get quick_spread
+assert quick_spread.prompt.matches = ["hello.code", "src/hello_test.code"]
+emit HandleKey { name = "backspace", text = "" } to this
+emit HandleKey { name = "backspace", text = "" } to this
+emit HandleKey { name = "backspace", text = "" } to this
+emit TypeText { value = "notes" } to this
+emit State to this get quick_notes
+assert quick_notes.prompt.matches = ["src/notes.md"]
+emit HandleKey { name = "escape", text = "" } to this
+emit State to this get quick_closed
+assert quick_closed.prompt = null and quick_closed.file.path = "src/hello_test.code"
+
+| Ctrl+F: as it is typed, the next match from the cursor is selected and
+| counted; Enter the next, Shift+Enter the one before, round; Escape
+| leaves the cursor on it.
+emit WriteFile { path = "find.code", content = "alpha beta\nBeta gamma\nalpha\n" } to files
+emit OpenFile { path = "find.code" } to this
+emit HandleKey { name = "ctrl+f", text = "" } to this
+emit TypeText { value = "beta" } to this
+emit State to this get found_one
+assert found_one.prompt.kind = "find" and found_one.prompt.label = "Find (1 of 2): "
+assert found_one.file.anchor = { row = 0, col = 6 } and found_one.file.row = 0 and found_one.file.col = 10
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get found_two
+assert found_two.prompt.label = "Find (2 of 2): " and found_two.file.anchor = { row = 1, col = 0 } and found_two.file.col = 4
+emit HandleKey { name = "enter", text = "" } to this
+emit State to this get found_round
+assert found_round.prompt.label = "Find (1 of 2): " and found_round.file.row = 0
+emit HandleKey { name = "shift+enter", text = "" } to this
+emit State to this get found_back
+assert found_back.prompt.label = "Find (2 of 2): " and found_back.file.row = 1
+emit TypeText { value = "x" } to this
+emit State to this get found_none
+assert found_none.prompt.label = "Find (no results): " and found_none.file.anchor = null
+emit HandleKey { name = "backspace", text = "" } to this
+emit HandleKey { name = "escape", text = "" } to this
+emit State to this get found_left
+assert found_left.prompt = null and found_left.file.row = 1 and found_left.file.anchor = { row = 1, col = 0 }
+| Ctrl+F with no file open says so.
+emit HandleKey { name = "ctrl+l", text = "" } to this
+emit HandleKey { name = "ctrl+f", text = "" } to this
+emit State to this get find_nowhere
+assert find_nowhere.prompt = null and find_nowhere.message = "Find works in a file — open one first"
+emit HandleKey { name = "escape", text = "" } to this
+
+| The clipboard: the ide's own here, so the desktop's is never touched.
+| Ctrl+C copies the selection, Ctrl+X cuts it, Ctrl+V pastes — each
+| change one undo step; the selection is drawn.
+emit UnlinkClipboard to this
+emit OpenFile { path = "find.code" } to this
+emit HandleKey { name = "ctrl+home", text = "" } to this
+emit HandleKey { name = "ctrl+c", text = "" } to this
+emit State to this get nothing_copied
+assert nothing_copied.message = "Nothing is selected — Shift+arrows or Ctrl+A select"
+emit HandleKey { name = "shift+end", text = "" } to this
+emit Framed to this get selected_frame
+lit = ""
+loop o over selected_frame.overlays
+    loop span over o.spans
+        if span.bg = [38, 79, 120], lit = lit + span.text
+assert lit = "alpha beta"
+emit HandleKey { name = "ctrl+c", text = "" } to this
+emit HandleKey { name = "ctrl+end", text = "" } to this
+emit HandleKey { name = "ctrl+v", text = "" } to this
+emit State to this get pasted
+assert pasted.file.lines = ["alpha beta", "Beta gamma", "alpha", "alpha beta"] and pasted.file.col = 10 and pasted.file.dirty
+emit HandleKey { name = "ctrl+z", text = "" } to this
+emit State to this get unpasted
+assert unpasted.file.lines = ["alpha beta", "Beta gamma", "alpha", ""]
+emit HandleKey { name = "ctrl+home", text = "" } to this
+loop i over [1, 2, 3, 4, 5, 6]
+    emit HandleKey { name = "shift+right", text = "" } to this
+emit HandleKey { name = "ctrl+x", text = "" } to this
+emit State to this get cut_out
+assert cut_out.file.lines[0] = "beta" and cut_out.file.col = 0
+emit HandleKey { name = "ctrl+z", text = "" } to this
+emit State to this get uncut
+assert uncut.file.lines[0] = "alpha beta"
+| More than one line: the line breaks are kept.
+emit HandleKey { name = "ctrl+home", text = "" } to this
+emit HandleKey { name = "shift+down", text = "" } to this
+emit HandleKey { name = "shift+end", text = "" } to this
+emit HandleKey { name = "ctrl+c", text = "" } to this
+emit HandleKey { name = "ctrl+end", text = "" } to this
+emit HandleKey { name = "ctrl+v", text = "" } to this
+emit State to this get two_pasted
+assert two_pasted.file.lines = ["alpha beta", "Beta gamma", "alpha", "alpha beta", "Beta gamma"] and two_pasted.file.row = 4
+emit HandleKey { name = "ctrl+z", text = "" } to this
+| In the AI chat's box Ctrl+V pastes too.
+emit HandleKey { name = "ctrl+l", text = "" } to this
+emit HandleKey { name = "ctrl+u", text = "" } to this
+emit HandleKey { name = "ctrl+v", text = "" } to this
+emit State to this get chat_pasted
+assert chat_pasted.focus = "chat" and chat_pasted.chat.input = "alpha beta\nBeta gamma"
+emit HandleKey { name = "ctrl+u", text = "" } to this
+emit HandleKey { name = "escape", text = "" } to this
+emit DeleteFile { path = "find.code" } to files
+emit DeleteFile { path = "src/hello_test.code" } to files
+
 emit RemoveDir { path = "." } to prefs_fs
 emit RemoveDir { path = "." } to files

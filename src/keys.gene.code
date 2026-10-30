@@ -17,6 +17,8 @@
 
 defaults = [
     { key = "ctrl+n", command = "file.new" }
+    { key = "ctrl+p", command = "file.quickOpen" }
+    { key = "ctrl+f", command = "edit.find" }
     { key = "ctrl+k ctrl+o", command = "file.openFolder" }
     { key = "ctrl+s", command = "file.save" }
     { key = "ctrl+w", command = "file.close" }
@@ -80,6 +82,8 @@ defaults = [
 | keybindings.json may use.
 commands = [
     { id = "file.new", title = "New File… (in the folder picked in the explorer)" }
+    { id = "file.quickOpen", title = "Go to File… (the project's files, by name)" }
+    { id = "edit.find", title = "Find in the file (Enter next, Shift+Enter previous)" }
     { id = "file.openFolder", title = "Open Folder…" }
     { id = "file.save", title = "Save" }
     { id = "file.close", title = "Close the tab" }
@@ -318,6 +322,8 @@ Shortcuts { table } =>
         "  terminal.integrated.commandsToSkipShell (settings.json)."
         "  Editor: arrows, Home, End, PgUp, PgDn, Ctrl+Home / End, Ctrl+Left / Right,"
         "  Tab indents by four spaces; Ctrl+K Shift+Tab takes a level back."
+        "  Shift+arrows select, Ctrl+A everything; Ctrl+C copy, Ctrl+X cut, Ctrl+V paste"
+        "  (Ctrl+V in the AI chat's box too)."
         "  Menus: arrows, Enter, Escape."
     ]
     return ShortcutLines { lines = lines }

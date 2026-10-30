@@ -92,6 +92,18 @@ Selection { buffer } =>
     if anchor.row < here.row or (anchor.row = here.row and anchor.col < here.col), return Range { start = anchor, stop = here, empty = false }
     return Range { start = here, stop = anchor, empty = false }
 
+| Where `part` first is in `text` at or after character `from`, or -1
+| (the strings organelle in use has no IndexOf).
+IndexIn { text, part, from } =>
+    emit Length { value = text } to core get { value as size }
+    emit Length { value = part } to core get { value as want }
+    i = from
+    loop
+        if i + want > size, break
+        if text[i, i + want) = part, return At { value = i }
+        i += 1
+    return At { value = -1 }
+
 | The selected text (lines joined with "\n"), "" with none.
 SelectedText { buffer } =>
     emit Selection { buffer = buffer } to this get picked
