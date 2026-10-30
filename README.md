@@ -294,7 +294,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+D | The word at the cursor; again, the next same text too, with a cursor of its own — typing, Enter, Backspace and the moves act at every cursor; Escape keeps one |
 | Alt+↑ / Alt+↓ | Move the line, or the selected lines, up / down |
 | Ctrl+Shift+Alt+↑ / ↓ | Copy the line, or the selected lines, above / below (VS Code's keys on Linux) |
-| Shift+Alt+↑ / ↓ (or Ctrl+Shift+↑ / ↓) | Another cursor on the line above / below |
+| Shift+Alt+↑ / ↓ | Another cursor on the line above / below (Ctrl+Shift+arrows select: ←/→ by word, ↑/↓ by line) |
 | Ctrl+/ | Comment the line(s) out, or back in, with the language's mark (`#`, `//`, `--` …) |
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |

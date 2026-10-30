@@ -177,7 +177,7 @@ emit EditAll { buffer = ends.buffer, name = "backspace", text = "", page = 10 } 
 assert back_all.buffer.lines = ["a", "", "c", ""]
 
 | VS Code's keys on Linux: Ctrl+Shift+Alt+↑/↓ copy the line (or the
-| selected lines) above / below; Shift+Alt+↑/↓ (or Ctrl+Shift+↑/↓) add a
+| selected lines) above / below; Shift+Alt+↑/↓ add a
 | cursor on the line above / below, the new one the cursor followed.
 emit Edit { buffer = { lines = ["a", "b"], row = 0, col = 1, want = 1 }, name = "ctrl+shift+alt+down", text = "", page = 10 } to this get copied_down
 assert copied_down.changed and copied_down.buffer.lines = ["a", "a", "b"] and copied_down.buffer.row = 1 and copied_down.buffer.col = 1
@@ -187,7 +187,7 @@ emit Edit { buffer = { lines = ["a", "b", "c"], row = 1, col = 1, want = 1, anch
 assert block_copied.buffer.lines = ["a", "b", "a", "b", "c"] and block_copied.buffer.row = 3 and block_copied.buffer.anchor = { row = 2, col = 0 }
 emit EditAll { buffer = { lines = ["abc", "de", "fgh"], row = 0, col = 2, want = 2 }, name = "shift+alt+down", text = "", page = 10 } to this get cursor_below
 assert cursor_below.buffer.row = 1 and cursor_below.buffer.col = 2 and cursor_below.buffer.extra = [{ row = 0, col = 2, want = 2, anchor = null }]
-emit EditAll { buffer = cursor_below.buffer, name = "ctrl+shift+down", text = "", page = 10 } to this get cursor_below_two
+emit EditAll { buffer = cursor_below.buffer, name = "shift+alt+down", text = "", page = 10 } to this get cursor_below_two
 assert cursor_below_two.buffer.row = 2
 emit EditAll { buffer = cursor_below_two.buffer, name = "X", text = "X", page = 10 } to this get typed_three
 assert typed_three.buffer.lines = ["abXc", "deX", "fgXh"]
@@ -195,3 +195,11 @@ emit EditAll { buffer = { lines = ["ab", "cd"], row = 1, col = 1, want = 1 }, na
 assert cursor_above.buffer.row = 0 and cursor_above.buffer.extra = [{ row = 1, col = 1, want = 1, anchor = null }]
 emit EditAll { buffer = cursor_above.buffer, name = "shift+alt+up", text = "", page = 10 } to this get none_above
 assert none_above.buffer.row = 0 and none_above.buffer.extra = [{ row = 1, col = 1, want = 1, anchor = null }]
+
+| Ctrl+Shift+arrows select: ←/→ a word at a time, ↑/↓ a line.
+emit Edit { buffer = { lines = ["emit Print to con", "x"], row = 0, col = 0, want = 0 }, name = "ctrl+shift+right", text = "", page = 10 } to this get word_selected
+assert word_selected.buffer.anchor = { row = 0, col = 0 } and word_selected.buffer.col = 4
+emit Edit { buffer = word_selected.buffer, name = "ctrl+shift+down", text = "", page = 10 } to this get line_selected
+assert line_selected.buffer.anchor = { row = 0, col = 0 } and line_selected.buffer.row = 1 and line_selected.buffer.col = 1
+emit Edit { buffer = line_selected.buffer, name = "ctrl+shift+up", text = "", page = 10 } to this get back_up
+assert back_up.buffer.anchor = { row = 0, col = 0 } and back_up.buffer.row = 0

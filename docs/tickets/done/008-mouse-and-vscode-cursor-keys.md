@@ -15,7 +15,8 @@ Acceptance criteria:
       the explorer opens, on a menu title opens it, on an item runs it.
 - [x] With an older tty the ide starts and works with keys as before.
 - [x] Ctrl+Shift+Alt+↑/↓ copy the line(s) above / below; Shift+Alt+↑/↓
-      and Ctrl+Shift+↑/↓ add a cursor above / below.
+      add a cursor above / below. Ctrl+Shift+↑/↓ select (the owner's
+      choice over VS Code's add-cursor), as Ctrl+Shift+←/→ do by word.
 - [x] `code test` 10/10; tools/smoke.py as before; a real pty with the
       patched tty: click, drag, double click, wheel, menu by click, mouse
       given back on exit.

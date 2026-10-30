@@ -224,6 +224,8 @@ Edit { buffer, name, text, page } =>
     base_key = ""
     if name[0, 6) = "shift+", base_key = name[6, length)
     if name[0, 11) = "ctrl+shift+", base_key = "ctrl+" + name[11, length)
+    | Ctrl+Shift+↑ / ↓ select as Shift+↑ / ↓ do (Ctrl+↑ / ↓ alone scroll).
+    if name = "ctrl+shift+up" or name = "ctrl+shift+down", base_key = name[11, length)
     if base_key ≠ "" and moves[base_key] = true
         keep = buffer.anchor
         if keep = null, keep = { row = buffer.row, col = buffer.col }
@@ -614,7 +616,7 @@ SelectNext { buffer } =>
         k += 1
     return Edited { buffer = buffer, changed = false }
 
-| Shift+Alt+↑ / ↓ (or Ctrl+Shift+↑ / ↓): a cursor on the line above the
+| Shift+Alt+↑ / ↓: a cursor on the line above the
 | highest one (below the lowest), in the column it would like; it is the
 | one the screen follows, the others extra.
 CursorBeside { buffer, down } =>
@@ -658,8 +660,8 @@ EditAll { buffer, name, text, page } =>
     if name = "ctrl+d"
         emit SelectNext { buffer = buffer } to this get added
         return added
-    if name = "shift+alt+up" or name = "ctrl+shift+up" or name = "shift+alt+down" or name = "ctrl+shift+down"
-        emit CursorBeside { buffer = buffer, down = name = "shift+alt+down" or name = "ctrl+shift+down" } to this get beside
+    if name = "shift+alt+up" or name = "shift+alt+down"
+        emit CursorBeside { buffer = buffer, down = name = "shift+alt+down" } to this get beside
         return beside
     extras = buffer.extra
     if extras = null or extras = []
