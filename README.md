@@ -293,6 +293,8 @@ the editor (center); the grid is ready for more.
 | Ctrl+Backspace / Ctrl+Delete | Delete a word back / forward |
 | Ctrl+D | The word at the cursor; again, the next same text too, with a cursor of its own — typing, Enter, Backspace and the moves act at every cursor; Escape keeps one |
 | Alt+↑ / Alt+↓ | Move the line, or the selected lines, up / down |
+| Ctrl+Shift+Alt+↑ / ↓ | Copy the line, or the selected lines, above / below (VS Code's keys on Linux) |
+| Shift+Alt+↑ / ↓ (or Ctrl+Shift+↑ / ↓) | Another cursor on the line above / below |
 | Ctrl+/ | Comment the line(s) out, or back in, with the language's mark (`#`, `//`, `--` …) |
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |
@@ -324,6 +326,18 @@ four spaces and Ctrl+K Shift+Tab takes a level back (code refuses tabs); Enter k
 adds a level after a block header (`… =>`, `if …`, `loop …` without a
 comma). Ctrl+1 needs a terminal that tells it apart from 1 (kitty, foot, WezTerm,
 xterm, tmux with `extended-keys`); F6 always works.
+
+### The mouse
+
+A click puts the cursor there; a drag selects; a double click selects the
+word, a triple the line; Shift+click selects to the click, Alt+click adds a
+cursor. The wheel scrolls the file, terminal or chat under it. A click on a
+tab shows it, in the explorer opens the row, on a menu title opens the
+menu, on an item runs it. It needs a `tty` module that reports the mouse
+(code's tty after 2.21.1); with an older one the ide works as before,
+keys only. While the ide has the mouse, the terminal's own selection is
+Shift+drag (in most terminals).
+
 
 ## Settings
 
@@ -472,7 +486,7 @@ sends (no tmux or pyte needed).
 
 AI answers that appear as they are written, a meaning-based search index,
 suggestions as you type, remote providers. And find across the project,
-the mouse, diagnostics from the language server, extensions.
+diagnostics from the language server, extensions.
 
 ## Mike through the shared local service
 

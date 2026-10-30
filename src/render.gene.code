@@ -357,7 +357,7 @@ TabStrip { tabs, active, width, focused } =>
         if i = active and focused, style = "selected_focus"
         if i = active and not focused, style = "selected"
         spans += { text = label, style = style }
-    return TabSpans { spans = spans }
+    return TabSpans { spans = spans, first = first, sizes = sizes }
 
 | The selection's background (VS Code's).
 selection_bg = [38, 79, 120]
@@ -422,6 +422,8 @@ EditorView { pane, buffer, focused, wrap } =>
 
     cursor_row = 2 + pane.y
     cursor_col = pane.x + gutter
+    | Which line, from which column, each screen row shows (for the mouse).
+    map = []
     i = 0
     r = t
     loop
@@ -450,6 +452,7 @@ EditorView { pane, buffer, focused, wrap } =>
                 segments = cut.spans
             numbers = [{ text = number, width = gutter - 1, align = "right", style = number_style }, { text = " ", style = "plain" }]
             out += { row = y, col = pane.x, spans = numbers + segments }
+            map += { r = r, s = s, last = p = pieces - 1 }
             if not picked.empty
                 emit LitRange { start = picked.start, stop = picked.stop, r = r, size = line_size, s = s, tw = tw } to this get lit_range
                 if lit_range.ok, out += { row = y, col = x + lit_range.a - s, spans = [{ text = line[lit_range.a, lit_range.upto), width = lit_range.b - lit_range.a, style = "plain", bg = selection_bg }] }
@@ -478,7 +481,66 @@ EditorView { pane, buffer, focused, wrap } =>
         page = h
         cursor_row = cursor_row
         cursor_col = cursor_col
+        map = map
+        x0 = pane.x + gutter
+        y0 = 2 + pane.y
+        tw = tw
     }
+
+| What is at screen `row`, `col` (the mouse): `kind` "menubar", "tab"
+| (`group`, `tab`), "tree" (`group`, `index` into the explorer's rows),
+| "editor" (`group`, the text's `line` and `col`), "terminal", "chat",
+| "diff" (`group`), or "none".
+HitTest { state, row, col } =>
+    nothing = Hit { kind = "none", group = -1, tab = -1, index = -1, line = -1, col = -1 }
+    if row = 0, return nothing + { kind = "menubar" }
+    emit Placement { state = state } to this get placement
+    loop area over placement.placed
+        inside = area.id ≥ 0 and row ≥ 1 + area.y and row < 1 + area.y + area.height and col ≥ area.x and col < area.x + area.width
+        if inside
+            group = state.groups[area.id]
+            pane = area
+            if area.x > 0, pane = area + { x = area.x + 1, width = area.width - 1 }
+            focused = area.id = state.current and state.focus ≠ "none"
+            hit = nothing + { group = area.id }
+            if row = 1 + pane.y
+                emit TabStrip { tabs = group.tabs, active = group.active, width = pane.width, focused = focused } to this get strip
+                x = pane.x
+                i = strip.first
+                loop
+                    size = strip.sizes[i]
+                    if size = null, break
+                    if col < x + size, return hit + { kind = "tab", tab = i }
+                    x = x + size
+                    i += 1
+                return hit + { kind = "tab", tab = -1 }
+            view = group.tabs[group.active]
+            if view.kind = "explorer"
+                first_row = 3 + pane.y
+                if row < first_row, return hit + { kind = "tree" }
+                return hit + { kind = "tree", index = state.tree_top + row - first_row }
+            if view.kind = "file"
+                buffer = view
+                if area.id = state.current and state.file ≠ null, buffer = state.file
+                wrap = false
+                if state.settings ≠ null, wrap = state.settings["editor.wordWrap"] = "on"
+                emit EditorView { pane = pane, buffer = buffer, focused = focused, wrap = wrap } to this get drawn
+                emit Length { value = drawn.map } to core get { value as shown }
+                if shown = 0, return hit + { kind = "editor", line = 0, col = 0 }
+                at = row - drawn.y0
+                spot = drawn.map[at]
+                past = false
+                if at ≥ shown
+                    spot = drawn.map[shown - 1]
+                    past = true
+                emit Length { value = buffer.lines[spot.r] } to core get { value as size }
+                c = spot.s + col - drawn.x0
+                if c < spot.s, c = spot.s
+                if not spot.last and c ≥ spot.s + drawn.tw, c = spot.s + drawn.tw - 1
+                if c > size or past, c = size
+                return hit + { kind = "editor", line = spot.r, col = c }
+            return hit + { kind = view.kind }
+    return nothing
 
 | How many rows of `width` a line of `size` takes (one, even empty).
 Pieces { size, width } =>

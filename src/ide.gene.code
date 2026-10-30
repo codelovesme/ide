@@ -253,7 +253,7 @@ EuglenaHasBeenBorn { cell_name } =>
     emit OpenFolder { path = start_in } to this get opened
     if opened ∈ Failed, return opened
     if settings["workbench.sideBar.visible"], emit ShowExplorer { focused = true } to this
-    emit Start {} to term get started
+    emit Start { mouse = "Mouse" } to term get started
     if started ∈ Exception, return Failed { reason = started.message }
     cols = started.cols
     rows = started.rows
@@ -324,6 +324,15 @@ Key { name, text } =>
     emit Render to this
     return handled
 
+| The mouse (pushed by tty, which asks the terminal for it at Start).
+Mouse { kind, button, row, col, shift, alt, ctrl, clicks } =>
+    if not running, return Ignored
+    message = ""
+    emit HandleMouse { kind = kind, button = button, row = row, col = col, shift = shift, alt = alt, ctrl = ctrl, clicks = clicks } to this get handled
+    if handled ∈ Exception, message = "Error: " + handled.message
+    emit Render to this
+    return handled
+
 | A terminal's screen changed (pushed by the pty organelle): draw again.
 TerminalOutput { id } =>
     if login_pty ≠ null and id = login_pty
@@ -369,6 +378,108 @@ TerminalExited { id, code } =>
         emit Unstash to this
     if running, emit Render to this
     return Closed
+
+| Where a press in a file began, while the button is held (a drag selects
+| from it), else null.
+drag_from = null
+
+| The group `group` given the focus, showing what it shows.
+FocusGroup { group } =>
+    if group = current, return Focused
+    emit Stash to this
+    current = group
+    emit Unstash to this
+    return Focused
+
+| What the mouse does: a menu title opens its menu, an item runs, a click
+| elsewhere closes it; a click focuses the pane under it — on a tab shows
+| it, in the explorer opens the row, in a file puts the cursor there (Shift:
+| selects to it; Alt: another cursor; twice: the word; three times: the
+| line) and a drag selects; the wheel scrolls three lines.
+HandleMouse { kind, button, row, col, shift, alt, ctrl, clicks } =>
+    if prompt ≠ null or picker ≠ null, return Ignored
+    if kind = "release"
+        drag_from = null
+        return Handled
+    if kind = "press" and (menu ≠ null or row = 0)
+        emit MenuAt { open = menu, row = row, col = col } to this get on_menu
+        menu = null
+        if on_menu.index ≥ 0, menu = { index = on_menu.index, item = 0 }
+        if on_menu.command ≠ null, emit Run { command = on_menu.command } to this
+        return Handled
+    emit State to this get state
+    emit HitTest { state = state, row = row, col = col } to this get hit
+    if hit.group < 0, return Ignored
+    if kind = "wheel"
+        if button ≠ "up" and button ≠ "down", return Ignored
+        emit FocusGroup { group = hit.group } to this
+        step_key = "ctrl+down"
+        if button = "up", step_key = "ctrl+up"
+        if focus = "editor" and file ≠ null
+            loop n over [1, 2, 3]
+                emit Edit { buffer = file, name = step_key, text = "", page = editor_page } to this get scrolled
+                file = scrolled.buffer
+        if focus = "terminal"
+            emit Active { groups = groups, current = current } to this get shown
+            scroll_id = shown.buffer.id
+            back = terminal_scrolls["$scroll_id"]
+            if back = null, back = 0
+            if button = "up", back += 3
+            if button = "down", back = back - 3
+            if back < 0, back = 0
+            terminal_scrolls = terminal_scrolls + { "$scroll_id" = back }
+        if focus = "chat"
+            moved = chat.scroll - 3
+            if button = "up", moved = chat.scroll + 3
+            if moved < 0, moved = 0
+            chat = chat + { scroll = moved }
+        return Handled
+    if button ≠ "left", return Ignored
+    if kind = "drag"
+        if drag_from = null or hit.kind ≠ "editor" or hit.group ≠ current or file = null, return Ignored
+        file = file + { anchor = drag_from, row = hit.line, col = hit.col, want = hit.col, extra = null }
+        return Handled
+    if kind ≠ "press", return Ignored
+    emit FocusGroup { group = hit.group } to this
+    if hit.kind = "tab" and hit.tab ≥ 0
+        emit Stash to this
+        emit Reveal { group = hit.group, tab = hit.tab } to this
+        return Handled
+    if hit.kind = "tree" and hit.index ≥ 0 and tree[hit.index] ≠ null
+        tree_sel = hit.index
+        tree_picked = true
+        emit TreeKey { name = "enter" } to this
+        return Handled
+    if hit.kind ≠ "editor" or file = null, return Handled
+    here = { row = hit.line, col = hit.col }
+    drag_from = here
+    if alt
+        extras = file.extra
+        if extras = null, extras = []
+        extras += { row = file.row, col = file.col, want = file.want, anchor = file.anchor }
+        file = file + { row = here.row, col = here.col, want = here.col, anchor = null, extra = extras }
+        drag_from = null
+        return Handled
+    if shift
+        anchor = file.anchor
+        if anchor = null, anchor = { row = file.row, col = file.col }
+        file = file + { anchor = anchor, row = here.row, col = here.col, want = here.col, extra = null }
+        drag_from = anchor
+        return Handled
+    file = file + { row = here.row, col = here.col, want = here.col, anchor = null, extra = null }
+    if clicks = 2
+        emit SelectNext { buffer = file } to this get word
+        file = word.buffer
+        drag_from = null
+    if clicks = 3
+        emit Length { value = file.lines } to core get { value as count }
+        file = file + { anchor = { row = here.row, col = 0 } }
+        if here.row < count - 1, file = file + { row = here.row + 1, col = 0, want = 0 }
+        if here.row = count - 1
+            emit Length { value = file.lines[here.row] } to core get { value as size }
+            file = file + { col = size, want = size }
+        drag_from = null
+    return Handled
 
 | Where the terminal `id` is: its group and tab, or -1s.
 FindTerminal { id } =>

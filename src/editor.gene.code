@@ -215,6 +215,9 @@ Edit { buffer, name, text, page } =>
     if name = "ctrl+/"
         emit ToggleComment { buffer = buffer } to this get toggled
         return toggled
+    if name = "ctrl+shift+alt+up" or name = "ctrl+shift+alt+down"
+        emit CopyLines { buffer = buffer, down = name = "ctrl+shift+alt+down" } to this get copied
+        return copied
     if name = "ctrl+a"
         emit Length { value = buffer.lines[count - 1] } to core get { value as last }
         return Edited { buffer = buffer + { anchor = { row = 0, col = 0 }, row = count - 1, col = last, want = last }, changed = false }
@@ -477,6 +480,20 @@ MoveLines { buffer, step } =>
     if buffer.anchor ≠ null, moved = moved + { anchor = { row = buffer.anchor.row + step, col = buffer.anchor.col } }
     return Edited { buffer = moved, changed = true }
 
+| Ctrl+Shift+Alt+↑ / ↓: the line, or the selected lines, copied above or
+| below; the cursor (and selection) go to the copy below, or stay — on the
+| copy above.
+CopyLines { buffer, down } =>
+    emit LineSpanOf { buffer = buffer } to this get span
+    lines = buffer.lines
+    block = lines[span.first, span.last + 1)
+    lines = lines[0, span.last + 1) + block + lines(span.last, length)
+    if not down, return Edited { buffer = buffer + { lines = lines }, changed = true }
+    size = span.last - span.first + 1
+    moved = buffer + { lines = lines, row = buffer.row + size }
+    if buffer.anchor ≠ null, moved = moved + { anchor = { row = buffer.anchor.row + size, col = buffer.anchor.col } }
+    return Edited { buffer = moved, changed = true }
+
 | The comment mark for `path`'s language, "" when it has none known.
 CommentMark { path } =>
     if path = null, return Mark { text = "" }
@@ -597,6 +614,27 @@ SelectNext { buffer } =>
         k += 1
     return Edited { buffer = buffer, changed = false }
 
+| Shift+Alt+↑ / ↓ (or Ctrl+Shift+↑ / ↓): a cursor on the line above the
+| highest one (below the lowest), in the column it would like; it is the
+| one the screen follows, the others extra.
+CursorBeside { buffer, down } =>
+    extras = buffer.extra
+    if extras = null, extras = []
+    edge = buffer.row
+    loop one over extras
+        if down and one.row > edge, edge = one.row
+        if not down and one.row < edge, edge = one.row
+    target = edge - 1
+    if down, target = edge + 1
+    emit Length { value = buffer.lines } to core get { value as count }
+    if target < 0 or target ≥ count, return Edited { buffer = buffer, changed = false }
+    emit Length { value = buffer.lines[target] } to core get { value as there }
+    col = buffer.want
+    if col = null, col = buffer.col
+    if col > there, col = there
+    kept = extras + [{ row = buffer.row, col = buffer.col, want = buffer.want, anchor = buffer.anchor }]
+    return Edited { buffer = buffer + { row = target, col = col, want = buffer.want, anchor = null, extra = kept }, changed = false }
+
 | `cursors` latest first (row, then column).
 LatestFirst { cursors } =>
     out = []
@@ -620,6 +658,9 @@ EditAll { buffer, name, text, page } =>
     if name = "ctrl+d"
         emit SelectNext { buffer = buffer } to this get added
         return added
+    if name = "shift+alt+up" or name = "ctrl+shift+up" or name = "shift+alt+down" or name = "ctrl+shift+down"
+        emit CursorBeside { buffer = buffer, down = name = "shift+alt+down" or name = "ctrl+shift+down" } to this get beside
+        return beside
     extras = buffer.extra
     if extras = null or extras = []
         emit Edit { buffer = buffer, name = name, text = text, page = page } to this get alone

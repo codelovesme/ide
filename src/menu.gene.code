@@ -124,6 +124,22 @@ MenuBar { width, open, title } =>
         { row = 0, col = 0, spans = spans }
     ] }
 
+| What a click at `row`, `col` is on: a menu title (`index`), an item of
+| the open menu (`command`), or neither (-1, null).
+MenuAt { open, row, col } =>
+    if row = 0
+        x = 1
+        loop i, m over menus
+            emit Length { value = " " + m.title + " " } to core get { value as w }
+            if col ≥ x and col < x + w, return MenuHit { index = i, command = null }
+            x = x + w
+        return MenuHit { index = -1, command = null }
+    if open ≠ null
+        m = menus[open.index]
+        entry = m.items[row - 1]
+        if entry ≠ null and col ≥ m.col and col < m.col + dropdown_label + dropdown_keys, return MenuHit { index = -1, command = entry.command }
+    return MenuHit { index = -1, command = null }
+
 | The open menu's items, dropped down under its title, each with the key
 | that runs it (`labels`, from the key table — so keybindings.json shows).
 Dropdown { open, labels } =>

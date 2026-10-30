@@ -53,6 +53,25 @@ ContinuedRows {} =>
         if o.spans[0] ≠ null and o.spans[0].style = "line_number" and o.spans[0].text = "", n += 1
     return Counted { count = n }
 
+| Where `part` is on screen in a frame: the row and column of its first
+| character, the first time it is found (spans laid out left to right).
+ScreenSpot { part } =>
+    emit Framed to this get frame
+    loop o over frame.overlays
+        x = o.col
+        loop span over o.spans
+            emit IndexIn { text = span.text, part = part, from = 0 } to this get at
+            if at.value ≥ 0, return Spot { row = o.row, col = x + at.value }
+            emit Length { value = span.text } to core get { value as size }
+            if span.width ≠ null, size = span.width
+            x = x + size
+    return Spot { row = -1, col = -1 }
+
+| A mouse event, as the tty pushes it.
+Click { row, col, kind, clicks, alt, shift } =>
+    emit HandleMouse { kind = kind, button = "left", row = row, col = col, shift = shift, alt = alt, ctrl = false, clicks = clicks } to this
+    return Clicked
+
 | `value` typed, a key a character.
 TypeText { value } =>
     emit Length { value = value } to core get { value as size }
@@ -974,6 +993,83 @@ emit ContinuedRows to this get unwrapped_again
 assert unwrapped_again.count = 0
 emit DeleteFile { path = "wide.code" } to files
 emit DeleteFile { path = "edit.code" } to files
+
+| The mouse: a click puts the cursor there, a drag selects, a double click
+| the word, a triple the line, Alt+click adds a cursor, Shift+click
+| selects to it; the wheel scrolls; a click on a tab shows it, on the
+| explorer opens, on a menu title opens the menu, on an item runs it.
+emit WriteFile { path = "click.code", content = "alpha beta\ngamma delta\n" } to files
+emit OpenFile { path = "click.code" } to this
+emit ScreenSpot { part = "delta" } to this get delta_at
+assert delta_at.row > 0
+emit Click { row = delta_at.row, col = delta_at.col, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit Click { row = delta_at.row, col = delta_at.col, kind = "release", clicks = 1, alt = false, shift = false } to this
+emit State to this get clicked
+assert clicked.file.row = 1 and clicked.file.col = 6 and clicked.file.anchor = null and clicked.focus = "editor"
+emit ScreenSpot { part = "alpha" } to this get alpha_at
+emit Click { row = alpha_at.row, col = alpha_at.col, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit Click { row = alpha_at.row, col = alpha_at.col + 10, kind = "drag", clicks = 1, alt = false, shift = false } to this
+emit Click { row = alpha_at.row, col = alpha_at.col + 10, kind = "release", clicks = 1, alt = false, shift = false } to this
+emit State to this get dragged
+assert dragged.file.anchor = { row = 0, col = 0 } and dragged.file.row = 0 and dragged.file.col = 10
+emit Click { row = delta_at.row, col = delta_at.col - 4, kind = "press", clicks = 2, alt = false, shift = false } to this
+emit State to this get double_clicked
+assert double_clicked.file.anchor = { row = 1, col = 0 } and double_clicked.file.col = 5
+emit Click { row = alpha_at.row, col = alpha_at.col + 2, kind = "press", clicks = 3, alt = false, shift = false } to this
+emit State to this get triple_clicked
+assert triple_clicked.file.anchor = { row = 0, col = 0 } and triple_clicked.file.row = 1 and triple_clicked.file.col = 0
+emit Click { row = alpha_at.row, col = alpha_at.col, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit Click { row = delta_at.row, col = delta_at.col, kind = "press", clicks = 1, alt = true, shift = false } to this
+emit State to this get alt_clicked
+assert alt_clicked.file.row = 1 and alt_clicked.file.col = 6 and alt_clicked.file.extra = [{ row = 0, col = 0, want = 0, anchor = null }]
+emit Click { row = alpha_at.row, col = alpha_at.col, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit Click { row = delta_at.row, col = delta_at.col, kind = "press", clicks = 1, alt = false, shift = true } to this
+emit State to this get shift_clicked
+assert shift_clicked.file.anchor = { row = 0, col = 0 } and shift_clicked.file.row = 1 and shift_clicked.file.col = 6 and shift_clicked.file.extra = null
+| The wheel scrolls the file under it.
+scroll_lines = []
+loop i over [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60]
+    scroll_lines += "row " + i
+emit Join { value = scroll_lines, separator = "\n" } to strings_lib get scroll_text
+emit WriteFile { path = "scroll.code", content = scroll_text.value } to files
+emit OpenFile { path = "scroll.code" } to this
+emit ScreenSpot { part = "row" } to this get row_two
+assert row_two.row > 0
+emit HandleMouse { kind = "wheel", button = "down", row = row_two.row, col = row_two.col, shift = false, alt = false, ctrl = false, clicks = 1 } to this
+emit Framed to this
+emit State to this get wheeled
+assert wheeled.file.top = 3
+emit HandleMouse { kind = "wheel", button = "up", row = row_two.row, col = row_two.col, shift = false, alt = false, ctrl = false, clicks = 1 } to this
+emit Framed to this
+emit State to this get wheeled_back
+assert wheeled_back.file.top = 0
+| A click on a tab shows it.
+emit ScreenSpot { part = " click.code " } to this get tab_at
+emit Click { row = tab_at.row, col = tab_at.col + 2, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit State to this get tab_clicked
+assert tab_clicked.file.path = "click.code"
+| A click in the explorer opens what is there.
+emit ShowExplorer { focused = false } to this
+emit ScreenSpot { part = "   hello.code" } to this get tree_at
+emit Click { row = tree_at.row, col = tree_at.col + 3, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit State to this get tree_clicked
+assert tree_clicked.file.path = "hello.code"
+| A menu title opens its menu; an item runs; a click elsewhere closes.
+emit ScreenSpot { part = "View" } to this get view_at
+emit Click { row = 0, col = view_at.col, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit State to this get menu_clicked
+assert menu_clicked.menu.index = 1
+emit Click { row = 10, col = 70, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit State to this get menu_closed
+assert menu_closed.menu = null
+emit Click { row = 0, col = 2, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit ScreenSpot { part = "Go to Line" } to this get item_at
+emit Click { row = item_at.row, col = item_at.col, kind = "press", clicks = 1, alt = false, shift = false } to this
+emit State to this get item_clicked
+assert item_clicked.menu = null and item_clicked.prompt.kind = "goto"
+emit HandleKey { name = "escape", text = "" } to this
+emit DeleteFile { path = "scroll.code" } to files
+emit DeleteFile { path = "click.code" } to files
 
 emit RemoveDir { path = "." } to prefs_fs
 emit RemoveDir { path = "." } to files
