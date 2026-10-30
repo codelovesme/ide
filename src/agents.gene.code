@@ -7,12 +7,12 @@
 | and reads what it does as it does it — one JSON event a line — into the
 | chat: its words, and each step it takes, in grey.
 |
-| Four modes, Alt+E going round them (settings: ai.agent.mode):
+| Four modes, Ctrl+Shift+A going round them (settings: ai.agent.mode):
 |
 |   ask   it may only read, and answers — Claude in its plan mode, Codex in
 |         a read-only sandbox;
 |   plan  the same, but it answers with a plan for the change — which
-|         files, what in each; Alt+G then carries it out (ai.goAhead);
+|         files, what in each; Ctrl+Shift+G then carries it out (ai.goAhead);
 |   edit  it changes files itself — Claude accepting its edits (commands
 |         only those in `ai.agent.allowCommands`), Codex in its
 |         workspace-write sandbox;

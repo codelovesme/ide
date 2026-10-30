@@ -17,7 +17,7 @@ defaults = {
     "ai.provider" = "local"
     "ai.providers" = {
         | LocalAI's own address, and the variable its key is in (unset: no
-        | key is sent); its model "" is the server's default, and Alt+M
+        | key is sent); its model "" is the server's default, and Ctrl+Shift+M
         | lists the rest from its /v1/models.
         local = { type = "openai-compatible", endpoint = "http://localhost:8080", model = "", apiKeyEnv = "LOCALAI_API_KEY", contextTokens = 32768, maxTokens = 2048 }
         | Claude Code cannot list its models or efforts: these are the names
@@ -45,7 +45,7 @@ defaults = {
     "ai.chat.location" = "r"
     "ai.maxSteps" = 12
     "ai.agent.mode" = "ask"
-    | What Alt+G carries a plan out in: "edit" or "auto".
+    | What Ctrl+Shift+G carries a plan out in: "edit" or "auto".
     "ai.agent.planFollowup" = "edit"
     "ai.agent.allowCommands" = []
     | Voice input (voice.gene.code): what turns speech into words — "auto"

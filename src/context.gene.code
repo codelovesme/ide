@@ -257,7 +257,7 @@ ModeNote { mode } =>
     if mode = "auto", return Text { text = "(Auto mode: make the change and run what it needs, without asking; check each step is safe first. Say at the end what you changed.)" }
     return Text { text = "" }
 
-| `mode` after `mode` (Alt+E): ask, plan, edit, auto, and round.
+| `mode` after `mode` (Ctrl+Shift+A): ask, plan, edit, auto, and round.
 NextMode { mode } =>
     if mode = "ask", return Text { text = "plan" }
     if mode = "plan", return Text { text = "edit" }

@@ -540,7 +540,7 @@ assert ask_refused.chat.pending = null
 emit Length { value = ask_refused.chat.messages } to core get { value as ask_count }
 emit Contains { text = ask_refused.chat.messages[ask_count - 1].content, part = "Not in ask mode" } to this get told_ask
 assert told_ask.yes
-| Plan: the answer offers Alt+G, which switches to edit and goes ahead in
+| Plan: the answer offers Ctrl+Shift+G, which switches to edit and goes ahead in
 | the same conversation.
 emit SetAgentMode { mode = "plan" } to this
 emit ChatResult { content = "{\"answer\": \"1. In hello.code, return Hello.\"}", _request_id = ask_refused.chat.request } to this
@@ -556,7 +556,7 @@ assert went.yes
 emit ChatResult { content = "{\"answer\": \"ok\"}", _request_id = going.chat.request } to this
 emit Run { command = "ai.goAhead" } to this
 emit State to this get no_plan
-assert no_plan.message = "There is no plan to carry out — ask in Plan mode first (Alt+E)"
+assert no_plan.message = "There is no plan to carry out — ask in Plan mode first (Ctrl+Shift+A)"
 
 | Edit — changes: the model proposes, the user decides.
 emit AskAbout { question = "say Hello instead" } to this

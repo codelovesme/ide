@@ -1,6 +1,6 @@
 # Mike as an IDE provider
 
-Alt+M → Mike, or `"ai.provider": "mike"` in settings. Claude Code, Codex
+Ctrl+Shift+M → Mike, or `"ai.provider": "mike"` in settings. Claude Code, Codex
 and OpenAI-compatible providers retain their existing paths. Mike does not
 need a raw model URL and does not start a model, an agent CLI or another
 machine executor. IDE talks to the user's existing shared Mike service.
@@ -81,7 +81,7 @@ terminal and write actions for these turns. Edit proposes the change in the
 existing diff tab: `a` accepts, `r` rejects. Auto applies through the same
 revision fence, without a redundant diff approval. Other service operations in
 Edit/Auto still need their usual grants/approvals; switching mode does not
-create or widen a grant. Plan uses the normal Alt+G go-ahead flow.
+create or widen a grant. Plan uses the normal Ctrl+Shift+G go-ahead flow.
 
 `save=false` changes only the buffer and leaves it dirty; `save=true` writes
 only when the buffer and disk match their checked versions. Disk changes since

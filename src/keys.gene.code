@@ -44,9 +44,10 @@ defaults = [
     { key = "f6", command = "focus.next" }
     { key = "shift+f6", command = "focus.next" }
     { key = "ctrl+\\", command = "editor.split" }
-    | Ctrl+Tab next, Shift+Tab previous. (GNOME's terminals send Ctrl+Tab
-    | as a plain Tab; Shift+Tab arrives everywhere.)
+    | Ctrl+Tab next, Ctrl+Shift+Tab previous, as in a browser. (GNOME's
+    | terminals send Ctrl+Tab as a plain Tab; Shift+Tab arrives everywhere.)
     { key = "ctrl+tab", command = "tab.next" }
+    { key = "ctrl+shift+tab", command = "tab.previous" }
     { key = "shift+tab", command = "tab.previous" }
     | VS Code's Go Back / Go Forward.
     | A terminal's scrollback.
@@ -63,13 +64,13 @@ defaults = [
     { key = "alt+s", command = "menu.settings" }
     { key = "alt+h", command = "menu.help" }
     { key = "ctrl+k ctrl+s", command = "help.keys" }
-    | Cursor's key for its chat, and VS Code's for Copilot's.
+    | Cursor's key for its chat.
     { key = "ctrl+l", command = "ai.toggle" }
-    { key = "ctrl+alt+i", command = "ai.toggle" }
-    { key = "ctrl+k d", command = "ai.showChanges" }
-    { key = "alt+m", command = "ai.switchModel" }
-    { key = "alt+e", command = "ai.toggleMode" }
-    { key = "alt+g", command = "ai.goAhead" }
+    | The AI's other keys all start with Ctrl+Shift.
+    { key = "ctrl+shift+d", command = "ai.showChanges" }
+    { key = "ctrl+shift+m", command = "ai.switchModel" }
+    { key = "ctrl+shift+a", command = "ai.toggleMode" }
+    { key = "ctrl+shift+g", command = "ai.goAhead" }
     | Speak to the AI chat: once to record, again to stop (voice.gene.code).
     { key = "ctrl+shift+space", command = "ai.voice" }
     { key = "ctrl+k shift+tab", command = "edit.outdent" }

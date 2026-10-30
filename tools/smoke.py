@@ -121,10 +121,10 @@ if len(sys.argv) > 1:
 
 # An agent behind the chat (the stand-in for Claude Code): switched to from
 # the Settings menu; the ide keeps answering keys while it works.
-s.keys(b"\x1bm", 0.2)                      # alt+m: the AIs, models, efforts side by side
+s.keys(b"\x1b[109;6u", 0.2)               # ctrl+shift+m: the AIs, models, efforts side by side
 check(s.wait_for(" AI —", 10), "the model picker opens after checking every AI")
 screen_text = s.screen.text()
-check(" Model" in screen_text and " Effort" in screen_text and "● local" in screen_text and "Claude Code" in screen_text and "Codex" in screen_text, "alt+m shows every AI, and its models and efforts, at once")
+check(" Model" in screen_text and " Effort" in screen_text and "● local" in screen_text and "Claude Code" in screen_text and "Codex" in screen_text, "ctrl+shift+m shows every AI, and its models and efforts, at once")
 check("local: not set up" in screen_text, "and how the AI under the cursor stands")
 s.keys(b"\x1b[D\x1b[F\r", 1.0)            # ← to the AIs, End (the fake one), Enter
 check("● Claude Code · fake" in s.screen.text(), "Enter picks an AI")

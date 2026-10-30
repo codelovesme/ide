@@ -1264,7 +1264,7 @@ ChatNotice =>
         ai_status = provider.title
         if provider.model ≠ "", ai_status = ai_status + " · " + shown_model
         if provider.effort ≠ "", ai_status = ai_status + " · " + provider.effort
-        chat_label = ai_status + " · " + mode + " (Alt+E) · Alt+M: switch"
+        chat_label = ai_status + " · " + mode + " (Ctrl+Shift+A) · Ctrl+Shift+M: switch"
         ai_status = ai_status + " · " + mode
     if provider.problem = "" and provider.runner = "mike"
         chat_label = "Mike · " + mode + " · shared local service"
@@ -1272,7 +1272,7 @@ ChatNotice =>
     if provider.problem = "" and provider.runner = "api"
         ai_status = provider.name
         if provider.model ≠ "", ai_status = ai_status + " · " + provider.model
-        chat_label = ai_status + " · " + mode + " (Alt+E) · Alt+M: switch"
+        chat_label = ai_status + " · " + mode + " (Ctrl+Shift+A) · Ctrl+Shift+M: switch"
         ai_status = ai_status + " · " + mode
     return Noted
 
@@ -2222,7 +2222,7 @@ NoteAgentChanges =>
     emit Length { value = all } to core get { value as count }
     if count = 0, return Nothing
     emit Join { value = all, separator = "," } to texts get listed
-    chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + listed.value + " — View > Show AI Changes (Ctrl+K D) to see, Undo AI Changes to put back" }] }
+    chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + listed.value + " — View > Show AI Changes (Ctrl+Shift+D) to see, Undo AI Changes to put back" }] }
     emit ReloadFiles { paths = all } to this
     return Noted
 
@@ -2315,16 +2315,16 @@ ShowAiChanges =>
         emit Show { buffer = view, slot = into.slot } to this
     return Shown
 
-| Alt+E: ask → plan → edit → auto, and round, remembered in settings.
+| Ctrl+Shift+A: ask → plan → edit → auto, and round, remembered in settings.
 ToggleAgentMode =>
     emit NextMode { mode = settings["ai.agent.mode"] } to this get next_mode
     emit SetAgentMode { mode = next_mode.text } to this
     return Toggled
 
-| The AI's mode set (ai.mode.<mode>, or Alt+E), and said.
+| The AI's mode set (ai.mode.<mode>, or Ctrl+Shift+A), and said.
 SetAgentMode { mode } =>
     emit StoreSetting { key = "ai.agent.mode", value = mode } to this
-    said = { ask = "Ask — it looks and answers", plan = "Plan — it looks and answers with a plan (Alt+G carries it out)", edit = "Edit — it changes files; commands only from ai.agent.allowCommands", auto = "Auto — it changes files and runs commands without asking" }
+    said = { ask = "Ask — it looks and answers", plan = "Plan — it looks and answers with a plan (Ctrl+Shift+G carries it out)", edit = "Edit — it changes files; commands only from ai.agent.allowCommands", auto = "Auto — it changes files and runs commands without asking" }
     message = "AI mode: " + said[mode]
     emit ChatNotice to this
     return Moded
@@ -2333,15 +2333,15 @@ SetAgentMode { mode } =>
 OfferPlan =>
     if settings["ai.agent.mode"] ≠ "plan", return Nothing
     followup = settings["ai.agent.planFollowup"]
-    chat = chat + { plan_ready = true, turns = chat.turns + [{ role = "tool", text = "Alt+G: go ahead — carry out this plan in " + followup + " mode" }] }
+    chat = chat + { plan_ready = true, turns = chat.turns + [{ role = "tool", text = "Ctrl+Shift+G: go ahead — carry out this plan in " + followup + " mode" }] }
     return Offered
 
-| Alt+G: the plan just made, carried out — the mode switched to
+| Ctrl+Shift+G: the plan just made, carried out — the mode switched to
 | ai.agent.planFollowup (edit, unless it says auto), and the AI told to
 | go ahead, in the same conversation.
 GoAhead =>
     if chat.plan_ready ≠ true
-        message = "There is no plan to carry out — ask in Plan mode first (Alt+E)"
+        message = "There is no plan to carry out — ask in Plan mode first (Ctrl+Shift+A)"
         return Nothing
     chat = chat + { plan_ready = false }
     emit SetAgentMode { mode = settings["ai.agent.planFollowup"] } to this
@@ -2375,7 +2375,7 @@ HttpResponse { status, body, _request_id } =>
     if cli_updates[check.name] = null, cli_update_count += 1
     cli_updates = cli_updates + { "$check.name" = { title = check.title, installed = check.installed, latest = latest } }
     if cli_update_count = 1, message = notice
-    if cli_update_count > 1, message = "CLI updates available — press Alt+M to review each CLI"
+    if cli_update_count > 1, message = "CLI updates available — press Ctrl+Shift+M to review each CLI"
     if running, emit Render to this
     return Notified
 
@@ -2475,7 +2475,7 @@ ProviderCheck { provider } =>
         levels = { "" = { efforts = takes, default = "" } }
     return Check { ready = ready, note = note, models = found, names = names, levels = levels }
 
-| Alt+M (or Settings > AI: Switch Model…): three lists side by side —
+| Ctrl+Shift+M (or Settings > AI: Switch Model…): three lists side by side —
 | every AI, its models, its efforts — all their choices in sight. ←/→ (or
 | Tab) move between the lists, ↑/↓ within one, Enter picks; ● is what is
 | in use. Moving in the AI list shows that AI's models and efforts; picking

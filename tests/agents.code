@@ -109,13 +109,13 @@ emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code
 emit StoreSetting { key = "ai.provider", value = "fake" } to this
 emit ChatNotice to this
 emit State to this get labelled
-assert labelled.chat_label = "Claude Code · Ask (Alt+E) · Alt+M: switch"
+assert labelled.chat_label = "Claude Code · Ask (Ctrl+Shift+A) · Ctrl+Shift+M: switch"
 assert labelled.ai_status = "Claude Code · Ask"
 
-| The model picker (Alt+M): the AIs, the models, the efforts, side by
+| The model picker (Ctrl+Shift+M): the AIs, the models, the efforts, side by
 | side — the cursor in the models. ↑/↓ move, Enter picks, ←/→ change list.
 emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh", models = ["m1", "m2"], efforts = ["low", "high"] } } } to this
-emit HandleKey { name = "alt+m", text = "" } to this
+emit HandleKey { name = "ctrl+shift+m", text = "" } to this
 emit State to this get picking
 assert picking.picker.col = 1
 assert picking.picker_rows.held.name = "fake" and picking.picker_rows.held.ready
@@ -178,7 +178,7 @@ assert partial_entry.values["ai.providers"]["claude"]["type"] = "claude-code"
 assert partial_entry.values["ai.providers"]["claude"]["efforts"] = ["low", "medium", "high", "xhigh", "max"]
 assert partial_entry.values["ai.providers"]["codex"]["type"] = "codex"
 emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh", models = [{ id = "m-1-5", name = "M 1.5" }, { id = "m-1", name = "M 1" }], efforts = ["low", "high"] } } } to this
-emit HandleKey { name = "alt+m", text = "" } to this
+emit HandleKey { name = "ctrl+shift+m", text = "" } to this
 emit State to this get versioned
 assert versioned.picker_rows.held.name = "fake"
 assert versioned.picker_rows.choices[1] = ["", "m-1-5", "m-1"]
@@ -250,11 +250,11 @@ assert resumed.yes
 | Edit: it changes a file and makes one; the chat says so, Show AI Changes
 | opens their diffs, Undo AI Changes puts them back.
 emit HandleKey { name = "ctrl+l", text = "" } to this
-emit HandleKey { name = "alt+e", text = "" } to this
+emit HandleKey { name = "ctrl+shift+a", text = "" } to this
 emit State to this get plan_mode
 assert plan_mode.settings["ai.agent.mode"] = "plan"
 | Plan: read-only, the question says to answer with a plan, and the
-| answer offers Alt+G, which goes ahead in edit mode.
+| answer offers Ctrl+Shift+G, which goes ahead in edit mode.
 emit AgentRun { question = "plan it" } to this get plan_run
 emit ReadFile { path = "runs/1-prompt.txt" } to fixtures get plan_prompt
 emit Contains { text = plan_prompt.content, part = "Plan mode" } to this get says_plan
@@ -264,9 +264,9 @@ emit Contains { text = plan_args.stdout, part = "--permission-mode plan" } to th
 assert plan_readonly.yes
 assert plan_run.chat.plan_ready
 emit Length { value = plan_run.chat.turns } to core get { value as plan_turns }
-emit Contains { text = plan_run.chat.turns[plan_turns - 1].text, part = "Alt+G: go ahead" } to this get offered
+emit Contains { text = plan_run.chat.turns[plan_turns - 1].text, part = "Ctrl+Shift+G: go ahead" } to this get offered
 assert offered.yes
-emit HandleKey { name = "alt+e", text = "" } to this
+emit HandleKey { name = "ctrl+shift+a", text = "" } to this
 emit State to this get edit_mode
 assert edit_mode.settings["ai.agent.mode"] = "edit"
 emit AgentRun { question = "change it" } to this get edit_run
@@ -293,10 +293,10 @@ emit AgentCommand { provider = codex, mode = "auto", session = "", prompt_file =
 assert codex_auto.text = "'codex' exec --json --skip-git-repo-check -c sandbox_mode=\"workspace-write\" --approve-for-me - < '/r/p' 2> '/r/e'"
 emit AgentCommand { provider = claude, mode = "plan", session = "", prompt_file = "/r/p", err_file = "/r/e", allow = [] } to this get plan_line
 assert plan_line.text = "'claude' -p --output-format stream-json --verbose --permission-mode plan < '/r/p' 2> '/r/e'"
-emit HandleKey { name = "alt+e", text = "" } to this
+emit HandleKey { name = "ctrl+shift+a", text = "" } to this
 emit State to this get auto_mode
 assert auto_mode.settings["ai.agent.mode"] = "auto"
-emit HandleKey { name = "alt+e", text = "" } to this
+emit HandleKey { name = "ctrl+shift+a", text = "" } to this
 emit State to this get round_mode
 assert round_mode.settings["ai.agent.mode"] = "ask"
 | A mode that is not one falls back, and says so.
@@ -314,7 +314,7 @@ assert said_missing.yes
 
 | Ctrl+C stops a running agent.
 emit StoreSetting { key = "ai.providers", value = { fake = { type = "claude-code", command = tests_at.value + "/fake-agent.sh" } } } to this
-emit HandleKey { name = "alt+e", text = "" } to this
+emit HandleKey { name = "ctrl+shift+a", text = "" } to this
 emit AskAbout { question = "slow one" } to this
 emit HandleKey { name = "ctrl+c", text = "" } to this
 emit State to this get stopped

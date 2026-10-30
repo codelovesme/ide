@@ -128,7 +128,7 @@ writes the entries in for you):
 }
 ```
 
-**Picking the AI: Alt+M** (or Settings > AI: Switch Model…) shows every
+**Picking the AI: Ctrl+Shift+M** (or Settings > AI: Switch Model…) shows every
 AI, and the models and efforts of the one under the cursor, side by side —
 all the choices at once, ● on what is in use:
 
@@ -170,7 +170,7 @@ under yours field by field (an entry giving only a `"model"` keeps the rest)
 yet (that needs the localai module to pass one on).
 
 **Or Claude Code / Codex behind the same chat.** With `"ai.provider":
-"claude"` or `"codex"` (or Alt+M) the chat runs
+"claude"` or `"codex"` (or Ctrl+Shift+M) the chat runs
 the `claude` or `codex` program you have installed and signed in to —
 your own subscription, no API key, no per-question bill — out of sight,
 and shows its steps and answers as they come; the ide keeps working
@@ -178,13 +178,13 @@ meanwhile. What you are looking at still goes with each question; they
 read `CLAUDE.md` / `AGENTS.md` themselves, and the conversation carries
 on until View > New AI Chat.
 
-Alt+E (or Settings > AI: Ask ↔ Edit) switches the mode,
+Ctrl+Shift+A (or Settings > AI: Ask ↔ Edit) switches the mode,
 shown on the line over the input:
 
 - **Ask** — it only reads (Claude in plan mode, Codex in a read-only
   sandbox).
 - **Edit** — it changes files itself. After, the chat names what it
-  changed; View > Show AI Changes (Ctrl+K D) opens each as a red / green
+  changed; View > Show AI Changes (Ctrl+Shift+D) opens each as a red / green
   diff, and View > Undo AI Changes puts them all back. That needs the
   folder to be a git repository (the ide takes a snapshot with `git stash
   create`, which touches nothing). Claude runs no commands but those in
@@ -205,7 +205,7 @@ shown on the line over the input:
 
 Out of the box `local` is LocalAI at `http://localhost:8080`, its key
 read from `LOCALAI_API_KEY` (unset, none is sent); name its model in
-`model`, or pick one with Alt+M. `openai-compatible` is anything that
+`model`, or pick one with Ctrl+Shift+M. `openai-compatible` is anything that
 serves `/v1/chat/completions` — LocalAI, Ollama (`http://localhost:11434`), llama.cpp's server, vLLM, LM
 Studio. A key never goes in the file: `apiKeyEnv` names the environment
 variable that holds it. `contextTokens` is how much the model can take;
@@ -289,7 +289,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+K Ctrl+O | Open Folder… |
 | Ctrl+S / Ctrl+W / Ctrl+Q | Save / close the tab / Exit (each asks first if unsaved) |
 | Alt+← / Alt+→ | Go Back / Go Forward: where the cursor has been — another file, or a jump of 10 lines or more (View menu too) |
-| Ctrl+Tab / Shift+Tab | Next / previous tab, round and round — GNOME's terminals send Ctrl+Tab as a plain Tab, so there only Shift+Tab arrives. In a terminal tab Shift+Tab is the shell's |
+| Ctrl+Tab / Ctrl+Shift+Tab (or Shift+Tab) | Next / previous tab, round and round, as in a browser — GNOME's terminals send Ctrl+Tab as a plain Tab, so there only Shift+Tab arrives. In a terminal tab Shift+Tab is the shell's |
 | Ctrl+\\ | Split Editor: the file again, in a second editor on the right |
 | Ctrl+B / Ctrl+J / Ctrl+L / Ctrl+E | The Explorer / the terminal / the AI chat / the files: open and focus; focus; put away (see Pane keys) |
 | Ctrl+0 / Ctrl+1 / Ctrl+2 | Focus the Explorer / the first / the second editor |
@@ -303,7 +303,10 @@ the editor (center); the grid is ready for more.
 | Ctrl+K T | A new terminal |
 | Ctrl+T | Another of what has the keys: a terminal in a terminal, an AI chat in the chat |
 | Ctrl+Shift+N | New Window: another ide on this folder |
-| Alt+M | The AI, its model and its effort |
+| Ctrl+Shift+M | The AI, its model and its effort |
+| Ctrl+Shift+A | The AI chat's next mode: ask, plan, edit, auto |
+| Ctrl+Shift+G | Carry out the plan just made |
+| Ctrl+Shift+D | Show what the AI changed since the last question |
 | Ctrl+Shift+Space | Voice input: record; again stops, and the words go into the AI chat's box (Escape throws the recording away) |
 
 In the editor: arrows, Home (first non-space, then column 0), End,
@@ -464,7 +467,7 @@ clipboard, the mouse, diagnostics from the language server, extensions.
 
 ## Mike through the shared local service
 
-Alt+M now also offers **Mike**. It connects directly to the shared local
+Ctrl+Shift+M now also offers **Mike**. It connects directly to the shared local
 service; Mike Desktop and CLI are not required. Sign in with **Settings →
 Account: Sign In (codelovesme)** (your browser opens). Current editor buffers travel as bounded
 context, and Mike reads/edits through revision-aware editor tools. Ask/Plan
