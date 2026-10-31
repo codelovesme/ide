@@ -27,14 +27,9 @@ else:
 config = tempfile.mkdtemp(prefix="ide-smoke-config-")
 os.makedirs(config + "/codelovesme-ide")
 open(config + "/codelovesme-ide/keybindings.json", "w").write('[ { "key": "ctrl+g", "command": "view.explorer" } ]\n')
-# The local model has no endpoint; "fake" stands in for Claude Code. Voice
-# input is offline, with the tests' stand-in recorder and whisper-cli and a
-# model file that is not one.
-os.makedirs(config + "/models")
-open(config + "/models/ggml-base.bin", "w").write("not really a model\n")
-open(config + "/codelovesme-ide/settings.json", "w").write(('{ "ai.providers": { "local": { "type": "openai-compatible", "endpoint": "" }, "fake": { "type": "claude-code", "command": "%s/tests/fake-agent.sh" } }, '
-    '"ai.voice.provider": "offline", "ai.voice.modelDir": "%s/models", "ai.voice.recordCommand": ["%s/tests/fake-recorder.sh"], '
-    '"ai.voice.whisperCommand": "%s/tests/fake-whisper.sh" }\n') % (app, config, app, app))
+# A settings.json from before 0.23, with the AI chat's settings: it still
+# opens, and they are passed over.
+open(config + "/codelovesme-ide/settings.json", "w").write('{ "ai.provider": "claude", "ai.voice.provider": "offline", "ai.chat.location": "r" }\n')
 s = Session(argv, cwd, {"IDE_FOLDER": folder, "TERM": "xterm-256color", "XDG_CONFIG_HOME": config})
 failures = []
 def check(ok, what):
@@ -103,74 +98,30 @@ check("New file in src/:" in s.screen.row(39), "ctrl+n asks for a name, in the f
 s.keys(b"made.code\r", 1.0)
 check(os.path.isfile(folder + "/src/made.code") and "made.code" in s.screen.row(1), "the file is made there and opened")
 
-# The AI chat: Ctrl+L opens it on the right; with no model set up it says how.
-s.keys(b"\x0c", 1.0)
-right = "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
-check(" AI Chat " in right and "Ask about this project" in right, "ctrl+l opens the AI chat on the right")
-check("No AI model is set up" in right, "with no model, the chat says how to set one up")
-s.keys(b"hello", 0.6)
-check(any("› hello" in s.screen.row(r) for r in range(30, 39)), "typing goes to the chat's input box")
-s.keys(b"\x15\x1b", 0.8)                  # ctrl+u clears it; escape back to the files
-s.keys(b"\x0c", 0.8)                      # ctrl+l again gives the chat the keys
-s.keys(b"\x17", 0.8)                      # and ctrl+w closes its tab
-check(not any(" AI Chat " in s.screen.row(r) for r in range(1, 39)), "ctrl+w closes the chat")
-
-# Voice input: ctrl+shift+space as kitty's protocol sends it (cdlvsm-console
-# does, when asked) records; again stops it; the words land in the chat's
-# box, not sent.
-s.keys(b"\x1b[32;6u", 0.8)
-check("● REC" in s.screen.row(39) and "Recording" in s.screen.row(39), "ctrl+shift+space records: " + s.screen.row(39).strip()[:60])
-s.keys(b"\x1b[32;6u", 0.3)
-check(s.wait_for("Heard you", 10), "the same key stops it, and the words are heard")
-check(any("› open the readme" in s.screen.row(r) for r in range(30, 39)), "the words wait in the chat's box")
-s.keys(b"\x15\x1b", 0.8)                  # ctrl+u clears them; escape back to the files
-s.keys(b"\x0c", 0.8)
-s.keys(b"\x17", 0.8)
-if len(sys.argv) > 1:
-    whisper = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "whisper-cli")
-    check(os.access(whisper, os.X_OK) and os.system('"%s" --help > /dev/null 2>&1' % whisper) == 0, "the bundle carries whisper-cli, and it runs")
-
-# An agent behind the chat (the stand-in for Claude Code): switched to from
-# the Settings menu; the ide keeps answering keys while it works.
-s.keys(b"\x1b[109;6u", 0.2)               # ctrl+shift+m: the AIs, models, efforts side by side
-check(s.wait_for(" AI —", 10), "the model picker opens after checking every AI")
-screen_text = s.screen.text()
-check(" Model" in screen_text and " Effort" in screen_text and "● local" in screen_text and "Claude Code" in screen_text and "Codex" in screen_text, "ctrl+shift+m shows every AI, and its models and efforts, at once")
-check("local: not set up" in screen_text, "and how the AI under the cursor stands")
-s.keys(b"\x1b[D\x1b[F\r", 1.0)            # ← to the AIs, End (the fake one), Enter
-check("● Claude Code · fake" in s.screen.text(), "Enter picks an AI")
-s.keys(b"\x1b", 0.8)
-check("Claude Code · Ask" in s.screen.row(39), "the status bar shows the AI picked")
-s.keys(b"\x0c", 0.8)
-check(any("Claude Code · Ask" in s.screen.row(r) for r in range(1, 39)), "the chat names the agent and its mode")
-s.keys(b"slow one\r", 1.5)
-check(any("Claude Code is working" in s.screen.row(r) for r in range(1, 39)), "the agent works out of sight")
-s.keys(b"abc", 0.8)
-check(any("› abc" in s.screen.row(r) for r in range(1, 39)), "and the ide still takes keys meanwhile")
-s.keys(b"\x03", 1.0)
-check(any("Stopped." in s.screen.row(r) for r in range(1, 39)), "ctrl+c stops it")
-s.keys(b"\x15what is it?\r", 0.5)
-check(s.wait_for("It greets.", 10), "its steps and answer arrive in the chat")
-s.keys(b"\x17", 0.8)
+check("Error" not in s.screen.row(39), "an old settings.json with the AI chat's settings opens quietly")
+s.keys(b"\x0c", 0.6)                       # ctrl+l: the AI chat is gone
+check(not any(" AI Chat " in s.screen.row(r) for r in range(1, 39)), "ctrl+l opens no AI chat")
 
 # The integrated terminal.
 s.keys(b"\x00", 1.5)   # ctrl+` — what most terminals send for it
-bottom = lambda: "\n".join(s.screen.row(r) for r in range(28, 39))
-check(any(" Terminal 1 " in s.screen.row(r) for r in range(25, 30)), "ctrl+` opens a terminal at the bottom")
+right_side = lambda: "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
+check(" Terminal 1 " in s.screen.row(1)[60:], "ctrl+` opens a terminal on the right, full height: " + s.screen.row(1)[60:].rstrip())
+check(not any(" Terminal 1 " in s.screen.row(r) for r in range(2, 39)), "and none at the bottom: the files keep their height")
 s.keys(b"echo hello-ide\r", 1.5)
-check(s.wait_for("hello-ide\n", 5) or bottom().count("hello-ide") >= 2, "typing runs in the shell: echo hello-ide")
+check(s.wait_for("hello-ide\n", 5) or right_side().count("hello-ide") >= 2, "typing runs in the shell: echo hello-ide")
 s.keys(b"printf '\\033[31mRED-TEXT\\033[0m\\n'\r", 1.5)
-reds = [(r, c) for r in range(25, 39) for c in range(120) if s.screen.fgs[r][c] == (205, 49, 49)]
+reds = [(r, c) for r in range(1, 39) for c in range(120) if s.screen.fgs[r][c] == (205, 49, 49)]
 check(len(reds) >= 8, "the terminal's colours show (red text is red)")
 s.keys(b"sleep 30\r", 0.8)
 s.keys(b"\x03", 0.8)
 s.keys(b"echo after-interrupt\r", 1.5)
-check("after-interrupt" in bottom().replace("echo after-interrupt", ""), "ctrl+c reaches the shell")
+check("after-interrupt" in right_side().replace("echo after-interrupt", ""), "ctrl+c reaches the shell")
 s.keys(b"\x1bv", 0.6)                       # View menu (works from a terminal)
-s.keys(b"\x1b[B" * 12 + b"\r", 0.6)         # Move Tab… (past Voice Input)
-s.keys(b"r\r", 1.5)
-right_half = "\n".join(s.screen.row(r)[60:] for r in range(1, 39))
-check(" Terminal 1 " in right_half and "hello-ide" in right_half, "move tab: the terminal goes to the right, shell and all")
+s.keys(b"\x1b[B" * 6 + b"\r", 0.6)          # Move Tab…
+s.keys(b"b\r", 1.5)
+bottom = "\n".join(s.screen.row(r) for r in range(20, 39))
+check(" Terminal 1 " in bottom and "hello-ide" in bottom, "move tab: the terminal goes to the bottom, shell and all")
+check('"terminal.location": "b"' in open(config + "/codelovesme-ide/settings.json").read(), "and the next one opens there (terminal.location)")
 s.keys(b"seq 1 120\r", 1.2)
 s.keys(b"\x1b[5;2~", 1.0)                   # shift+pageup
 check(any("lines back" in s.screen.row(r) for r in range(1, 39)), "shift+pgup scrolls the terminal back")

@@ -44,7 +44,6 @@ The explorer is one tab like the rest.
 |---|---|
 | Ctrl+B | the Explorer |
 | Ctrl+J (or Ctrl+\`) | the terminal |
-| Ctrl+L | the AI chat |
 | Ctrl+E | the files |
 
 Each works the same way: if the pane is not shown, it is opened and given
@@ -57,9 +56,11 @@ WezTerm, Ghostty, Alacritty); elsewhere Ctrl+\` does the same.
 
 ### The terminal
 
-Ctrl+J / Ctrl+\` (View > Terminal) opens one at the bottom, in the open
-folder (see Pane keys); View > New Terminal (or Ctrl+K T)
-adds another. It is your shell (`$SHELL`, or `terminal.integrated.shell`),
+Ctrl+J / Ctrl+\` (View > Terminal) opens one on the right, full height, in
+the open folder, so the code keeps all its rows (see Pane keys); View > New
+Terminal (or Ctrl+K T) adds another, and Ctrl+T in a terminal another
+beside it. `terminal.location` (`l r t b c tl tr bl br`) puts new ones
+elsewhere; moving a terminal tab (Move Tab) sets it too. It is your shell (`$SHELL`, or `terminal.integrated.shell`),
 on a real pseudo-terminal, with its colours. While it has the keys, every
 key goes to the shell — Ctrl+C, Ctrl+E, Ctrl+W are the shell's — except the
 commands listed in `terminal.integrated.commandsToSkipShell` (F6, Ctrl+Tab,
@@ -68,197 +69,17 @@ Ctrl+\` as Ctrl+Space, which is bound too. Shift+PgUp / Shift+PgDn scroll
 back through what went off the top (typing returns to the live screen). A
 program that asks for them (an editor inside) gets Ctrl+Tab, Ctrl+J and the
 rest whole, as far as the terminal the ide runs in passes them on — see
-[console](https://github.com/codelovesme/console). Not yet: the mouse.
+[console](https://github.com/codelovesme/console).
 
-### The AI chat
+### AI: in a terminal
 
-Ctrl+L (View > AI Chat) opens it, on the right until you move it (Move
-Tab, like any tab — it remembers where). Ask about the project in your own
-words: it is sent what you are looking at, so "this function", "here" and
-"why did that fail?" need no file named —
-
-- the open file, the lines round the cursor, the other tabs, the places
-  you just edited, the terminal's last lines, git's branch and changes;
-- the project's own instructions: `AGENTS.md`, `CLAUDE.md`, `.cursorrules`,
-  `.github/copilot-instructions.md`, `.ide/instructions.md`, `.ide/memory.md` — at the root
-  and in each folder down to the open file;
-- a map of the project: every file (ripgrep's list, so `.gitignore` holds),
-  and the names each one defines;
-- and tools it uses itself, step by step, each shown in grey: list a
-  folder, read a file, search (ripgrep), find files, git diff.
-
-**It changes nothing without you.** An edit or a new file it proposes
-opens as a tab of its own — removed lines red, added green — and waits:
-`a` (or Enter) accepts, `r` (or Escape) rejects, and the model is told
-which. An accepted edit goes into the file as one edit (Ctrl+Z in the
-file takes it back) and is saved; View > Undo AI Changes puts back every
-file it changed since your last question. A command it wants to run is
-asked in the status bar (y / n); its output goes back to it. (The ide
-waits while the command runs — keep those short.) It may keep notes about
-the project in `.ide/memory.md`, read with the instructions every time.
-
-`@terminal`, `@git`, `@file`, `@folder` or `@some/path` in a question
-attaches more of that. Enter asks — while the AI is working (● working,
-at the right of the input line) it queues the question, up to 10, each
-asked when the one before is answered; an eleventh stays in the box.
-Alt+Enter is a new line, ←/→ Home/End move the cursor (↑/↓ too, between
-the lines of a long question); on its first or last line ↑/↓ bring
-back the questions asked before. PgUp/PgDn
-scroll (Ctrl+↑/↓ a line at a time), Ctrl+C stops the answer (and puts
-the queued questions back in the box), Escape gives the keys back to the files,
-Ctrl+W closes the tab (the conversation stays for next time), View > New
-AI Chat starts over. Ctrl+T in the chat opens another conversation in a
-tab of its own (View > New AI Chat Tab); each goes on answering while
-another has the keys. Ctrl+L works from a terminal too (so there it no
-longer clears the shell's screen — `clear` does).
-
-**The model is yours to choose**, in settings.json (Settings > AI Model…
-writes the entries in for you):
-
-```json
-"ai.provider": "local",
-"ai.providers": {
-  "local": {
-    "type": "openai-compatible",
-    "endpoint": "http://localhost:8080",
-    "model": "qwen2.5-coder-14b",
-    "apiKeyEnv": "LOCALAI_API_KEY",
-    "contextTokens": 32768
-  }
-}
-```
-
-**Picking the AI: Ctrl+Shift+M** (or Settings > AI: Switch Model…) shows every
-AI, and the models and efforts of the one under the cursor, side by side —
-all the choices at once, ● on what is in use:
-
-```
- AI                     │ Model            │ Effort
-   local                │   (its default)  │   (default)
- ● Claude Code · claude │ ● Opus 5.5       │   low
-   Codex · codex        │   Opus 5         │   medium
-                        │   Sonnet 5       │ ● high
- Claude Code: ready
-```
-
-←/→ (or Tab) move between the lists, ↑/↓ within one, Enter picks, Escape
-closes. Moving in the AI list shows that AI's models and efforts without
-switching to it; picking one of them does. Each AI is checked as the lists
-open — ready, not installed, not signed in, not reachable, the key refused
-— and keeps its own model and effort. The status bar shows what is in use
-(`Claude Code · Opus 5.5 · high · Ask`).
-
-On startup, the ide checks the installed versions of configured Claude Code
-and Codex CLIs against their latest published package versions. If one is
-older, the status bar reports the installed and available versions. The ide
-does not install or update CLI tools; you choose how to update them.
-
-Nothing here is built into the ide. The models and efforts are the ones a
-tool reports itself — a server's `/v1/models`; Codex's complete catalogue
-from `codex debug models`, with hidden entries labelled `(hidden)`, the
-efforts each model takes and its default — or, where it cannot say, the
-`"models"` / `"efforts"` lists in its entry, which win. A model there is a
-name, or `{ "id": "claude-opus-5-5", "name": "Opus 5.5" }` — the id is what
-the tool is given, the name what you see — so several versions of one
-model can sit side by side. Claude Code's entry lists its models by their
-versioned ids (Opus 5.5, Opus 5, Sonnet 5, Haiku 4.5, Fable 5.1, Fable 5 —
-some need usage credits on some plans) and the efforts its `--effort`
-takes; edit them there. Codex shows its own names for its models.
-`local`, `claude` and `codex` are default entries of `ai.providers`, merged
-under yours field by field (an entry giving only a `"model"` keeps the rest)
-— add your own beside them. The local model takes no effort
-yet (that needs the localai module to pass one on).
-
-**Or Claude Code / Codex behind the same chat.** With `"ai.provider":
-"claude"` or `"codex"` (or Ctrl+Shift+M) the chat runs
-the `claude` or `codex` program you have installed and signed in to —
-your own subscription, no API key, no per-question bill — out of sight,
-and shows its steps and answers as they come; the ide keeps working
-meanwhile. What you are looking at still goes with each question; they
-read `CLAUDE.md` / `AGENTS.md` themselves, and the conversation carries
-on until View > New AI Chat.
-
-Ctrl+Shift+A (or Settings > AI: Ask ↔ Edit) switches the mode,
-shown on the line over the input:
-
-- **Ask** — it only reads (Claude in plan mode, Codex in a read-only
-  sandbox).
-- **Edit** — it changes files itself. After, the chat names what it
-  changed; View > Show AI Changes (Ctrl+Shift+D) opens each as a red / green
-  diff, and View > Undo AI Changes puts them all back. That needs the
-  folder to be a git repository (the ide takes a snapshot with `git stash
-  create`, which touches nothing). Claude runs no commands but those in
-  `"ai.agent.allowCommands"` (e.g. `["Bash(cargo test:*)"]`); Codex runs
-  them inside its workspace sandbox.
-
-```json
-"ai.providers": {
-  "claude": { "type": "claude-code", "command": "claude", "model": "",
-              "models": [{ "id": "claude-opus-5-5", "name": "Opus 5.5" }, { "id": "claude-sonnet-5", "name": "Sonnet 5" }, "…"],
-              "effort": "", "efforts": ["low", "medium", "high", "xhigh", "max"] },
-  "codex":  { "type": "codex", "command": "codex", "model": "", "effort": "" }
-},
-"ai.agent.mode": "ask",
-"ai.agent.planFollowup": "edit",
-"ai.agent.allowCommands": []
-```
-
-Out of the box `local` is LocalAI at `http://localhost:8080`, its key
-read from `LOCALAI_API_KEY` (unset, none is sent); name its model in
-`model`, or pick one with Ctrl+Shift+M. `openai-compatible` is anything that
-serves `/v1/chat/completions` — LocalAI, Ollama (`http://localhost:11434`), llama.cpp's server, vLLM, LM
-Studio. A key never goes in the file: `apiKeyEnv` names the environment
-variable that holds it. `contextTokens` is how much the model can take;
-everything sent is cut to fit it. Other kinds of providers (Anthropic,
-OpenAI's own) will be more `type`s, next to this one
-([src/llm.gene.code](src/llm.gene.code)).
-
-### Voice input: Ctrl+Shift+Space
-
-Press Ctrl+Shift+Space (View > Voice Input) and speak; press it again
-when done. What you said lands in the AI chat's input box, at the cursor —
-not sent: read it, fix it, and Enter sends it to whichever AI is chosen
-(Claude Code, Codex, Mike, local). Escape while recording throws it away.
-The status bar shows `● REC` while it records; the ide keeps working while
-it records and while the recording is turned into words. It works from a
-terminal tab too.
-
-What turns the recording into words is yours to choose
-(`ai.voice.provider`); nobody has to sign up for anything:
-
-| | where the words are made | needs |
-|---|---|---|
-| `offline` | on this computer, by [whisper.cpp](https://github.com/ggml-org/whisper.cpp)'s `whisper-cli` (shipped beside the ide); nothing leaves it | its model, downloaded once — the ide asks first (ggml-base, 142 MB; sha256-checked) into `~/.cache/codelovesme-ide/models` |
-| `openai-compatible` | any `/v1/audio/transcriptions` — OpenAI, LocalAI, a whisper server | `ai.voice.endpoint`, `ai.voice.model`, and `ai.voice.apiKeyEnv` naming the variable that holds the key |
-| `mike` | Mike, through the shared Mike service | the IDE signed in to codelovesme (Settings > Account) |
-| `auto` (default) | Mike when signed in; else the endpoint when one is set; else offline | |
-
-```json
-"ai.voice.provider": "auto",
-"ai.voice.language": "",
-"ai.voice.offlineModel": "base",
-"ai.voice.endpoint": "",
-"ai.voice.model": "whisper-1",
-"ai.voice.apiKeyEnv": "",
-"ai.voice.recordCommand": ["pw-record", "--rate", "16000", "--channels", "1"],
-"ai.voice.maxSeconds": 60
-```
-
-`ai.voice.language` (`"tr"`, `"en"`, …; `""` guesses) makes short phrases
-heard better and faster. `ai.voice.offlineModel` is `"base"`, `"small"`
-(466 MB: better, about three times slower), or the full path of a model
-file of your own; `ai.voice.modelDir` and `ai.voice.whisperCommand` put
-them elsewhere. The recorder is PipeWire's `pw-record`, on the default
-microphone — `"--target", "<source>"` in `ai.voice.recordCommand` picks
-another (`pactl list short sources`); it stops by itself after
-`ai.voice.maxSeconds`. A key never goes into a file or onto a command
-line: the shell hands it to curl on its input.
-
-Claude Code's and Codex's own voice features cannot be used from here:
-they live inside their own screens (Claude's `/voice`, Codex's voice key),
-and their editor extensions talk to private services with the
-subscription's token. Run in an ide terminal tab (Ctrl+J), they keep their
-own voice.
+The ide has no AI of its own. Claude Code, Codex and Mike are command-line
+programs; run them in a terminal tab like any other — `claude`, `codex`,
+`mike-cli` — on the right, beside the code. Each signs in, picks its model
+and keeps its conversations itself, so a new version of one never needs a
+new ide. (0.22 and before had an AI chat built in; 0.23 took it out, with
+its settings, keys and Settings > Account. An old settings.json or
+keybindings.json that still names them opens without a complaint.)
 
 ### Tabs and editor groups
 
@@ -288,7 +109,7 @@ the editor (center); the grid is ready for more.
 | Ctrl+N | New File… — in the folder picked in the Explorer (a file picked: its folder; nothing picked, or the Explorer hidden: the root). Only the name is asked; a name ending in `/` makes a folder |
 | Ctrl+P | Go to File…: the project's files that match what is typed (the name's own letters first); ↑/↓ pick, Enter opens |
 | Ctrl+F | Find in the file: as it is typed, the next match is selected and counted ("2 of 5"); Enter the next, Shift+Enter the one before, Escape leaves the cursor there |
-| Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste the selection (Shift+arrows, Ctrl+A), through the desktop's clipboard; Ctrl+V in the AI chat's box too. In a terminal they are the shell's |
+| Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste the selection (Shift+arrows, Ctrl+A), through the desktop's clipboard. In a terminal they are the shell's |
 | Ctrl+H / Ctrl+G | Replace (what, then with what — every one, one undo step) / Go to Line (`12`, or `12:5`). A terminal that sends Ctrl+Backspace as ^H makes Ctrl+H Ctrl+Backspace there; Edit > Replace… still works |
 | Ctrl+Backspace / Ctrl+Delete | Delete a word back / forward |
 | Ctrl+D | The word at the cursor; again, the next same text too, with a cursor of its own — typing, Enter, Backspace and the moves act at every cursor; Escape keeps one |
@@ -301,7 +122,7 @@ the editor (center); the grid is ready for more.
 | Alt+← / Alt+→ | Go Back / Go Forward: where the cursor has been — another file, or a jump of 10 lines or more (View menu too) |
 | Ctrl+Tab / Ctrl+Shift+Tab (or Shift+Tab) | Next / previous tab, round and round, as in a browser — GNOME's terminals send Ctrl+Tab as a plain Tab, so there only Shift+Tab arrives. In a terminal tab Shift+Tab is the shell's |
 | Ctrl+\\ | Split Editor: the file again, in a second editor on the right |
-| Ctrl+B / Ctrl+J / Ctrl+L / Ctrl+E | The Explorer / the terminal / the AI chat / the files: open and focus; focus; put away (see Pane keys) |
+| Ctrl+B / Ctrl+J / Ctrl+E | The Explorer / the terminal / the files: open and focus; focus; put away (see Pane keys) |
 | Ctrl+0 / Ctrl+1 / Ctrl+2 | Focus the Explorer / the first / the second editor |
 | F6 | Explorer, then each editor, round again |
 | Alt+F Alt+V Alt+S Alt+H, F10 | Menus: arrows, Enter, Escape |
@@ -312,13 +133,8 @@ the editor (center); the grid is ready for more.
 | Ctrl+K M | Move the tab to another place |
 | (View > Word Wrap) | Long lines go on in the rows below (`editor.wordWrap`: "on" / "off") |
 | Ctrl+K T | A new terminal |
-| Ctrl+T | Another of what has the keys: a terminal in a terminal, an AI chat in the chat |
+| Ctrl+T | Another terminal, beside the one that has the keys |
 | Ctrl+Shift+N | New Window: another ide on this folder |
-| Ctrl+Shift+M | The AI, its model and its effort |
-| Ctrl+Shift+A | The AI chat's next mode: ask, plan, edit, auto |
-| Ctrl+Shift+G | Carry out the plan just made |
-| Ctrl+Shift+D | Show what the AI changed since the last question |
-| Ctrl+Shift+Space | Voice input: record; again stops, and the words go into the AI chat's box (Escape throws the recording away) |
 
 In the editor: brackets and quotes close themselves, the matching bracket is lit; arrows, Home (first non-space, then column 0), End,
 PageUp/PageDown, Ctrl+Home/End, Ctrl+Left/Right by word; Tab indents by
@@ -331,7 +147,7 @@ xterm, tmux with `extended-keys`); F6 always works.
 
 A click puts the cursor there; a drag selects; a double click selects the
 word, a triple the line; Shift+click selects to the click, Alt+click adds a
-cursor. The wheel scrolls the file, terminal or chat under it. A click on a
+cursor. The wheel scrolls the file or terminal under it. A click on a
 tab shows it, in the explorer opens the row, on a menu title opens the
 menu, on an item runs it. It needs a `tty` module that reports the mouse
 (code's tty after 2.21.1); with an older one the ide works as before,
@@ -355,11 +171,8 @@ explorer writes it for you.
   "workbench.layout.top": 10,
   "workbench.layout.bottom": 12,
   "terminal.integrated.shell": "",
-  "ai.provider": "local",
-  "ai.providers": { "local": { "type": "openai-compatible", "endpoint": "http://localhost:8080", "…": "" } },
-  "ai.chat.location": "r",
-  "ai.maxSteps": 12,
-  "ai.voice.provider": "auto",
+  "terminal.location": "r",
+  "editor.wordWrap": "off",
   "terminal.integrated.commandsToSkipShell": ["terminal.toggle", "focus.next", "…"]
 }
 ```
@@ -402,12 +215,7 @@ Enter, Ctrl+I is Tab, Ctrl+M is Enter.)
 | `editor` | what a key does to a buffer |
 | `render` | the whole screen from the state, as `tty` overlays |
 | `settings` | settings.json read and checked, and written back |
-| `tabs` | what is open where: groups in slots, their tabs (files, the explorer, terminals, the chat) |
-| `chatbox` | the AI chat's input box, the model's replies read, text wrapped |
-| `context` | what the model is told: what is on screen, the instructions, the project map, the tools |
-| `llm` | which model, from settings: provider types and the particles each takes |
-| `agents` | Claude Code and Codex: the command that runs each, and their events read into the chat |
-| `voice` | voice input: which engine hears, the lines that record and hear, what came back, the words put in the box |
+| `tabs` | what is open where: groups in slots, their tabs (files, the explorer, terminals) |
 
 Everything but `ide` is pure: a particle in, a particle out. State lives in
 one gene because a gene's top level is its handlers' whole world. A handler
@@ -416,9 +224,8 @@ that fails puts `Error: …` in the status bar instead of stalling.
 Organelles: `tty` (keys in, a screen out — only changed rows are written),
 `syntax` (spans from code's lexer, still coloured while a file does not
 lex), `fs` (twice: the open folder, and the settings folder), `json`,
-`strings`, `env`, `pty` (the terminals), `localai` (the model, over
-`/v1/chat/completions`), `process` (ripgrep and git for the chat),
-`http_client` (a model server's list of models).
+`strings`, `env`, `pty` (the terminals), `process` (ripgrep or git for
+Ctrl+P, and New Window), `window` (the desktop's clipboard).
 
 ## Developing
 
@@ -429,7 +236,6 @@ curl -sSf https://raw.githubusercontent.com/codelovesme/cdlvsm/main/install.sh |
 cdlvsm install euglena      # brings code too
 cdlvsm euglena install      # the organelles pinned in .code/lock.json
 tools/organelles.sh         # …laid out where the ide links them from
-tools/whisper.sh            # whisper-cli for offline voice (git, cmake, a C++ compiler)
 cdlvsm euglena test
 IDE_FOLDER=~/some/project cdlvsm euglena run
 ```
@@ -440,11 +246,9 @@ A `v*` tag runs [the release workflow](.github/workflows/release.yml), which
 does exactly the above on a clean machine. Then
 [tools/package.sh](tools/package.sh) builds the ide as a program (`code
 build`) and lays out `ide-<tag>-x86_64-linux.tar.gz`: the program, [its
-launcher](bin/ide), the organelles beside it, and `whisper-cli` for
-offline voice ([tools/whisper.sh](tools/whisper.sh): whisper.cpp at a pinned
-commit, no shared libraries of its own, x86-64 with AVX2). It needs no
+launcher](bin/ide) and the organelles beside it. It needs no
 `code` interpreter to run. The smoke test proves that — it runs the bundle
-with no `code` on the machine and no module cache, voice input included —
+with no `code` on the machine and no module cache —
 before it is published.
 
 The organelles are linked while the ide runs (`Organelles` in
@@ -458,24 +262,9 @@ tells it which folder to open.
 `euglena test` — [tests/layout.code](tests/layout.code) (every slot, and
 the shapes above), [tests/editor.code](tests/editor.code) (the keys on a
 buffer), [tests/ide.code](tests/ide.code) (a folder opened, walked, a file
-edited, undone, saved, the menu, the prompts, a frame drawn, and the AI
-chat asked, stepping through a tool to its answer, its changes rejected,
-accepted and undone, a command run — against a port that
-never answers, so the replies the test hands in are the only ones),
-[tests/chat.code](tests/chat.code) (replies read, the input box, wrapping,
-the project map, providers from settings),
-[tests/agents.code](tests/agents.code) (Claude Code's and Codex's events,
-recorded from real runs in tests/fixtures, and the ide running
-[a stand-in agent](tests/fake-agent.sh): asked, continued, editing, its
-changes shown and undone, a missing program, stopped),
-[tests/voice.code](tests/voice.code) (the engine `auto` picks, the lines
-that record and hear — no key on a command line — the answers read, the
-words at the cursor, and the ide recording with
-[a stand-in recorder](tests/fake-recorder.sh) and
-[whisper-cli](tests/fake-whisper.sh): stopped by the same key, the words in
-the box, Escape, the model offered first, a missing recorder), all without
-a terminal. `python3 tools/test_mike_bridge.py` covers the Mike bridge,
-voice included.
+edited, undone, saved, the menu, the prompts, a frame drawn, terminals
+opened, moved and put away), [tests/keys.code](tests/keys.code) and
+[tests/tabs.code](tests/tabs.code), all without a terminal.
 
 In a real terminal: `python3 tools/smoke.py` (from a checkout) or
 `python3 tools/smoke.py <bundle>/ide` — a pty, keys pressed, the screen read
@@ -484,16 +273,5 @@ sends (no tmux or pyte needed).
 
 ## Next
 
-AI answers that appear as they are written, a meaning-based search index,
-suggestions as you type, remote providers. And find across the project,
-diagnostics from the language server, extensions.
-
-## Mike through the shared local service
-
-Ctrl+Shift+M now also offers **Mike**. It connects directly to the shared local
-service; Mike Desktop and CLI are not required. Sign in with **Settings →
-Account: Sign In (codelovesme)** (your browser opens). Current editor buffers travel as bounded
-context, and Mike reads/edits through revision-aware editor tools. Ask/Plan
-are read-only; Edit uses the normal diff; Auto uses the same conflict checks.
-See [docs/mike.md](docs/mike.md) for sign-in, optional installation, scope,
-unsaved buffers, decisions, disconnect behavior and validation.
+Find across the project, diagnostics from the language server,
+extensions.

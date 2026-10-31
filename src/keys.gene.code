@@ -38,7 +38,7 @@ defaults = [
     { key = "ctrl+`", command = "terminal.toggle" }
     { key = "ctrl+space", command = "terminal.toggle" }
     { key = "ctrl+k t", command = "terminal.new" }
-    | Another of what has the keys: a terminal, an AI chat.
+    | Another terminal, beside the one that has the keys.
     { key = "ctrl+t", command = "tab.newHere" }
     { key = "ctrl+shift+n", command = "window.new" }
     | Pane keys: shown and focused, focused, or put away (TogglePane).
@@ -70,15 +70,6 @@ defaults = [
     { key = "alt+s", command = "menu.settings" }
     { key = "alt+h", command = "menu.help" }
     { key = "ctrl+k ctrl+s", command = "help.keys" }
-    | Cursor's key for its chat.
-    { key = "ctrl+l", command = "ai.toggle" }
-    | The AI's other keys all start with Ctrl+Shift.
-    { key = "ctrl+shift+d", command = "ai.showChanges" }
-    { key = "ctrl+shift+m", command = "ai.switchModel" }
-    { key = "ctrl+shift+a", command = "ai.toggleMode" }
-    { key = "ctrl+shift+g", command = "ai.goAhead" }
-    | Speak to the AI chat: once to record, again to stop (voice.gene.code).
-    { key = "ctrl+shift+space", command = "ai.voice" }
     { key = "ctrl+k shift+tab", command = "edit.outdent" }
 ]
 
@@ -117,7 +108,7 @@ commands = [
     { id = "view.moveTab.br", title = "Move the tab to the bottom right" }
     { id = "terminal.toggle", title = "Terminal: open one and focus it; put it away when focused (and back)" }
     { id = "terminal.new", title = "New terminal" }
-    { id = "tab.newHere", title = "Another of what has the keys: a terminal in a terminal, an AI chat in the chat" }
+    { id = "tab.newHere", title = "Another terminal, beside the one that has the keys" }
     { id = "window.new", title = "New Window: another ide on this folder" }
     { id = "focus.explorer", title = "Focus the Explorer" }
     { id = "focus.editor", title = "Focus the center" }
@@ -137,25 +128,6 @@ commands = [
     { id = "menu.view", title = "View menu" }
     { id = "menu.settings", title = "Settings menu" }
     { id = "menu.help", title = "Help menu" }
-    { id = "ai.toggle", title = "AI Chat: open it and focus it; close it when focused" }
-    { id = "ai.newChat", title = "AI Chat: start a new conversation" }
-    { id = "ai.newTab", title = "AI Chat: another conversation, in a tab of its own" }
-    { id = "ai.cancel", title = "AI Chat: stop the model's answer" }
-    { id = "ai.configure", title = "AI Model… (settings.json)" }
-    { id = "ai.undoTurn", title = "AI Chat: undo the changes it made since the last question" }
-    { id = "ai.showChanges", title = "AI Chat: show what the agent changed since the last question" }
-    { id = "ai.toggleMode", title = "AI Chat: the next mode — ask, plan, edit, auto" }
-    { id = "ai.mode.ask", title = "AI Chat: Ask mode — it looks and answers" }
-    { id = "ai.mode.plan", title = "AI Chat: Plan mode — it answers with a plan" }
-    { id = "ai.mode.edit", title = "AI Chat: Edit mode — it changes files" }
-    { id = "ai.mode.auto", title = "AI Chat: Auto mode — changes and commands without asking" }
-    { id = "ai.goAhead", title = "AI Chat: carry out the plan just made" }
-    { id = "ai.switchModel", title = "AI Chat: pick the AI and its model (each checked: ready, signed in, reachable)" }
-    { id = "ai.voice", title = "Voice Input: record; again stops, and the words go into the AI chat's box" }
-    { id = "ai.voice.cancel", title = "Voice Input: throw the recording away (Escape while recording)" }
-    { id = "account.signIn", title = "Account: sign in to IDE with your codelovesme account (browser); again to cancel" }
-    { id = "account.signOut", title = "Account: sign out of IDE only; the shared Mike service stays signed in" }
-    { id = "account.switchService", title = "Account: sign in and explicitly move the shared Mike service to this account" }
     { id = "help.keys", title = "This list" }
     { id = "help.about", title = "About" }
 ]
@@ -259,7 +231,11 @@ Bindings { user } =>
             if good
                 name = entry.command
                 if name[0] = "-", name = name[1, length)
-                if known[name] ≠ true
+                | The AI chat's and the account's commands left the ide in
+                | 0.23: an old entry for one is passed over, not an error.
+                retired = name[0, 3) = "ai." or name[0, 8) = "account."
+                if retired, good = false
+                if known[name] ≠ true and not retired
                     wrong += "entry " + (i + 1) + ": no command \"" + name + "\""
                     good = false
             if good, entries = entries + [entry]
@@ -330,7 +306,7 @@ Shortcuts { table } =>
         "  Editor: arrows, Home, End, PgUp, PgDn, Ctrl+Home / End, Ctrl+Left / Right,"
         "  Tab indents by four spaces; Ctrl+K Shift+Tab takes a level back."
         "  Shift+arrows select, Ctrl+A everything; Ctrl+C copy, Ctrl+X cut, Ctrl+V paste"
-        "  (Ctrl+V in the AI chat's box too). Ctrl+Backspace / Ctrl+Delete a word."
+        "  Ctrl+Backspace / Ctrl+Delete a word."
         "  Ctrl+D the word, again the next one too (a cursor at each; Escape: one)."
         "  Alt+Up / Alt+Down move the line; Ctrl+/ comments it out or in."
         "  Brackets and quotes close themselves; the matching bracket is lit."

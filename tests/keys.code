@@ -25,7 +25,11 @@ assert table.keys["ctrl+shift+tab"] = "tab.previous" and table.labels["tab.previ
 assert table.keys["shift+tab"] = "tab.previous" and table.keys["ctrl+tab"] = "tab.next"
 assert table.keys["ctrl+pagedown"] = null and table.keys["ctrl+pageup"] = null
 assert table.labels["tab.next"] = "Ctrl+Tab"
-assert table.keys["ctrl+l"] = "ai.toggle" and table.keys["ctrl+alt+i"] = null and table.keys["ctrl+shift+l"] = null
+assert table.keys["ctrl+l"] = null and table.keys["ctrl+shift+m"] = null and table.keys["ctrl+shift+space"] = null
+| An old keybindings.json naming the AI chat's commands (gone in 0.23)
+| loads with no complaint; the entry is passed over.
+emit ReadBindings { text = "[{ \"key\": \"f8\", \"command\": \"ai.toggle\" }, { \"key\": \"f7\", \"command\": \"account.signIn\" }]" } to this get old_ai
+assert old_ai.problem = "" and old_ai.keys["f8"] = null and old_ai.keys["f7"] = null
 assert table.keys["alt+l"] = null
 emit Keymap { name = "ctrl+s", pending = "", table = table } to this get save
 assert save.command = "file.save"

@@ -36,17 +36,27 @@ and every editor key.
 
 Acceptance criteria:
 
-- [ ] None of the above is in the repo (`grep -ri -E
+- [x] None of the above is in the repo (`grep -ri -E
       "claude|codex|mike|localai|whisper|voice|ai\.chat"` over src, tests,
       tools, README finds nothing but this ticket's history).
-- [ ] The ide starts, opens files, edits, saves, opens a terminal tab, and
+- [x] The ide starts, opens files, edits, saves, opens a terminal tab, and
       `claude` / `codex` run in it as in any terminal.
-- [ ] A settings.json or keybindings.json with the old `ai.*` entries and
+- [x] A settings.json or keybindings.json with the old `ai.*` entries and
       AI commands opens without error.
-- [ ] The Release workflow's trial run (tests + smoke) is green; the bundle
+- [x] The Release workflow's trial run (tests + smoke) is green; the bundle
       has no whisper-cli or mike_bridge.py and is smaller.
-- [ ] Released as a minor version and installed with `cdlvsm install ide`.
+- [x] Released as a minor version (0.23.0) and installed with `cdlvsm install ide`.
 
 Outside this repo: cdlvsm's `install ide --with mike` and the
 `feature.mike` package line — cdlvsm should stop offering it (a separate
 change in cdlvsm).
+
+Done (2026-10-31): 5 genes, 5 test files, the fakes and fixtures, the Mike
+bridge and its e2e tools, whisper.sh, docs/mike.md and the `localai` and
+`http_client` organelles gone; ide.gene.code 3701 → ~1800 lines; the bundle
+8.9 MB → 3.8 MB. `euglena test` 5/5 and tools/smoke.py 43/43 on the bundle
+(an old settings.json with `ai.*` opens quietly; old keybindings naming
+`ai.*` / `account.*` commands are passed over, tests/keys.code). The
+Settings > Account menu went with Mike: signing in is mike-cli's
+(mike-desktop ticket 005). cdlvsm's `--with mike` still names the
+`feature.mike` line the bundle no longer carries — a cdlvsm change.

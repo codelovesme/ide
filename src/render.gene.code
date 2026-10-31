@@ -5,7 +5,7 @@
 | Row 0 is the menu bar, the last row the status bar; between them the
 | body: every group of tabs where `Layout` puts its slot — a tab strip,
 | then what its active tab shows (the explorer's rows, a file, a
-| terminal, the AI chat). A group not at the left edge has a line down its left side.
+| terminal). A group not at the left edge has a line down its left side.
 
 | The `strings` and `syntax` organelles, handed over when the ide links them.
 texts = null
@@ -89,247 +89,6 @@ TerminalRows { pane, screen, focused } =>
     if focused and screen.cursor_visible
         view = view + { cursor_row = 1 + pane.y + screen.cursor_row, cursor_col = pane.x + screen.cursor_col }
     return view
-
-chat_help = [
-    "Ask about this project — it looks at what you are looking at."
-    "Enter asks (while the AI works, queues) · Alt+Enter a new line · Esc back to the files"
-    "PgUp/PgDn scroll · Ctrl+C stops · Ctrl+T another chat · @terminal @git @file @folder @path"
-]
-
-| One turn of the chat as lines `{ text, style }`, `width` wide.
-TurnLines { turn, width } =>
-    out = []
-    if turn.role = "tool"
-        emit Wrap { text = "· " + turn.text, width = width - 2 } to this get wrapped
-        loop line over wrapped.lines
-            out += { text = "  " + line, style = "dim" }
-        return ChatLines { lines = out }
-    if turn.role = "error"
-        emit Wrap { text = turn.text, width = width - 4 } to this get wrapped
-        loop i, line over wrapped.lines
-            lead = "    "
-            if i = 0, lead = "  ! "
-            out += { text = lead + line, style = "plain", fg = [230, 140, 60] }
-        out += { text = "", style = "plain" }
-        return ChatLines { lines = out }
-    if turn.role = "user", out += { text = "You", style = "plain", fg = [86, 156, 214], bold = true }
-    if turn.role = "assistant", out += { text = "AI", style = "plain", fg = [78, 201, 176], bold = true }
-    emit Split { value = turn.text, separator = "\n" } to texts get lines
-    fenced = false
-    loop line over lines.value
-        if line[0, 3) = "```"
-            fenced = not fenced
-            out += { text = "  " + line[0, width - 2), style = "dim" }
-            continue
-        if fenced
-            out += { text = "  " + line[0, width - 2), style = "variable" }
-            continue
-        style = "plain"
-        if line[0] = "#", style = "property"
-        emit Wrap { text = line, width = width - 2 } to this get wrapped
-        loop part over wrapped.lines
-            out += { text = "  " + part, style = style }
-    out += { text = "", style = "plain" }
-    return ChatLines { lines = out }
-
-| The AI chat in `pane` (below its tab strip): the conversation, the
-| newest at the bottom (`scroll` lines up from there), and the input box
-| under a rule, growing to six lines — at the right of its first line,
-| whether the AI is working and how many questions wait.
-ChatRows { pane, chat, notice, label, focused, voice } =>
-    width = pane.width - 1
-    out = []
-    mark = ""
-    mark_fg = [78, 201, 176]
-    if chat.busy
-        mark = "● working "
-        if chat.pending ≠ null
-            mark = "● waiting for you "
-            mark_fg = [230, 190, 90]
-    | Voice input under way (voice.gene.code): it comes before the rest.
-    if voice = "recording"
-        mark = "● rec " + mark
-        mark_fg = [230, 80, 80]
-    if voice = "hearing"
-        mark = "… hearing " + mark
-        mark_fg = [230, 190, 90]
-    emit Length { value = chat.queue } to core get { value as queued_count }
-    if queued_count > 0, mark = mark + "· " + queued_count + " queued "
-    emit Length { value = mark } to core get { value as mark_size }
-    caret = chat.caret
-    if caret = null
-        emit Length { value = chat.input } to core get { value as input_size }
-        caret = input_size
-    emit InputLines { text = chat.input, caret = caret, width = width - 3 - mark_size } to this get typed
-    emit Length { value = typed.lines } to core get { value as typed_count }
-    | At most six lines, the last ones unless the cursor is further up.
-    first_typed = 0
-    if typed_count > 6, first_typed = typed_count - 6
-    if typed.caret_line < first_typed, first_typed = typed.caret_line
-    shown_typed = typed.lines[first_typed, typed_count)
-    if typed_count - first_typed > 6, shown_typed = typed.lines[first_typed, first_typed + 6)
-    emit Length { value = shown_typed } to core get { value as box }
-    room = pane.height - box - 1
-    if room < 1, room = 1
-
-    | Lines from the newest turn back, until there are enough to fill the
-    | room scrolled up.
-    lines = []
-    if chat.busy
-        lines = [{ text = "  … thinking (step " + (chat.steps + 1) + ")", style = "dim" }]
-        if chat.pending ≠ null, lines = [{ text = "  … waiting for your answer", style = "plain", fg = [230, 190, 90] }]
-        if chat.agent ≠ null, lines = [{ text = "  … " + chat.agent.title + " is working (" + chat.steps + " steps) — Ctrl+C stops it", style = "dim" }]
-    emit Length { value = chat.turns } to core get { value as turn_count }
-    i = turn_count - 1
-    loop
-        if i < 0, break
-        emit Length { value = lines } to core get { value as have }
-        if have ≥ room + chat.scroll, break
-        emit TurnLines { turn = chat.turns[i], width = width } to this get turn_lines
-        lines = turn_lines.lines + lines
-        i = i - 1
-    if turn_count = 0
-        lines = []
-        loop hint over chat_help
-            lines += { text = " " + hint, style = "dim" }
-        if notice ≠ ""
-            lines += { text = "", style = "plain" }
-            emit Wrap { text = notice, width = width - 4 } to this get wrapped
-            loop part over wrapped.lines
-                lines += { text = "  " + part, style = "plain", fg = [230, 140, 60] }
-    emit Length { value = lines } to core get { value as count }
-    scroll = chat.scroll
-    most = count - room
-    if i < 0 and most < 0, most = 0
-    if i < 0 and scroll > most, scroll = most
-    if scroll < 0, scroll = 0
-    last = count - scroll
-    first = last - room
-    if first < 0, first = 0
-    at = 0
-    loop line over lines[first, last)
-        out += { row = 1 + pane.y + at, col = pane.x + 1, spans = [line + { width = width }] }
-        at += 1
-
-    rule_row = 1 + pane.y + room
-    rule = ""
-    if label ≠ "", rule = "─ " + label + " "
-    emit Length { value = rule } to core get { value as k }
-    loop
-        if k ≥ pane.width, break
-        rule = rule + "─"
-        k += 1
-    out += { row = rule_row, col = pane.x, spans = [{ text = rule, width = pane.width, style = "border" }] }
-    cursor_row = null, cursor_col = null
-    loop j, line over shown_typed
-        lead = "   "
-        if j = 0 and first_typed = 0, lead = " › "
-        if j = 0 and mark_size > 0
-            out += { row = rule_row + 1 + j, col = pane.x, spans = [{ text = lead + line, width = pane.width - mark_size, style = "plain" }, { text = mark, width = mark_size, align = "right", style = "plain", fg = mark_fg }] }
-            continue
-        out += { row = rule_row + 1 + j, col = pane.x, spans = [{ text = lead + line, width = pane.width, style = "plain" }] }
-    if focused
-        cursor_row = rule_row + 1 + typed.caret_line - first_typed
-        cursor_col = pane.x + 3 + typed.caret_col
-    return PaneView { overlays = out, cursor_row = cursor_row, cursor_col = cursor_col, chat = { scroll = scroll, page = room } }
-
-| A change the AI proposes, in `pane` (below its tab strip): what it does
-| on the first row, then the lines — removed in red, added in green, a few
-| unchanged round them — from `view.top`.
-DiffRows { pane, view, focused } =>
-    what = " Proposed change to " + view.target
-    if view.created, what = " Proposed new file " + view.target
-    keys = "a accept · r reject "
-    if view.reviewed = true
-        what = " Changed by the AI: " + view.target
-        if view.created, what = " Made by the AI: " + view.target
-        keys = "Esc closes "
-    head_style = "selected"
-    if focused, head_style = "selected_focus"
-    out = [{ row = 1 + pane.y, col = pane.x, spans = [
-        { text = what + "  (−" + view.removed + " +" + view.added + ")", width = pane.width - 26, style = head_style }
-        { text = keys, width = 26, align = "right", style = head_style }
-    ] }]
-    h = pane.height - 1
-    emit Length { value = view.diff } to core get { value as count }
-    top = view.top
-    if top > count - h, top = count - h
-    if top < 0, top = 0
-    i = 0
-    loop
-        if i ≥ h, break
-        line = view.diff[top + i]
-        if line = null, break
-        number = { text = "" + line.line, width = gutter - 1, align = "right", style = "line_number" }
-        body = { text = line.sign + " " + line.text, width = pane.width - gutter, style = "plain" }
-        if line.sign = "-", body = body + { fg = [241, 100, 100], bg = [58, 30, 30] }
-        if line.sign = "+", body = body + { fg = [130, 210, 150], bg = [30, 52, 36] }
-        out += { row = 2 + pane.y + i, col = pane.x, spans = [number, { text = " ", style = "plain" }, body] }
-        i += 1
-    return PaneView { overlays = out, top = top }
-
-| The model picker: three lists side by side — the AI, its models, its
-| efforts — every choice in sight, ● on what is in use, the cursor lit in
-| each (brightest in the list being moved in); under them, how the AI under
-| the cursor stands.
-PickerView { picker, rows, cols, height } =>
-    width = cols - 6
-    if width > 110, width = 110
-    left = (cols - width) / 2
-    if left < 0, left = 0
-    ai_width = 26
-    effort_width = 20
-    model_width = width - ai_width - effort_width
-    widths = [ai_width, model_width, effort_width]
-    starts = [left, left + ai_width, left + ai_width + model_width]
-    out = [{ row = 2, col = left, spans = [{ text = " AI — ←/→ list · ↑/↓ move · Enter pick · Esc done", width = width, style = "menu_active" }] }]
-    titles = ["AI", "Model", "Effort"]
-    loop c, title over titles
-        out += { row = 3, col = starts[c], spans = [{ text = " " + title, width = widths[c], style = "folder" }] }
-    | How many rows: the longest list, at most what the screen holds.
-    longest = 1
-    loop c, options over rows.choices
-        emit Length { value = options } to core get { value as size }
-        if size > longest, longest = size
-    room = height - 9
-    if room < 1, room = 1
-    shown = longest
-    if shown > room, shown = room
-    loop c, options over rows.choices
-        emit Length { value = options } to core get { value as count }
-        cursor = picker.cursors[c]
-        top = 0
-        if cursor ≥ shown, top = cursor - shown + 1
-        i = 0
-        loop
-            if i ≥ shown, break
-            item = options[top + i]
-            text = ""
-            if item ≠ null
-                text = item
-                if c = 0
-                    loop one over picker.providers
-                        if one.name = item and one.title ≠ item, text = one.title + " · " + item
-                if c = 1 and item = "", text = "(its default)"
-                if c = 1 and item ≠ "" and rows.held.names[item] ≠ null, text = rows.held.names[item]
-                if c = 2 and item = ""
-                    text = "(default)"
-                    if rows.usual_effort ≠ "", text = "(default: " + rows.usual_effort + ")"
-                mark = "  "
-                if item = rows.chosen[c] and (c = 0 or rows.chosen[0] = rows.held.name), mark = "● "
-                text = " " + mark + text
-            if c = 2 and count = 0 and i = 0, text = "   (not supported)"
-            style = "menu_item"
-            if item ≠ null and top + i = cursor
-                style = "selected"
-                if c = picker.col, style = "menu_item_active"
-            out += { row = 4 + i, col = starts[c], spans = [{ text = text, width = widths[c] - 1, style = style }, { text = "│", style = "border" }] }
-            i += 1
-    note = rows.held.title + ": " + rows.held.note
-    note_span = { text = " " + note, width = width, style = "menu_item" }
-    if not rows.held.ready, note_span = note_span + { fg = [230, 140, 60] }
-    out += { row = 4 + shown, col = left, spans = [note_span] }
-    return Overlays { overlays = out }
 
 | The tab strip: every tab's name (● when a file has unsaved changes),
 | the active one lit, scrolled so the active one is always in sight.
@@ -489,8 +248,7 @@ EditorView { pane, buffer, focused, wrap } =>
 
 | What is at screen `row`, `col` (the mouse): `kind` "menubar", "tab"
 | (`group`, `tab`), "tree" (`group`, `index` into the explorer's rows),
-| "editor" (`group`, the text's `line` and `col`), "terminal", "chat",
-| "diff" (`group`), or "none".
+| "editor" (`group`, the text's `line` and `col`), "terminal", or "none".
 HitTest { state, row, col } =>
     nothing = Hit { kind = "none", group = -1, tab = -1, index = -1, line = -1, col = -1 }
     if row = 0, return nothing + { kind = "menubar" }
@@ -654,7 +412,7 @@ WelcomeView { pane } =>
 
 | The status bar: a prompt being answered, or the last message on the
 | left; where the cursor is and the language on the right.
-StatusBar { width, row, message, prompt, buffer, ai, voice } =>
+StatusBar { width, row, message, prompt, buffer } =>
     if prompt ≠ null
         emit Length { value = prompt.label + prompt.text } to core get { value as typed }
         return Status {
@@ -667,10 +425,6 @@ StatusBar { width, row, message, prompt, buffer, ai, voice } =>
         if buffer.path[length - 5, length) = ".code", language = "code"
         if buffer.path[length - 5, length) = ".json", language = "JSON"
         right = "Ln " + (buffer.row + 1) + ", Col " + (buffer.col + 1) + "    " + language + "  "
-    if ai ≠ null and ai ≠ "", right = ai + "    " + right
-    if voice = "recording", right = "● REC    " + right
-    if voice = "hearing", right = "… hearing    " + right
-    if voice = "downloading", right = "↓ speech model    " + right
     emit Length { value = right } to core get { value as right_size }
     right_width = 34
     if right_size > right_width, right_width = right_size
@@ -710,7 +464,7 @@ GroupView { area, group, index, state, screens } =>
     out += { row = 1 + pane.y, col = pane.x, spans = strip.spans }
     view = group.tabs[group.active]
     content = pane + { y = pane.y + 1, height = pane.height - 1 }
-    result = GroupDrawn { overlays = out, scroll = null, tree = null, page = null, cursor_row = null, cursor_col = null, chat = null }
+    result = GroupDrawn { overlays = out, scroll = null, tree = null, page = null, cursor_row = null, cursor_col = null }
     if view.kind = "explorer"
         emit BaseName { path = state.folder } to this get folder_name
         emit ExplorerRows { pane = content, nodes = state.tree, sel = state.tree_sel, top = state.tree_top, focused = focused, title = folder_name.name } to this get rows
@@ -724,22 +478,6 @@ GroupView { area, group, index, state, screens } =>
         emit EditorView { pane = pane, buffer = buffer, focused = focused, wrap = wrap } to this get rows
         result = result + { overlays = out + rows.overlays, scroll = { group = index, top = rows.top, left = rows.left }, page = rows.page }
         if focused, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
-    if view.kind = "diff"
-        emit DiffRows { pane = content, view = view, focused = focused } to this get rows
-        result = result + { overlays = out + rows.overlays }
-    if view.kind = "chat"
-        | Each AI tab its own conversation: the one with the keys, or one
-        | waiting (see chats in the ide gene).
-        shown_chat = state.chat
-        view_chat = view.chat_id
-        if view_chat = null, view_chat = "1"
-        if state.chat_id ≠ null and view_chat ≠ state.chat_id
-            shown_chat = state.chats[view_chat]
-            if shown_chat = null, shown_chat = { turns = [], messages = [], input = "", caret = null, queue = [], busy = false, request = -1, steps = 0, scroll = 0, pending = null, agent = null }
-        emit ChatRows { pane = content, chat = shown_chat, notice = state.chat_notice, label = state.chat_label, focused = focused, voice = state.voice } to this get rows
-        result = result + { overlays = out + rows.overlays }
-        if state.chat_id = null or view_chat = state.chat_id, result = result + { chat = rows.chat }
-        if rows.cursor_row ≠ null, result = result + { cursor_row = rows.cursor_row, cursor_col = rows.cursor_col }
     if view.kind = "terminal"
         emit TerminalRows { pane = content, screen = screens["$view.id"], focused = focused } to this get rows
         result = result + { overlays = out + rows.overlays }
@@ -761,7 +499,6 @@ Frame { state, placement, screens } =>
     tree_page = 10
     page = 10
     cursor_row = null, cursor_col = null
-    chat_drawn = null
     views = []
     loop area over placement.placed
         if area.id < 0
@@ -771,7 +508,6 @@ Frame { state, placement, screens } =>
             emit GroupView { area = area, group = state.groups[area.id], index = area.id, state = state, screens = screens } to this get drawn
             overlays = overlays + drawn.overlays
             if drawn.scroll ≠ null, views += drawn.scroll
-            if drawn.chat ≠ null, chat_drawn = drawn.chat
             if drawn.tree ≠ null
                 tree_top = drawn.tree.top
                 tree_page = drawn.tree.page
@@ -780,7 +516,7 @@ Frame { state, placement, screens } =>
                 cursor_row = drawn.cursor_row
                 cursor_col = drawn.cursor_col
 
-    emit StatusBar { width = state.cols, row = state.rows - 1, message = state.message, prompt = state.prompt, buffer = state.file, ai = state.ai_status, voice = state.voice } to this get status
+    emit StatusBar { width = state.cols, row = state.rows - 1, message = state.message, prompt = state.prompt, buffer = state.file } to this get status
     overlays = overlays + status.overlays
     if state.prompt ≠ null
         cursor_row = state.rows - 1
@@ -789,11 +525,6 @@ Frame { state, placement, screens } =>
     if state.prompt ≠ null and state.prompt.kind = "quick_open"
         emit QuickOpenView { prompt = state.prompt, cols = state.cols, height = state.rows } to this get quick
         overlays = overlays + quick.overlays
-
-    if state.picker ≠ null
-        emit PickerView { picker = state.picker, rows = state.picker_rows, cols = state.cols, height = state.rows } to this get picked
-        overlays = overlays + picked.overlays
-        cursor_row = null
 
     if state.menu ≠ null
         emit Dropdown { open = state.menu, labels = state.keytable.labels } to this get dropdown
@@ -808,5 +539,4 @@ Frame { state, placement, screens } =>
         tree_page = tree_page
         views = views
         page = page
-        chat = chat_drawn
     }

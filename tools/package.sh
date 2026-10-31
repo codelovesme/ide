@@ -5,7 +5,6 @@
 #     ide            the launcher (bin/ide)
 #     ide-bin        the program, built by `code build`
 #     *.so           the organelles `euglena install` fetched, beside it
-#     whisper-cli    whisper.cpp, for offline voice input (tools/whisper.sh)
 #     VERSION, README.md
 #
 # The program is main.code without its organelle links: those would be
@@ -27,12 +26,8 @@ grep -v '^link ".*\.so"' "$root/main.code" | grep -v '^| ' > "$root/standalone.c
 rm -f "$root/standalone.code"
 cp "$root/bin/ide" "$stage/ide"
 cp "$root/README.md" "$stage/"
-cp "$root/tools/mike_bridge.py" "$stage/"
-mkdir -p "$stage/docs"
-cp "$root/docs/mike.md" "$stage/docs/"
-printf 'format=1\nfeature.mike=mike-service >=0.5.1 <0.6.0 pin=v0.5.1\n' > "$stage/cdlvsm-package.info"
+printf 'format=1\n' > "$stage/cdlvsm-package.info"
 "$root/tools/organelles.sh" "$stage"
-"$root/tools/whisper.sh" "$stage"
 echo "$version" > "$stage/VERSION"
 tar -C "$out" -czf "$out/$name.tar.gz" "$name"
 echo "$out/$name.tar.gz"

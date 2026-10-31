@@ -8,7 +8,7 @@
 | A key arrives from `tty` as `Key { name, text }`. It goes, first match:
 | to the prompt if one is open, to the menu if one is open, to a command if
 | it is bound (keys.gene.code), else to what the focused tab shows — the
-| explorer's rows, a file, the AI chat's input, or a terminal's shell
+| explorer's rows, a file, or a terminal's shell
 | (which gets most keys, see `HandleKey`). Then the screen is drawn again.
 | Anything that fails lands in the status bar, not silence.
 
@@ -45,13 +45,10 @@ redo = []
 last_edit = ""
 
 | What has the keys: the focused tab's kind — "tree" (the explorer),
-| "editor" (a file), "terminal", "chat", "diff" (a change the AI
-| proposes), or "none" when nothing is open.
+| "editor" (a file), "terminal", or "none" when nothing is open.
 focus = "none"
 menu = null
 prompt = null
-| The model picker, when it is open (see OpenModelPicker).
-picker = null
 message = ""
 chord = ""
 explorer_slot = "l"
@@ -69,12 +66,12 @@ max_spots = 50
 
 | Panes put away by their key (Ctrl+J, Ctrl+E): terminals and files, each
 | `{ slot, view, active }`, kept whole — shells still running, edits and
-| undo kept — until the key brings them back. (The explorer and the chat
-| need no keeping: they are drawn from state that stays.)
+| undo kept — until the key brings them back. (The explorer needs no
+| keeping: it is drawn from state that stays.)
 hidden_panes = { terminal = [], file = [] }
 | The pane keys run from inside a terminal too, whatever
 | terminal.integrated.commandsToSkipShell says.
-pane_commands = { "view.explorer" = true, "terminal.toggle" = true, "ai.toggle" = true, "editor.toggle" = true, "terminal.scrollUp" = true, "terminal.scrollDown" = true, "tab.newHere" = true, "window.new" = true, "ai.voice" = true }
+pane_commands = { "view.explorer" = true, "terminal.toggle" = true, "editor.toggle" = true, "terminal.scrollUp" = true, "terminal.scrollDown" = true, "tab.newHere" = true, "window.new" = true }
 | How far back each terminal is scrolled (Shift+PgUp), by its id.
 terminal_scrolls = {}
 
@@ -98,63 +95,12 @@ quick_most = 50
 | The user's settings (see settings.gene.code), and where they are kept.
 settings = null
 settings_dir = ""
-| IDE account sign-in (codelovesme browser handoff, see mike_bridge.py
-| --login): the hidden terminal running it, or null. Only the account name
-| is kept, in account.json beside settings — never a token.
-login_pty = null
-| Voice input (voice.gene.code): `{ stage, pty, engine }` while the
-| recorder, the engine that hears, or the model's download runs in a
-| hidden terminal — stage "recording", "hearing" or "downloading" — else
-| null.
-voice = null
 | The side tracks' sizes (see layout.gene.code), from settings.
 sizes = { left = 30, right = 40, top = 10, bottom = 12 }
 | The key table (see keys.gene.code): the defaults and keybindings.json.
 keytable = null
 
-| The AI chat (see chatbox.gene.code): its tab, and the conversation. The
-| model it talks to is whichever settings.json names (llm.gene.code);
-| `models` holds the organelle each provider type uses, `model_key` the
-| setup sent last, so it is sent again only when it changes.
-chat_view = { kind = "chat", path = "AI Chat", store = "view", chat_id = "1" }
-empty_chat = { turns = [], messages = [], input = "", caret = null, queue = [], busy = false, request = -1, steps = 0, scroll = 0, system = "", budget = null, pending = null, checkpoints = [], agent = null, session = "", session_for = "", snapshot = null, changed = null }
-chat = empty_chat
-| More than one AI tab (Ctrl+T in the chat): `chat` is the conversation
-| with the keys (`chat_id`, its tab's `chat_id`); the others wait in
-| `chats`, by id, and are brought in for a moment when their replies
-| come (InChat).
-chat_id = "1"
-chats = {}
-chats_opened = 1
-chat_page = 10
-| How many questions may wait (`chat.queue`) while the AI is working.
-queue_most = 10
-| The questions asked (oldest first) for ↑/↓ in the input box — kept
-| through New AI Chat — where ↑/↓ are in them (their count: on the
-| draft), and the question being written before ↑ was pressed.
-questions = []
-recall_at = 0
-recall_draft = ""
-models = {}
-model_key = ""
 procs = null
-| http_client: a model server's /v1/models, for the picker.
-web = null
-jsons = null
-cli_update_requests = {}
-cli_updates = {}
-cli_update_count = 0
-| What the chat says before anything is asked when no model is set up,
-| and the model (and, for an agent, the mode) on the rule over its input.
-chat_notice = ""
-chat_label = ""
-| The same, short, for the status bar.
-ai_status = ""
-| What "this" means to the chat: the file and the terminal shown last, and
-| the places just edited (`path:line`, latest last).
-last_file = null
-last_terminal = -1
-recent = []
 
 | Terminals: the pty organelle, how many have been opened (for their
 | names), the size each was last told, and which commands still run while
@@ -175,10 +121,8 @@ Organelles { from } =>
     link from + "/json.so" as json_at
     link from + "/fs.so" as prefs_at
     link from + "/pty.so" as pty_at
-    link from + "/localai.so" as localai_at
     link from + "/process.so" as process_at
-    link from + "/http_client.so" as http_at
-    return Linked { http = http_at, env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at, pty = pty_at, localai = localai_at, process = process_at }
+    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at, pty = pty_at, process = process_at }
 
 | Links them, and hands each gene the ones it uses.
 UseOrganelles { from } =>
@@ -191,13 +135,7 @@ UseOrganelles { from } =>
     prefs = linked.prefs
     shells = linked.pty
     procs = linked.process
-    web = linked.http
-    jsons = linked.json
-    models = { localai = linked.localai }
-    emit ChatUses { json = linked.json, strings = linked.strings } to this
     emit ContextUses { strings = linked.strings } to this
-    emit AgentsUses { json = linked.json, strings = linked.strings } to this
-    emit VoiceUses { json = linked.json, strings = linked.strings } to this
     emit SettingsUses { json = linked.json } to this
     emit KeysUses { json = linked.json, strings = linked.strings } to this
     emit EditorUses { texts = linked.strings } to this
@@ -262,53 +200,6 @@ EuglenaHasBeenBorn { cell_name } =>
     emit Render to this
     return Alive { cell_name = cell_name }
 
-| Check each configured coding-agent CLI once per IDE launch. The local
-| version command is quick; the registry request is asynchronous.
-CheckCliUpdates =>
-    all = settings["ai.providers"]
-    if all ∉ Object, return Nothing
-    loop name, entry over all
-        emit ProviderFor { settings = settings + { "ai.provider" = name } } to this get provider
-        if provider.runner ≠ "cli" or provider.update_url = null, continue
-        emit Run { command = provider.command, args = ["--version"], cwd = folder } to procs get installed
-        if installed ∈ Exception or not installed.success, continue
-        emit Split { value = installed.stdout, separator = " " } to texts get words
-        version = words.value[provider.version_word]
-        if version ∉ String or version = "", continue
-        emit Get { url = provider.update_url, timeout_seconds = 5, max_body_bytes = 262144, network_policy = "public_https", later = true } to web get requested
-        if requested ∈ Exception or requested ∉ Sent, continue
-        request_id = requested.value
-        cli_update_requests = cli_update_requests + { "$request_id" = { name = name, title = provider.title, installed = version } }
-    return Checked
-
-| Parse the numeric major.minor.patch components of a release version.
-VersionParts { version } =>
-    emit Split { value = version, separator = "." } to texts get split
-    parts = []
-    loop i, piece over split.value
-        if i ≥ 3, break
-        emit Split { value = piece, separator = "-" } to texts get version_head
-        emit Parse { text = version_head.value[0] } to jsons get number
-        if number ∈ Exception or number.value ∉ Number, return Version { parts = [] }
-        parts += number.value
-    return Version { parts = parts }
-
-VersionNewer { installed, latest } =>
-    emit VersionParts { version = installed } to this get old_parts
-    emit VersionParts { version = latest } to this get new_parts
-    if old_parts.parts[0] = null or new_parts.parts[0] = null, return No
-    i = 0
-    loop
-        if i ≥ 3, break
-        old = old_parts.parts[i]
-        new = new_parts.parts[i]
-        if old = null, old = 0
-        if new = null, new = 0
-        if new > old, return Yes
-        if new < old, return No
-        i += 1
-    return No
-
 Resize { cols as width, rows as height } =>
     cols = width
     rows = height
@@ -335,40 +226,15 @@ Mouse { kind, button, row, col, shift, alt, ctrl, clicks } =>
 
 | A terminal's screen changed (pushed by the pty organelle): draw again.
 TerminalOutput { id } =>
-    if login_pty ≠ null and id = login_pty
-        emit Screen { id = id } to shells
-        return Drawn
-    if voice ≠ null and id = voice.pty
-        emit Screen { id = id } to shells
-        return Drawn
-    emit ChatOwner { request = null, pty = id } to this get owner
-    if owner.id ≠ ""
-        | Acknowledge the hidden PTY output; otherwise its coalesced event
-        | stays pending and later structured tool requests never wake IDE.
-        emit Screen { id = id } to shells
-        emit InChat { id = owner.id, particle = AgentProgress } to this
     if running, emit Render to this
     return Drawn
 
 | A terminal's shell ended: its tab closes, as in VS Code.
 TerminalExited { id, code } =>
-    if login_pty ≠ null and id = login_pty
-        emit AccountSignedIn to this
-        if running, emit Render to this
-        return Finished
-    if voice ≠ null and id = voice.pty
-        emit VoiceStepDone to this
-        if running, emit Render to this
-        return Finished
     still_hidden = []
     loop kept over hidden_panes.terminal
         if kept.view.id ≠ id, still_hidden += kept
     hidden_panes = hidden_panes + { terminal = still_hidden }
-    emit ChatOwner { request = null, pty = id } to this get owner
-    if owner.id ≠ ""
-        emit InChat { id = owner.id, particle = AgentFinished } to this
-        if running, emit Render to this
-        return Finished
     emit FindTerminal { id = id } to this get where
     if where.group ≥ 0
         emit Stash to this
@@ -397,7 +263,7 @@ FocusGroup { group } =>
 | selects to it; Alt: another cursor; twice: the word; three times: the
 | line) and a drag selects; the wheel scrolls three lines.
 HandleMouse { kind, button, row, col, shift, alt, ctrl, clicks } =>
-    if prompt ≠ null or picker ≠ null, return Ignored
+    if prompt ≠ null, return Ignored
     if kind = "release"
         drag_from = null
         return Handled
@@ -428,11 +294,6 @@ HandleMouse { kind, button, row, col, shift, alt, ctrl, clicks } =>
             if button = "down", back = back - 3
             if back < 0, back = 0
             terminal_scrolls = terminal_scrolls + { "$scroll_id" = back }
-        if focus = "chat"
-            moved = chat.scroll - 3
-            if button = "up", moved = chat.scroll + 3
-            if moved < 0, moved = 0
-            chat = chat + { scroll = moved }
         return Handled
     if button ≠ "left", return Ignored
     if kind = "drag"
@@ -493,17 +354,10 @@ HandleKey { name, text } =>
     if prompt ≠ null
         emit PromptKey { name = name, text = text } to this
         return Handled
-    if picker ≠ null
-        emit PickerKey { name = name } to this
-        return Handled
     if menu ≠ null
         emit MenuKey { open = menu, name = name } to this get chosen
         menu = chosen.open
         if chosen.command ≠ null, emit Run { command = chosen.command } to this
-        return Handled
-    | Escape while recording throws the recording away, wherever the keys are.
-    if name = "escape" and voice ≠ null and voice.stage = "recording"
-        emit VoiceCancel to this
         return Handled
     | A terminal gets every key but the few commands that skip the shell,
     | so Ctrl+C, Ctrl+E, Ctrl+W… are the shell's, as in VS Code.
@@ -538,12 +392,6 @@ HandleKey { name, text } =>
         return Handled
     if focus = "tree"
         emit TreeKey { name = name } to this
-        return Handled
-    if focus = "chat"
-        emit ChatKey { name = name, text = text } to this
-        return Handled
-    if focus = "diff"
-        emit DiffKey { name = name } to this
         return Handled
     if focus = "editor" and file ≠ null
         emit EditorKey { name = name, text = text } to this
@@ -607,7 +455,6 @@ Run { command } =>
     if command = "editor.toggle", emit TogglePane { kind = "file" } to this
     if command = "terminal.new", emit NewTerminal { slot = "" } to this
     if command = "tab.newHere", emit NewHere to this
-    if command = "ai.newTab", emit NewChatTab to this
     if command = "window.new", emit NewWindow to this
     if command = "menu.file", menu = { index = 0, item = 0 }
     if command = "menu.view", menu = { index = 1, item = 0 }
@@ -616,33 +463,6 @@ Run { command } =>
     if command = "edit.outdent" and focus = "editor" and file ≠ null, emit EditorKey { name = "shift+tab", text = "" } to this
     if command = "edit.undo" and focus = "editor", emit Undo to this
     if command = "edit.redo" and focus = "editor", emit Redo to this
-    if command = "ai.toggle", emit TogglePane { kind = "chat" } to this
-    if command = "ai.configure", emit ConfigureAi to this
-    if command = "ai.newChat"
-        emit DropProposal to this
-        if chat.agent ≠ null, emit Close { id = chat.agent.pty } to shells
-        chat = chat + { turns = [], messages = [], input = "", queue = [], busy = false, request = -1, steps = 0, scroll = 0, checkpoints = [], agent = null, session = "", snapshot = null, changed = null }
-        emit ShowChat to this
-    if command = "ai.cancel", emit Unqueue to this
-    if command = "ai.cancel" and chat.agent ≠ null
-        emit Close { id = chat.agent.pty } to shells
-        emit AgentFinished to this
-        chat = chat + { turns = chat.turns + [{ role = "error", text = "Stopped." }] }
-        return Ran
-    if command = "ai.cancel" and chat.busy
-        emit DropProposal to this
-        chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "error", text = "Stopped." }] }
-    if command = "ai.undoTurn", emit UndoAiChanges to this
-    if command = "ai.showChanges", emit ShowAiChanges to this
-    if command[0, 8) = "ai.mode.", emit SetAgentMode { mode = command[8, length) } to this
-    if command = "ai.goAhead", emit GoAhead to this
-    if command = "ai.toggleMode", emit ToggleAgentMode to this
-    if command = "ai.switchModel", emit OpenModelPicker to this
-    if command = "ai.voice", emit VoiceToggle to this
-    if command = "ai.voice.cancel", emit VoiceCancel to this
-    if command = "account.signIn", emit AccountSignIn { switch = false } to this
-    if command = "account.switchService", emit AccountSignIn { switch = true } to this
-    if command = "account.signOut", emit AccountSignOut to this
     if command = "terminal.scrollUp" or command = "terminal.scrollDown"
         emit Active { groups = groups, current = current } to this get scrolling
         if scrolling.buffer ≠ null and scrolling.buffer.kind = "terminal"
@@ -677,7 +497,7 @@ MoveCurrent { into } =>
         explorer_slot = into
         if into = "l", emit StoreSetting { key = "workbench.sideBar.location", value = "left" } to this
         if into = "r", emit StoreSetting { key = "workbench.sideBar.location", value = "right" } to this
-    if moving.buffer ≠ null and moving.buffer.kind = "chat", emit StoreSetting { key = "ai.chat.location", value = into } to this
+    if moving.buffer ≠ null and moving.buffer.kind = "terminal" and into ≠ settings["terminal.location"], emit StoreSetting { key = "terminal.location", value = into } to this
     return Moved
 
 | The explorer shown — its tab again if it is open, else a new one in the
@@ -783,13 +603,13 @@ ResizeEdge { direction } =>
     emit StoreSetting { key = "workbench.layout." + key, value = size } to this
     return Resized
 
-| Ctrl+`: a terminal — the first one if there is none (at the bottom); the
+| Ctrl+`: a terminal — the first one if there is none (terminal.location); the
 | keys back to the files if a terminal has them; else to the terminal.
 ToggleTerminal =>
     emit Terminals { groups = groups } to this get open_terminals
     emit Length { value = open_terminals.ids } to core get { value as count }
     if count = 0
-        emit NewTerminal { slot = "b" } to this
+        emit NewTerminal { slot = "" } to this
         return Toggled
     if focus = "terminal"
         emit FocusSlot { slot = "c" } to this get back
@@ -800,13 +620,14 @@ ToggleTerminal =>
     return Toggled
 
 | A new terminal: the shell in the open folder, as a tab in `slot` — or,
-| with `slot` empty, beside the terminal that has the keys, else at the
-| bottom.
+| with `slot` empty, beside the terminal that has the keys, else where
+| terminal.location says (the right, by default: the code keeps its full
+| height).
 NewTerminal { slot } =>
     emit RestorePane { kind = "terminal" } to this
     target = slot
     if target = ""
-        target = "b"
+        target = settings["terminal.location"]
         if focus = "terminal", target = groups[current].slot
     open_request = Open { cols = 80, rows = 12, cwd = folder }
     shell = settings["terminal.integrated.shell"]
@@ -823,24 +644,6 @@ NewTerminal { slot } =>
 | A key while the status bar is asking something.
 PromptKey { name, text } =>
     asked = prompt
-    | A command the AI wants to run: y runs it, n or Escape does not.
-    if asked.kind = "mike_question"
-        if name ≠ "y" and name ≠ "n" and name ≠ "escape", return Typed
-        prompt = null
-        emit InChat { id = asked.chat_id, particle = MikeAnswer { id = asked.id, yes = name = "y", local = asked.local } } to this
-        return Answered
-    if asked.kind = "ai_run"
-        if name ≠ "y" and name ≠ "n" and name ≠ "escape", return Typed
-        prompt = null
-        emit InChat { id = asked.chat_id, particle = AnswerRun { yes = name = "y" } } to this
-        return Answered
-    | The offline speech model, fetched only when y says so.
-    if asked.kind = "voice_download"
-        if name ≠ "y" and name ≠ "n" and name ≠ "escape", return Typed
-        prompt = null
-        if name = "y", emit VoiceDownload to this
-        if name ≠ "y", message = "No speech model fetched; ai.voice.provider can name a speech server or Mike instead"
-        return Answered
     if name = "escape"
         prompt = null
         return Cancelled
@@ -936,7 +739,6 @@ OpenFolder { path } =>
         message = "Error: " + listing.message
         return Failed { reason = message }
     emit Children { entries = listing.entries, parent = "", depth = 0 } to this get kids
-    emit CloseMikeChats to this
     folder = configured.base_path
     tree = kids.nodes
     tree_sel = 0
@@ -1207,7 +1009,6 @@ ReplaceAll { find, put } =>
     if col > here, col = here
     file = file + { lines = lines, col = col, want = col, anchor = null, extra = null, dirty = true }
     message = "Replaced " + count
-    emit NoteEdit to this
     return Replaced
 
 | `buffer` shown in the group in `slot`, in its tab, and focused.
@@ -1239,19 +1040,10 @@ Unstash =>
     focus = "none"
     if view = null, return Unstashed
     if view.kind = "explorer", focus = "tree"
-    if view.kind = "chat"
-        focus = "chat"
-        shown_chat = view.chat_id
-        if shown_chat = null, shown_chat = "1"
-        emit SwapChat { id = shown_chat } to this
-    if view.kind = "diff", focus = "diff"
-    if view.kind = "terminal"
-        focus = "terminal"
-        last_terminal = view.id
+    if view.kind = "terminal", focus = "terminal"
     if view.kind = "file"
         focus = "editor"
         file = view
-        last_file = { path = view.path, store = view.store }
         if file.undo ≠ null, undo = file.undo
         if file.redo ≠ null, redo = file.redo
     return Unstashed
@@ -1264,7 +1056,7 @@ ShowShortcuts =>
 
 EditorKey { name, text } =>
     | The clipboard: Ctrl+C copies the selection, Ctrl+X cuts it, Ctrl+V
-    | pastes over it — not keybindings, so the chat's and the shell's
+    | pastes over it — not keybindings, so the shell's
     | Ctrl+C stay theirs.
     if name = "ctrl+c" or name = "ctrl+x"
         emit SelectedText { buffer = file } to this get picked
@@ -1305,22 +1097,7 @@ EditorKey { name, text } =>
     redo = []
     last_edit = kind
     file = edited.buffer + { dirty = true }
-    emit NoteEdit to this
     return Changed
-
-| Where the file was just edited, for the chat: `path:line`, the latest
-| last, one entry a file.
-NoteEdit =>
-    if file.store ≠ "workspace", return Nothing
-    kept = []
-    loop place over recent
-        emit Split { value = place, separator = ":" } to texts get parts
-        if parts.value[0] ≠ file.path, kept += place
-    kept += file.path + ":" + (file.row + 1)
-    emit Length { value = kept } to core get { value as count }
-    if count > 6, kept = kept[count - 6, count)
-    recent = kept
-    return Noted
 
 | The open file's text replaced whole, as one edit (what a paste of
 | everything would be).
@@ -1517,12 +1294,6 @@ OpenPrefsFile { name } =>
 | Everything the screen is drawn from, in one particle.
 State =>
     emit Stash to this
-    voice_stage = ""
-    if voice ≠ null, voice_stage = voice.stage
-    picker_rows = null
-    if picker ≠ null
-        emit PickerRows to this get rows_now
-        picker_rows = rows_now
     return IdeState {
         groups = groups
         current = current
@@ -1535,20 +1306,11 @@ State =>
         file = file
         focus = focus
         menu = menu
-        picker = picker
-        picker_rows = picker_rows
         terminal_scrolls = terminal_scrolls
         prompt = prompt
         message = message
         sizes = sizes
         keytable = keytable
-        chat = chat
-        chat_id = chat_id
-        chats = chats
-        chat_notice = chat_notice
-        chat_label = chat_label
-        ai_status = ai_status
-        voice = voice_stage
         settings = settings
     }
 
@@ -1576,9 +1338,7 @@ TerminalScreens { placed } =>
     return Screens { screens = screens }
 
 Render =>
-    emit RestoreMikeQuestion to this
     if not running, return Skipped
-    emit ChatNotice to this
     emit State to this get state
     emit Placement { state = state } to this get placement
     emit TerminalScreens { placed = placement.placed } to this get terminal_screens
@@ -1589,9 +1349,6 @@ Render =>
     tree_top = screen.tree_top
     tree_page = screen.tree_page
     editor_page = screen.page
-    if screen.chat ≠ null
-        chat_page = screen.chat.page
-        chat = chat + { scroll = screen.chat.scroll }
     | Each group keeps how far its file was scrolled.
     loop scrolled_view over screen.views
         i = scrolled_view.group
@@ -1603,212 +1360,7 @@ Render =>
     emit Draw { overlays = screen.overlays, cursor_row = screen.cursor_row, cursor_col = screen.cursor_col } to term
     return Rendered
 
-| ── The AI chat ────────────────────────────────────────────────────────
-
-| Ctrl+L: the chat — opened where it was last (settings: ai.chat.location)
-| if it is not; the keys back to the files if it has them; else to it.
-ToggleChat =>
-    emit ChatTab { id = chat_id } to this get this_chat
-    emit FindView { groups = groups, path = this_chat.path, store = this_chat.store } to this get where
-    if where.group ≥ 0 and focus = "chat"
-        emit FocusSlot { slot = "c" } to this get back
-        if back ∉ Focused, emit FocusNext to this
-        return Toggled
-    emit ShowChat to this
-    return Toggled
-
-| The chat shown and given the keys.
-ShowChat =>
-    emit ChatTab { id = chat_id } to this get this_chat
-    emit FindView { groups = groups, path = this_chat.path, store = this_chat.store } to this get where
-    if where.group ≥ 0
-        emit Reveal { group = where.group, tab = where.tab } to this
-        return Shown
-    emit Show { buffer = this_chat, slot = settings["ai.chat.location"] } to this
-    return Shown
-
-| Settings > AI Model…: settings.json, with the `ai.*` settings written
-| into it if they are not there yet.
-ConfigureAi =>
-    emit StoreSetting { key = "ai.providers", value = settings["ai.providers"] } to this
-    emit OpenPrefsFile { name = "settings.json" } to this
-    message = "ai.providers.local is LocalAI at http://localhost:8080; change its endpoint and model if yours differ, then save"
-    return Opened
-
-ChatNotice =>
-    emit ProviderFor { settings = settings } to this get provider
-    chat_notice = provider.problem
-    chat_label = ""
-    ai_status = ""
-    shown_model = provider.model
-    if provider.models ≠ null
-        loop one over provider.models
-            if one ∈ Object and one["id"] = provider.model and one["name"] ∈ String, shown_model = one["name"]
-    shown_modes = { ask = "Ask", plan = "Plan", edit = "Edit", auto = "Auto" }
-    mode = shown_modes[settings["ai.agent.mode"]]
-    if provider.problem = "" and provider.runner = "cli"
-        ai_status = provider.title
-        if provider.model ≠ "", ai_status = ai_status + " · " + shown_model
-        if provider.effort ≠ "", ai_status = ai_status + " · " + provider.effort
-        chat_label = ai_status + " · " + mode + " (Ctrl+Shift+A) · Ctrl+Shift+M: switch"
-        ai_status = ai_status + " · " + mode
-    if provider.problem = "" and provider.runner = "mike"
-        chat_label = "Mike · " + mode + " · shared local service"
-        ai_status = "Mike · " + mode
-    if provider.problem = "" and provider.runner = "api"
-        ai_status = provider.name
-        if provider.model ≠ "", ai_status = ai_status + " · " + provider.model
-        chat_label = ai_status + " · " + mode + " (Ctrl+Shift+A) · Ctrl+Shift+M: switch"
-        ai_status = ai_status + " · " + mode
-    return Noted
-
-| A key in the chat: Escape gives the keys back to the files, Ctrl+C stops
-| the model; the rest are the input box's (chatbox.gene.code).
-ChatKey { name, text } =>
-    if name = "escape"
-        emit FocusSlot { slot = "c" } to this get back
-        if back ∉ Focused, emit FocusNext to this
-        return Handled
-    if name = "ctrl+c"
-        emit Run { command = "ai.cancel" } to this
-        return Handled
-    typed_text = text
-    if name = "ctrl+v"
-        emit PasteText to this get pasted
-        typed_text = pasted.text
-    emit ChatInput { input = chat.input, caret = chat.caret, name = name, text = typed_text, page = chat_page } to this get typed
-    | ↑ on the first line, ↓ on the last: the questions asked before.
-    if typed.edge
-        step = -1
-        if name = "down", step = 1
-        emit Recall { history = questions, at = recall_at, input = chat.input, draft = recall_draft, step = step } to this get recalled
-        recall_at = recalled.at
-        recall_draft = recalled.draft
-        chat = chat + { input = recalled.input, caret = null }
-        return Handled
-    scroll = chat.scroll + typed.scroll
-    if scroll < 0, scroll = 0
-    chat = chat + { input = typed.input, caret = typed.caret, scroll = scroll }
-    if typed.send ≠ null
-        emit Length { value = questions } to core get { value as asked_count }
-        if asked_count = 0 or questions[asked_count - 1] ≠ typed.send
-            questions += typed.send
-            asked_count += 1
-        recall_at = asked_count
-        recall_draft = ""
-    if typed.send ≠ null, emit AskAbout { question = typed.send } to this
-    return Handled
-
-| A question: what the user is looking at and what they @-mention go with
-| it, and the project's instructions and map go in the system message.
-AskAbout { question } =>
-    if chat.busy
-        emit Length { value = chat.queue } to core get { value as queued_count }
-        if queued_count ≥ queue_most
-            message = "" + queue_most + " questions are waiting already — this one stays in the box until the AI takes the next"
-            chat = chat + { input = question, caret = null }
-            return Busy
-        chat = chat + { queue = chat.queue + [question] }
-        message = "Queued (" + (queued_count + 1) + " of " + queue_most + ") — asked when the AI is done; Ctrl+C puts them back in the box"
-        return Queued
-    chat = chat + { turns = chat.turns + [{ role = "user", text = question }], scroll = 0 }
-    emit ProviderFor { settings = settings } to this get provider
-    if provider.problem ≠ ""
-        chat = chat + { turns = chat.turns + [{ role = "error", text = provider.problem }] }
-        return Failed
-    emit Budget { context_tokens = provider.context_tokens, max_tokens = provider.max_tokens } to this get budget
-    emit ShownFile to this get shown
-    if provider.runner = "mike"
-        emit AskMike { question = question, shown = shown.file } to this get started_mike
-        return started_mike
-    emit GatherContext { question = question, shown = shown.file, budget = budget } to this get gathered
-    if provider.runner = "cli"
-        emit AskAgent { provider = provider, question = question, context = gathered.text } to this get started
-        return started
-    emit ProjectKnowledge { shown = shown.file, budget = budget } to this get system
-    | Earlier questions keep only their words: what was on screen then is
-    | old news, and the room is the conversation's.
-    earlier = []
-    loop m over chat.messages
-        if m.short ≠ null, earlier += { role = m.role, content = m.short }
-        if m.short = null, earlier += m
-    emit ModeNote { mode = settings["ai.agent.mode"] } to this get mode_note
-    asked = { role = "user", content = gathered.text + "\n# The question\n" + question + "\n\n" + mode_note.text, short = question }
-    chat = chat + { messages = earlier + [asked], steps = 0, system = system.text, budget = budget, checkpoints = [] }
-    emit AskModel to this
-    return Asked
-
-| The file the user looks at: the focused one, else the one shown last,
-| as its tab has it now.
-ShownFile =>
-    if file ≠ null and file.store = "workspace", return ShownFileIs { file = file }
-    if last_file = null or last_file.store ≠ "workspace", return ShownFileIs { file = null }
-    emit FindView { groups = groups, path = last_file.path, store = last_file.store } to this get at
-    if at.group < 0, return ShownFileIs { file = null }
-    return ShownFileIs { file = groups[at.group].tabs[at.tab] }
-
-| Part 1 of the context (context.gene.code), and what `question` mentions
-| with `@` attached.
-GatherContext { question, shown, budget } =>
-    names = []
-    loop group over groups
-        loop tab over group.tabs
-            names += tab.path
-    emit TerminalText { lines = 40 } to this get terminal
-    emit RunQuiet { command = "git", args = ["status", "--short", "--branch"] } to this get git
-    emit Clip { text = git.text, chars = 3000 } to this get git_short
-    emit Ambient { file = shown, focus = focus, tabs = names, recent = recent, terminal = terminal.text, git = git_short.text } to this get ambient
-    emit Clip { text = ambient.text, chars = budget.ambient } to this get out
-    text = out.text
-    emit Mentions { input = question } to this get mentioned
-    loop name over mentioned.mentions
-        emit Attachment { name = name, shown = shown } to this get attached
-        emit Clip { text = attached.text, chars = budget.tool } to this get cut
-        if cut.text ≠ "", text = text + "\n# Attached: @" + name + "\n" + cut.text + "\n"
-    return Text { text = text }
-
-| What `@name` brings: the terminal, git's diff, the open file, the
-| folder, or a file or folder by its path.
-Attachment { name, shown } =>
-    if name = "terminal"
-        emit TerminalText { lines = 200 } to this get more
-        return Text { text = "```\n" + more.text + "\n```" }
-    if name = "git"
-        emit RunTool { tool = "git_diff", args = {} } to this get diff
-        return diff
-    if name = "file"
-        if shown = null, return Text { text = "(no file is open)" }
-        emit Length { value = shown.lines } to core get { value as count }
-        emit Numbered { lines = shown.lines, first = 1, last = count } to this get whole
-        return Text { text = shown.path + ":\n```\n" + whole.text + "\n```" }
-    if name = "folder"
-        emit RunTool { tool = "list_dir", args = { path = "." } } to this get listed
-        return listed
-    emit SafePath { path = name } to this get safe
-    if not safe.ok, return Text { text = "" }
-    emit Exists { path = safe.path } to files get there
-    if there ∈ Exception, return Text { text = "" }
-    if there.is_dir
-        emit RunTool { tool = "list_dir", args = { path = safe.path } } to this get listed
-        return listed
-    if there.is_file
-        emit RunTool { tool = "read_file", args = { path = safe.path, from = 1, "to" = 2000 } } to this get read
-        return read
-    return Text { text = "" }
-
-| The terminal shown last (else the first open), as its last `lines`.
-TerminalText { lines } =>
-    id = last_terminal
-    if id < 0
-        emit Terminals { groups = groups } to this get open_terminals
-        if open_terminals.ids[0] = null, return Text { text = "" }
-        id = open_terminals.ids[0]
-    emit FindTerminal { id = id } to this get where
-    if where.group < 0, return Text { text = "" }
-    emit Screen { id = id } to shells get screen
-    if screen ∈ Exception, return Text { text = "" }
-    emit ScreenText { screen = screen, last = lines } to this get shown
-    return shown
+| ── Quick open and other windows ───────────────────────────────────────
 
 | A command's output, run in the open folder; "" when it fails.
 RunQuiet { command, args } =>
@@ -1830,153 +1382,11 @@ ProjectFiles =>
         listing = walked.text
     return Text { text = listing }
 
-outline_patterns = [
-    "^[A-Z][A-Za-z0-9]* *(\\{.*\\})? *=>"
-    "^\\s*(pub(\\([a-z]+\\))? )?(export )?(default )?(async )?(fn|struct|enum|trait|impl|mod|class|def|function|interface|type|func) [A-Za-z_]"
-]
-
-| Parts 2 and 3: the project's instructions and its map, in the system
-| message (context.gene.code).
-ProjectKnowledge { shown, budget } =>
-    path = null
-    if shown ≠ null, path = shown.path
-    emit InstructionPaths { path = path } to this get candidates
-    found = ""
-    loop candidate over candidates.paths
-        emit Exists { path = candidate } to files get there
-        if there ∉ Exception and there.is_file
-            emit ReadFile { path = candidate } to files get read
-            if read ∉ Exception, found = found + "## " + candidate + "\n" + read.content + "\n\n"
-    emit Clip { text = found, chars = budget.instructions } to this get instructions
-    emit ProjectFiles to this get project_files
-    listing = project_files.text
-    outline_args = ["--no-ignore-parent", "-n", "--no-heading", "--with-filename", "--color", "never", "--sort", "path", "--max-count", "40", "--max-columns", "160", "-g", "!*.lock", "-g", "!*.json", "-g", "!*.min.*"]
-    loop pattern over outline_patterns
-        outline_args = outline_args + ["-e", pattern]
-    | A path is given: with none, rg would search its (empty) input.
-    emit RunQuiet { command = "rg", args = outline_args + ["."] } to this get outline
-    outlined = outline.text
-    | Without ripgrep, grep (it has no .gitignore, so the usual heavy
-    | folders are left out by name).
-    if outlined = ""
-        grep_args = ["-rnIE", "--exclude-dir=.git", "--exclude-dir=node_modules", "--exclude-dir=target", "--exclude-dir=dist", "--exclude-dir=build", "--exclude=*.json", "--exclude=*.lock", "-m", "40"]
-        loop pattern over outline_patterns
-            grep_args = grep_args + ["-e", pattern]
-        emit RunQuiet { command = "grep", args = grep_args + ["."] } to this get grepped
-        outlined = grepped.text
-    emit RepoMap { files = listing, outline = outlined, chars = budget.map } to this get map
-    emit SystemPrompt { folder = folder, instructions = instructions.text, map = map.text } to this get system
-    return system
-
-| The conversation sent to the model the settings name — set up first if
-| that changed. The reply comes back later, as `ChatResult`.
-AskModel =>
-    emit ProviderFor { settings = settings } to this get provider
-    if provider.problem ≠ ""
-        emit ChatFailed { text = provider.problem } to this
-        return Failed
-    key = ""
-    if provider.api_key_env ≠ ""
-        emit Get { name = provider.api_key_env, default = "" } to vars get from_env
-        key = from_env.value
-    emit ProviderConfig { provider = provider, api_key = key } to this get config
-    target = models[provider.organelle]
-    if config.key ≠ model_key
-        emit config.particle to target get configured
-        if configured ∈ Exception
-            emit ChatFailed { text = "The model could not be set up: " + configured.message } to this
-            return Failed
-        model_key = config.key
-    emit TrimMessages { messages = chat.messages, chars = chat.budget.conversation } to this get kept
-    sending = [{ role = "system", content = chat.system }]
-    loop m over kept.messages
-        sending += { role = m.role, content = m.content }
-    emit ProviderChat { provider = provider, messages = sending } to this get call
-    emit call.particle to target get sent
-    if sent ∈ Exception
-        emit ChatFailed { text = "The model could not be asked: " + sent.message } to this
-        return Failed
-    chat = chat + { busy = true, request = sent.value }
-    return Asked
-
-ChatFailed { text } =>
-    chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "error", text = text }] }
-    return Failed
-
-| The AI is done: the next question waiting is asked (and, if that fails
-| at once, the one after).
-SendQueued =>
-    loop
-        if chat.busy or chat.queue = [], break
-        next_question = chat.queue[0]
-        emit Length { value = chat.queue } to core get { value as queued_count }
-        chat = chat + { queue = chat.queue[1, queued_count) }
-        emit AskAbout { question = next_question } to this
-    return Sent
-
-| The conversation `id` made the one in `chat`; the one there waits in
-| `chats`. An id never seen starts empty.
-SwapChat { id } =>
-    if id = chat_id, return Same
-    chats = chats + { "$chat_id" = chat }
-    swapped_in = chats[id]
-    if swapped_in = null, swapped_in = empty_chat
-    chat = swapped_in
-    chat_id = id
-    return Swapped
-
-| Which conversation asked `request` (the model's reply) or runs its
-| agent in terminal `pty`: its id, or "".
-ChatOwner { request, pty } =>
-    if request ≠ null and request ≠ - 1 and chat.request = request, return Owner { id = chat_id }
-    if pty ≠ null and chat.agent ≠ null and chat.agent.pty = pty, return Owner { id = chat_id }
-    loop owner_id, one over chats
-        if owner_id ≠ chat_id
-            if request ≠ null and request ≠ - 1 and one.request = request, return Owner { id = owner_id }
-            if pty ≠ null and one.agent ≠ null and one.agent.pty = pty, return Owner { id = owner_id }
-    return Owner { id = "" }
-
-| `particle` handled with conversation `id` in `chat` — its next queued
-| question sent if it is done — and then the one before put back (or the
-| one whose tab is in front now).
-InChat { id, particle } =>
-    was_chat = chat_id
-    emit SwapChat { id = id } to this
-    emit particle to this get done
-    emit SendQueued to this
-    | The keys stay with the conversation of the tab in front, if it is one.
-    emit Active { groups = groups, current = current } to this get in_front
-    if in_front.buffer ≠ null and in_front.buffer.kind = "chat"
-        was_chat = in_front.buffer.chat_id
-        if was_chat = null, was_chat = "1"
-    emit SwapChat { id = was_chat } to this
-    return done
-
-| The tab of conversation `id`.
-ChatTab { id } =>
-    if id = "1", return chat_view + { _class = "ChatTab" }
-    return chat_view + { _class = "ChatTab", path = "AI Chat " + id, chat_id = id }
-
-| Ctrl+T in the chat: another conversation, in a tab of its own beside it.
-NewChatTab =>
-    chats_opened += 1
-    new_id = "" + chats_opened
-    emit ChatTab { id = new_id } to this get new_tab
-    into = settings["ai.chat.location"]
-    if focus = "chat", into = groups[current].slot
-    emit Show { buffer = new_tab, slot = into } to this
-    return Opened
-
-| Ctrl+T: another of what has the keys — a terminal, an AI chat.
+| Ctrl+T: another terminal — beside the one that has the keys, else in
+| the terminal's place (terminal.location).
 NewHere =>
-    if focus = "terminal"
-        emit NewTerminal { slot = "" } to this
-        return Opened
-    if focus = "chat"
-        emit NewChatTab to this
-        return Opened
-    message = "Ctrl+T opens another terminal in a terminal, another AI chat in the chat"
-    return Nothing
+    emit NewTerminal { slot = "" } to this
+    return Opened
 
 | Ctrl+Shift+N: another ide, in a window of its own, on the same folder.
 NewWindow =>
@@ -1987,408 +1397,6 @@ NewWindow =>
         return Failed
     message = "Another ide is opening on " + folder
     return Opened
-
-| Ctrl+C: the questions waiting go back into the box, after what is in it.
-Unqueue =>
-    if chat.queue = [], return Nothing
-    parts = chat.queue
-    if chat.input ≠ "", parts = [chat.input] + parts
-    emit Join { value = parts, separator = "\n" } to texts get joined
-    chat = chat + { input = joined.value, caret = null, queue = [] }
-    return Unqueued
-
-| The model's reply: a tool to run — its result goes back, and the model is
-| asked again — or the answer.
-ChatResult { content, _request_id } =>
-    emit ChatOwner { request = _request_id, pty = null } to this get owner
-    if owner.id = "", return Ignored
-    emit InChat { id = owner.id, particle = TakeReply { content = content, reply_to = _request_id } } to this get took
-    if running, emit Render to this
-    return took
-
-| The reply itself (see ChatResult).
-TakeReply { content, reply_to } =>
-    if reply_to ≠ chat.request, return Ignored
-    emit ReadReply { content = content } to this get reply
-    chat = chat + { messages = chat.messages + [{ role = "assistant", content = content }] }
-    if reply.tool = null
-        chat = chat + { busy = false, request = -1, turns = chat.turns + [{ role = "assistant", text = reply.answer }] }
-        emit OfferPlan to this
-        return Answered
-    max_steps = settings["ai.maxSteps"]
-    if chat.steps ≥ max_steps
-        emit ChatFailed { text = "The model was still looking after " + max_steps + " steps (settings: ai.maxSteps) — ask again, more narrowly" } to this
-        return Failed
-    chat = chat + { steps = chat.steps + 1 }
-    changes = reply.tool = "edit_file" or reply.tool = "create_file" or reply.tool = "run_command"
-    looking_only = settings["ai.agent.mode"] = "ask" or settings["ai.agent.mode"] = "plan"
-    if changes and looking_only
-        refused = "Not in " + settings["ai.agent.mode"] + " mode: nothing is changed or run. Answer instead — in plan mode, with the plan."
-        chat = chat + { turns = chat.turns + [{ role = "tool", text = reply.tool + ": not in " + settings["ai.agent.mode"] + " mode" }] }
-        emit ToolDone { tool = reply.tool, text = refused } to this
-        return Stepped
-    if changes
-        emit Propose { tool = reply.tool, args = reply.args } to this get proposed
-        if proposed ∈ AutoDone
-            return Stepped
-        if proposed ∈ Waiting
-            chat = chat + { request = -1 }
-            return Waiting
-        chat = chat + { turns = chat.turns + [{ role = "tool", text = reply.tool + ": " + proposed.text }] }
-        emit ToolDone { tool = reply.tool, text = proposed.text } to this
-        return Stepped
-    emit ToolLine { tool = reply.tool, args = reply.args } to this get line
-    chat = chat + { turns = chat.turns + [{ role = "tool", text = line.text }] }
-    emit RunTool { tool = reply.tool, args = reply.args } to this get result
-    emit ToolDone { tool = reply.tool, text = result.text } to this
-    return Stepped
-
-| A tool's result back to the model, which is asked again.
-ToolDone { tool, text } =>
-    if chat.agent ≠ null and chat.agent.type = "mike"
-        emit MikeResult { result = { state = "completed", text = text } } to this
-        return Told
-    emit Clip { text = text, chars = chat.budget.tool } to this get cut
-    note = "Result of " + tool + ":\n" + cut.text
-    if chat.steps ≥ settings["ai.maxSteps"], note = note + "\n\nThat was the last step: answer now, with what you have."
-    chat = chat + { messages = chat.messages + [{ role = "user", content = note }] }
-    emit AskModel to this
-    return Sent
-
-| The model could not be reached (the organelle's `later` failure).
-Exception { source, message as failure, _request_id } =>
-    emit ChatOwner { request = _request_id, pty = null } to this get owner
-    if _request_id = null or owner.id = "", return Ignored
-    emit InChat { id = owner.id, particle = ChatFailed { text = "The model did not answer: " + failure } } to this
-    if running, emit Render to this
-    return Failed
-
-| A tool the model asked for, run on the open folder. Answers `Text`:
-| what it found, or why it could not.
-RunTool { tool, args } =>
-    if tool = "list_dir"
-        emit SafePath { path = args["path"] } to this get safe
-        if not safe.ok, return Text { text = "Not allowed: paths stay inside the project folder." }
-        emit ListDir { path = safe.path } to files get listing
-        if listing ∈ Exception, return Text { text = "Error: " + listing.message }
-        names = []
-        loop entry over listing.entries
-            if entry.is_dir, names += entry.name + "/"
-            if not entry.is_dir, names += entry.name
-        emit Join { value = names, separator = "\n" } to texts get joined
-        return Text { text = joined.value }
-    if tool = "read_file"
-        emit SafePath { path = args["path"] } to this get safe
-        if not safe.ok, return Text { text = "Not allowed: paths stay inside the project folder." }
-        emit FileLines { path = safe.path } to this get held
-        if held ∈ Text, return held
-        lines = held.lines
-        emit Length { value = lines } to core get { value as count }
-        from = args["from"]
-        if from ∉ Number or from < 1, from = 1
-        to_line = args["to"]
-        if to_line ∉ Number or to_line < from, to_line = from + 299
-        if to_line > from + 299, to_line = from + 299
-        if to_line > count, to_line = count
-        emit Numbered { lines = lines, first = from, last = to_line } to this get numbered
-        return Text { text = safe.path + " (" + count + " lines), lines " + from + "–" + to_line + ":\n" + numbered.text }
-    if tool = "grep"
-        pattern = args["pattern"]
-        if pattern ∉ String or pattern = "", return Text { text = "grep needs a \"pattern\"." }
-        where = "."
-        if args["path"] ≠ null
-            emit SafePath { path = args["path"] } to this get safe
-            if not safe.ok, return Text { text = "Not allowed: paths stay inside the project folder." }
-            where = safe.path
-        search = ["--no-ignore-parent", "-n", "--no-heading", "--with-filename", "--color", "never", "-S", "--max-count", "20", "--max-columns", "200"]
-        if args["glob"] ∈ String and args["glob"] ≠ "", search = search + ["-g", args["glob"]]
-        emit Run { command = "rg", args = search + ["-e", pattern, where], cwd = folder } to procs get searched
-        found = searched
-        if searched ∈ Exception
-            emit Run { command = "grep", args = ["-rnIE", "--exclude-dir=.git", "--exclude-dir=node_modules", "--exclude-dir=target", "-e", pattern, where], cwd = folder } to procs get grepped
-            if grepped ∈ Exception, return Text { text = "Error: " + grepped.message }
-            found = grepped
-        if found.code = 1, return Text { text = "No matches." }
-        if not found.success, return Text { text = "Error: " + found.stderr }
-        emit FirstLines { text = found.stdout, count = 60 } to this get first
-        return first
-    if tool = "find_files"
-        name = args["name"]
-        if name ∉ String or name = "", return Text { text = "find_files needs a \"name\"." }
-        emit RunQuiet { command = "rg", args = ["--files", "--no-ignore-parent", "--sort", "path", "--iglob", "*" + name + "*", "."] } to this get found
-        listing = found.text
-        if listing = ""
-            emit RunQuiet { command = "find", args = [".", "-iname", "*" + name + "*", "-not", "-path", "*/.git/*"] } to this get looked
-            listing = looked.text
-        if listing = "", return Text { text = "No files match." }
-        emit FirstLines { text = listing, count = 100 } to this get first
-        return first
-    if tool = "git_diff"
-        diff_args = ["diff"]
-        if args["path"] ≠ null
-            emit SafePath { path = args["path"] } to this get safe
-            if not safe.ok, return Text { text = "Not allowed: paths stay inside the project folder." }
-            diff_args = diff_args + ["--", safe.path]
-        emit RunQuiet { command = "git", args = diff_args } to this get diff
-        if diff.text = "", return Text { text = "No changes (or not a git repository)." }
-        return diff
-    return Text { text = "There is no tool called \"" + tool + "\". The tools: list_dir, read_file, grep, find_files, git_diff." }
-
-| A file's lines as the user has them: an open file as the editor holds
-| it, unsaved changes and all; else from the disk. `Text` when it cannot
-| be read.
-FileLines { path } =>
-    if file ≠ null and file.store = "workspace" and file.path = path, return Lines { lines = file.lines }
-    emit FindView { groups = groups, path = path, store = "workspace" } to this get open_at
-    if open_at.group ≥ 0, return Lines { lines = groups[open_at.group].tabs[open_at.tab].lines }
-    loop hidden over hidden_panes.file
-        if hidden.view.path = path and hidden.view.store = "workspace", return Lines { lines = hidden.view.lines }
-    emit ReadFile { path = path } to files get read
-    if read ∈ Exception, return Text { text = "Error: " + read.message }
-    emit Split { value = read.content, separator = "\n" } to texts get split
-    return Lines { lines = split.value }
-
-| ── Changes the AI proposes ────────────────────────────────────────────
-|
-| An edit or a new file opens as a diff tab (kind `diff`) beside the files;
-| a command is asked about in the status bar. The model waits for the
-| answer (`chat.pending`), and is told it.
-
-| `Waiting` when the user has been asked, else `Text`: why it could not be
-| proposed, for the model to try again.
-Propose { tool, args } =>
-    if tool = "run_command"
-        command = args["command"]
-        if command ∉ String or command = "", return Text { text = "run_command needs a \"command\"." }
-        chat = chat + { pending = { tool = tool, command = command } }
-        if settings["ai.agent.mode"] = "auto"
-            emit AnswerRun { yes = true } to this
-            return AutoDone
-        prompt = { kind = "ai_run", chat_id = chat_id, label = "Run for the AI: " + command + "  — y / n ", text = "" }
-        chat = chat + { turns = chat.turns + [{ role = "tool", text = "wants to run: " + command + " (y / n in the status bar)" }] }
-        return Waiting
-    emit SafePath { path = args["path"] } to this get safe
-    if not safe.ok or safe.path = ".", return Text { text = "Not allowed: paths stay inside the project folder." }
-    old = []
-    created = tool = "create_file"
-    new_text = ""
-    if created
-        emit Exists { path = safe.path } to files get there
-        if there ∉ Exception and (there.is_file or there.is_dir), return Text { text = safe.path + " is there already — use edit_file." }
-        new_text = args["content"]
-        if new_text ∉ String, return Text { text = "create_file needs a \"content\"." }
-    if not created
-        find = args["find"]
-        replace = args["replace"]
-        if find ∉ String or find = "" or replace ∉ String, return Text { text = "edit_file needs \"find\" and \"replace\"." }
-        emit FileLines { path = safe.path } to this get held
-        if held ∈ Text, return held
-        old = held.lines
-        emit Join { value = old, separator = "\n" } to texts get joined
-        emit Occurrences { text = joined.value, part = find } to this get where
-        if where.count = 0, return Text { text = "`find` is not in " + safe.path + ". Read the lines again and copy them exactly, without the line numbers." }
-        if where.count > 1, return Text { text = "`find` is in " + safe.path + " " + where.count + " times. Take more lines, so it is found once." }
-        emit Length { value = find } to core get { value as find_size }
-        new_text = joined.value[0, where.at) + replace + joined.value[where.at + find_size, length)
-    emit Split { value = new_text, separator = "\n" } to texts get split
-    emit DiffLines { old = old, new = split.value, around = 3 } to this get diff
-    view = { kind = "diff", path = safe.path + " ±", store = "ai", chat_id = chat_id, target = safe.path, created = created, lines = split.value, diff = diff.lines, removed = diff.removed, added = diff.added, top = 0 }
-    | Auto: made at once, and said.
-    if settings["ai.agent.mode"] = "auto"
-        emit ApplyChange { view = view } to this get applied
-        if applied ∈ Text, return applied
-        chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + safe.path + " (−" + diff.removed + " +" + diff.added + "; View > Undo AI Changes puts it back)" }] }
-        return Text { text = safe.path + " is changed and saved." }
-    emit EditorSlot to this get into
-    emit Show { buffer = view, slot = into.slot } to this
-    chat = chat + { pending = { tool = tool, path = safe.path } }
-    what = "proposes a change to " + safe.path
-    if created, what = "proposes a new file, " + safe.path
-    chat = chat + { turns = chat.turns + [{ role = "tool", text = what + " (−" + diff.removed + " +" + diff.added + ") — a to accept, r to reject, in its tab" }] }
-    message = "The AI proposes a change: a accepts, r rejects"
-    return Waiting
-
-| A key on a proposed change: a / y / Enter accept it, r / n / Escape
-| reject it; the arrows and PgUp/PgDn scroll.
-DiffKey { name } =>
-    emit Active { groups = groups, current = current } to this get looking
-    if looking.buffer ≠ null and looking.buffer.reviewed = true and (name = "escape" or name = "q")
-        emit Stash to this
-        emit CloseTab { groups = groups, current = current } to this get closed_review
-        groups = closed_review.groups
-        current = closed_review.current
-        emit Unstash to this
-        return Handled
-    if looking.buffer ≠ null and looking.buffer.reviewed = true and name ≠ "down" and name ≠ "up" and name ≠ "pagedown" and name ≠ "pageup", return Handled
-    asking = chat_id
-    if looking.buffer ≠ null and looking.buffer.chat_id ≠ null, asking = looking.buffer.chat_id
-    if name = "a" or name = "y" or name = "enter"
-        emit InChat { id = asking, particle = DecideChange { accepted = true } } to this
-        return Handled
-    if name = "r" or name = "n" or name = "escape"
-        emit InChat { id = asking, particle = DecideChange { accepted = false } } to this
-        return Handled
-    step = 0
-    if name = "down", step = 1
-    if name = "up", step = -1
-    if name = "pagedown", step = editor_page
-    if name = "pageup", step = 0 - editor_page
-    if step = 0, return Handled
-    emit Active { groups = groups, current = current } to this get shown
-    top = shown.buffer.top + step
-    if top < 0, top = 0
-    emit PutActive { groups = groups, current = current, buffer = shown.buffer + { top = top } } to this get scrolled
-    groups = scrolled.groups
-    return Handled
-
-| The proposed change's tab closed, if it is open.
-CloseProposal { path } =>
-    emit FindView { groups = groups, path = path + " ±", store = "ai" } to this get at
-    if at.group < 0, return Nothing
-    emit Stash to this
-    emit CloseAt { groups = groups, current = current, group = at.group, tab = at.tab } to this get closed
-    groups = closed.groups
-    current = closed.current
-    emit Unstash to this
-    return Closed
-
-| The AI stopped: what it was waiting on goes.
-DropProposal =>
-    pending = chat.pending
-    if pending = null, return Nothing
-    chat = chat + { pending = null }
-    if pending.tool = "run_command" and prompt ≠ null and prompt.kind = "ai_run", prompt = null
-    if prompt ≠ null and prompt.kind = "mike_question", prompt = null
-    if pending.path ≠ null, emit CloseProposal { path = pending.path } to this
-    return Dropped
-
-| The user's answer to a proposed edit or file.
-DecideChange { accepted } =>
-    pending = chat.pending
-    emit Active { groups = groups, current = current } to this get shown
-    view = shown.buffer
-    if pending = null or pending.path = null or view = null or view.kind ≠ "diff" or view.target ≠ pending.path
-        if view ≠ null and view.kind = "diff", emit CloseProposal { path = view.target } to this
-        return Nothing
-    chat = chat + { pending = null }
-    emit CloseProposal { path = pending.path } to this
-    if not accepted
-        chat = chat + { turns = chat.turns + [{ role = "tool", text = "you rejected the change to " + pending.path }] }
-        message = ""
-        if view.mike = true
-            emit MikeResult { result = { state = "rejected", text = "The user rejected this change. Nothing applied." } } to this
-            return Rejected
-        emit ToolDone { tool = pending.tool, text = "The user rejected this change. Do not make it; say what you would do instead, or ask." } to this
-        return Rejected
-    emit ApplyChange { view = view } to this get applied
-    if applied ∈ Text
-        chat = chat + { turns = chat.turns + [{ role = "error", text = applied.text }] }
-        if view.mike = true
-            state = "conflict"
-            if applied.applied = true, state = "buffer_only"
-            emit MikeResult { result = { state = state, text = applied.text } } to this
-            return Failed
-        emit ToolDone { tool = pending.tool, text = applied.text } to this
-        return Failed
-    undo_note = "Ctrl+Z in the file undoes it; View > Undo AI Changes undoes them all"
-    if view.mike = true, undo_note = "Ctrl+Z undoes the buffer edit; save explicitly to put an undo on disk"
-    chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + pending.path + " (" + undo_note + ")" }] }
-    status = "changed and saved"
-    if view.mike = true and not view.save, status = "changed in the buffer only; not saved"
-    if view.mike = true
-        state = "buffer_only"
-        if view.save, state = "saved"
-        emit MikeResult { result = { state = state, text = "The user accepted: " + pending.path + " is " + status + "." } } to this
-        return Accepted
-    emit ToolDone { tool = pending.tool, text = "The user accepted: " + pending.path + " is " + status + "." } to this
-    return Accepted
-
-| An accepted change made: a new file written, or an open (or opened)
-| file's lines replaced as one edit — Ctrl+Z undoes it — and saved. What
-| the file was first is kept, for Undo AI Changes.
-ApplyChange { view } =>
-    if view.mike = true
-        emit ApplyMikeChange { view = view } to this get applied_mike
-        return applied_mike
-    path = view.target
-    kept = false
-    loop point over chat.checkpoints
-        if point.path = path, kept = true
-    if not kept
-        before = null
-        if not view.created
-            emit FileLines { path = path } to this get held
-            if held ∈ Text, return held
-            emit Join { value = held.lines, separator = "\n" } to texts get before_text
-            before = before_text.value
-        chat = chat + { checkpoints = chat.checkpoints + [{ path = path, before = before }] }
-    emit Join { value = view.lines, separator = "\n" } to texts get after_text
-    if view.created
-        emit WriteFile { path = path, content = after_text.value } to files get written
-        if written ∈ Exception, return Text { text = "Error: " + written.message }
-        emit OpenFile { path = path } to this
-        return Applied
-    emit OpenFile { path = path } to this
-    if file = null or file.path ≠ path, return Text { text = "Error: " + path + " could not be opened to change it" }
-    undo += { lines = file.lines, row = file.row, col = file.col }
-    emit Length { value = view.lines } to core get { value as count }
-    row = file.row
-    if row ≥ count, row = count - 1
-    file = file + { lines = view.lines, row = row, col = 0, want = 0, dirty = true }
-    last_edit = ""
-    emit SaveFile to this get saved
-    if saved ∉ Saved, return Text { text = "Error: " + path + " was changed but could not be saved: " + message }
-    return Applied
-
-| The status bar's y / n on a command the AI wants to run.
-AnswerRun { yes } =>
-    pending = chat.pending
-    if pending = null or pending.tool ≠ "run_command", return Nothing
-    chat = chat + { pending = null }
-    if not yes
-        chat = chat + { turns = chat.turns + [{ role = "tool", text = "you said no to: " + pending.command }] }
-        emit ToolDone { tool = "run_command", text = "The user said no to running this. Do not run it; say what it was for, or ask." } to this
-        return Refused
-    emit Run { command = "sh", args = ["-c", pending.command], cwd = folder } to procs get ran
-    output = ""
-    if ran ∈ Exception, output = "Error: " + ran.message
-    if ran ∉ Exception
-        output = "exit code " + ran.code + "\n" + ran.stdout
-        if ran.stderr ≠ "", output = output + "\n" + ran.stderr
-    emit LastLines { text = output, count = 80 } to this get tail_lines
-    chat = chat + { turns = chat.turns + [{ role = "tool", text = "ran: " + pending.command + " — exit code " + ran.code }] }
-    emit ToolDone { tool = "run_command", text = tail_lines.text } to this
-    return Ran
-
-| View > Undo AI Changes: every file the AI changed since the last
-| question, put back as it was (a file it made, removed); open tabs too.
-UndoAiChanges =>
-    if chat.snapshot ≠ null
-        emit UndoAgentChanges to this get agent_undone
-        return agent_undone
-    emit Length { value = chat.checkpoints } to core get { value as count }
-    if count = 0
-        message = "The AI has changed nothing since the last question"
-        return Nothing
-    emit Stash to this
-    loop point over chat.checkpoints
-        if point.before = null, emit DeleteFile { path = point.path } to files
-        if point.before ≠ null, emit WriteFile { path = point.path, content = point.before } to files
-        emit FindView { groups = groups, path = point.path, store = "workspace" } to this get at
-        if at.group ≥ 0
-            if point.before = null
-                emit CloseAt { groups = groups, current = current, group = at.group, tab = at.tab } to this get closed
-                groups = closed.groups
-                current = closed.current
-            if point.before ≠ null
-                emit Split { value = point.before, separator = "\n" } to texts get restored
-                tab = groups[at.group].tabs[at.tab] + { lines = restored.value, row = 0, col = 0, want = 0, top = 0, dirty = false }
-                emit PutActive { groups = groups[0, at.group) + [groups[at.group] + { active = at.tab }] + groups (at.group, length), current = at.group, buffer = tab } to this get put
-                groups = put.groups
-    emit Unstash to this
-    chat = chat + { checkpoints = [], turns = chat.turns + [{ role = "tool", text = "undid the AI's changes to " + count + " file(s)" }] }
-    message = "The AI's changes are undone"
-    return Undone
 
 | ── New File ───────────────────────────────────────────────────────────
 
@@ -2409,6 +1417,19 @@ NewFile =>
     if dir ≠ "", label = "New file in " + dir + "/: "
     prompt = { kind = "new_file", label = label, text = "", dir = dir }
     return Asked
+
+| A path inside the folder, never out of it.
+SafePath { path } =>
+    if path ∉ String, return Checked { ok = false, path = "" }
+    given = path
+    if given = "" or given = "/", given = "."
+    if given[0, 2) = "./" and given ≠ "./", given = given[2, length)
+    if given = "./", given = "."
+    if given[0] = "/" or given[0] = "~", return Checked { ok = false, path = given }
+    emit Split { value = given, separator = "/" } to texts get parts
+    loop part over parts.value
+        if part = "..", return Checked { ok = false, path = given }
+    return Checked { ok = true, path = given }
 
 | The file (or, with a trailing `/`, the folder) made, shown in the
 | explorer, and a file opened.
@@ -2477,530 +1498,6 @@ RefreshTree { reveal } =>
         if node.path = reveal, tree_sel = at
     return Refreshed
 
-| ── Claude Code and Codex (agents.gene.code) ───────────────────────────
-
-| The question handed to the agent `provider` names: written to a file,
-| and the agent started on it in a hidden terminal, so the ide keeps
-| going while it works. In edit mode, the folder is snapshotted first
-| (git), so what it changes can be shown and put back.
-AskAgent { provider, question, context } =>
-    mode = settings["ai.agent.mode"]
-    if chat.session_for ≠ provider.name, chat = chat + { session = "", session_for = provider.name }
-    text = context + "\n# The question\n" + question
-    emit ModeNote { mode = mode } to this get mode_note
-    if mode_note.text ≠ "", text = text + "\n\n" + mode_note.text
-    emit WriteFile { path = "runs/" + chat_id + "-prompt.txt", content = text } to prefs get wrote
-    if wrote ∈ Exception
-        emit ChatFailed { text = "The question could not be written for the agent: " + wrote.message } to this
-        return Failed
-    emit WriteFile { path = "runs/" + chat_id + "-out.jsonl", content = "" } to prefs
-    chat = chat + { snapshot = null, changed = null }
-    if mode = "edit" or mode = "auto"
-        emit TakeSnapshot to this get snap
-        if snap ∈ Snapshot, chat = chat + { snapshot = snap }
-        if snap ∉ Snapshot, chat = chat + { turns = chat.turns + [{ role = "error", text = "Not a git repository (or no commit yet): what the agent changes cannot be undone from here." }] }
-    runs = settings_dir + "/runs"
-    emit AgentCommand { provider = provider, mode = mode, session = chat.session, prompt_file = runs + "/" + chat_id + "-prompt.txt", err_file = runs + "/" + chat_id + "-err.txt", allow = settings["ai.agent.allowCommands"] } to this get line
-    emit Quoted { text = runs + "/" + chat_id + "-out.jsonl" } to this get out_at
-    emit Open { cols = 200, rows = 50, cwd = folder, command = "/bin/sh", args = ["-c", line.text + " | tee " + out_at.text] } to shells get opened
-    if opened ∈ Exception
-        emit ChatFailed { text = provider.title + " could not be started: " + opened.message } to this
-        return Failed
-    chat = chat + { busy = true, request = -1, steps = 0, agent = { pty = opened.id, type = provider.type, title = provider.title, seen = 0, done = false, error = "" } }
-    return Asked
-
-| What the agent has written since last time, into the chat.
-AgentProgress =>
-    if chat.agent ≠ null and chat.agent.type = "mike"
-        emit MikeProgress to this get progress
-        return progress
-    agent = chat.agent
-    if agent = null, return Nothing
-    emit ReadFile { path = "runs/" + chat_id + "-out.jsonl" } to prefs get out
-    if out ∈ Exception, return Nothing
-    emit Split { value = out.content, separator = "\n" } to texts get split
-    emit Length { value = split.value } to core get { value as count }
-    | The last piece is a line still being written (or "" after the last \n).
-    complete = count - 1
-    if complete ≤ agent.seen, return Nothing
-    emit AgentEvents { lines = split.value[agent.seen, complete), type = agent.type, folder = folder } to this get update
-    steps = chat.steps
-    loop turn over update.turns
-        if turn.role = "tool", steps += 1
-    chat = chat + { turns = chat.turns + update.turns, steps = steps }
-    if update.session ≠ "", chat = chat + { session = update.session }
-    agent = agent + { seen = complete }
-    if update.done, agent = agent + { done = true, error = update.error }
-    chat = chat + { agent = agent }
-    return Progressed
-
-| The agent's program ended (or was stopped): the last of what it wrote,
-| why it failed if it did, and what it changed.
-AgentFinished =>
-    if chat.agent ≠ null and chat.agent.type = "mike"
-        emit MikeProgress to this
-        if not chat.agent.done, emit ChatFailed { text = "Mike editor connection closed; tools are unavailable. Accepted external work may still finish." } to this
-        if chat.agent.done and chat.agent.error = "", emit OfferPlan to this
-        chat = chat + { agent = null, busy = false }
-        return Finished
-    emit AgentProgress to this
-    agent = chat.agent
-    if agent = null, return Nothing
-    chat = chat + { agent = null, busy = false }
-    problem = agent.error
-    if not agent.done and problem = ""
-        emit ReadFile { path = "runs/" + chat_id + "-err.txt" } to prefs get err
-        why = ""
-        if err ∉ Exception
-            emit Trim { value = err.content } to texts get trimmed
-            emit LastLines { text = trimmed.value, count = 8 } to this get last
-            why = last.text
-        problem = agent.title + " stopped without an answer"
-        if why ≠ "", problem = problem + ":\n" + why
-    if problem ≠ "", chat = chat + { turns = chat.turns + [{ role = "error", text = problem }] }
-    if problem = "", emit OfferPlan to this
-    emit NoteAgentChanges to this
-    return Finished
-
-| A command in the open folder: its output, and whether it worked.
-InFolder { command, args } =>
-    emit Run { command = command, args = args, cwd = folder } to procs get ran
-    if ran ∈ Exception, return Ran { ok = false, text = "" }
-    emit Trim { value = ran.stdout } to texts get out
-    return Ran { ok = ran.success, text = out.value }
-
-| `text` as its non-empty lines.
-NonEmptyLines { text } =>
-    emit Split { value = text, separator = "\n" } to texts get split
-    out = []
-    loop line over split.value
-        if line ≠ "", out += line
-    return Lines { lines = out }
-
-| The folder as it is now, as a git commit that leaves everything as it
-| is (`git stash create`; HEAD when nothing is changed), and the untracked
-| files there are.
-TakeSnapshot =>
-    emit InFolder { command = "git", args = ["rev-parse", "--is-inside-work-tree"] } to this get inside
-    if not inside.ok, return NoSnapshot
-    emit InFolder { command = "git", args = ["stash", "create"] } to this get stashed
-    commit = stashed.text
-    if commit = ""
-        emit InFolder { command = "git", args = ["rev-parse", "HEAD"] } to this get head
-        if not head.ok, return NoSnapshot
-        commit = head.text
-    emit InFolder { command = "git", args = ["ls-files", "--others", "--exclude-standard"] } to this get untracked
-    emit NonEmptyLines { text = untracked.text } to this get untracked_lines
-    return Snapshot { commit = commit, untracked = untracked_lines.lines }
-
-| What differs from the snapshot now: files changed, and files new.
-AgentChanges =>
-    snap = chat.snapshot
-    if snap = null, return Changes { modified = [], created = [] }
-    emit InFolder { command = "git", args = ["diff", "--name-only", "--relative", snap.commit] } to this get diff
-    emit NonEmptyLines { text = diff.text } to this get modified
-    emit InFolder { command = "git", args = ["ls-files", "--others", "--exclude-standard"] } to this get untracked
-    emit NonEmptyLines { text = untracked.text } to this get now
-    created = []
-    loop path over now.lines
-        was = false
-        loop before over snap.untracked
-            if before = path, was = true
-        if not was, created += path
-    return Changes { modified = modified.lines, created = created }
-
-| After an edit-mode turn: what it changed, said in the chat, and the
-| open tabs of those files read again.
-NoteAgentChanges =>
-    if chat.snapshot = null, return Nothing
-    emit AgentChanges to this get changes
-    chat = chat + { changed = changes }
-    all = changes.modified + changes.created
-    emit Length { value = all } to core get { value as count }
-    if count = 0, return Nothing
-    emit Join { value = all, separator = "," } to texts get listed
-    chat = chat + { turns = chat.turns + [{ role = "tool", text = "changed " + listed.value + " — View > Show AI Changes (Ctrl+Shift+D) to see, Undo AI Changes to put back" }] }
-    emit ReloadFiles { paths = all } to this
-    return Noted
-
-| The open tabs of `paths` read again from the disk — all but the ones
-| with unsaved edits, which are left and named.
-ReloadFiles { paths } =>
-    emit Stash to this
-    kept_edits = []
-    loop path over paths
-        emit FindView { groups = groups, path = path, store = "workspace" } to this get at
-        if at.group ≥ 0
-            tab = groups[at.group].tabs[at.tab]
-            if tab.dirty = true, kept_edits += path
-            if tab.dirty ≠ true
-                emit Exists { path = path } to files get there
-                if there ∉ Exception and there.is_file
-                    emit ReadFile { path = path } to files get read
-                    emit Split { value = read.content, separator = "\n" } to texts get fresh
-                    emit Length { value = fresh.value } to core get { value as size }
-                    row = tab.row
-                    if row ≥ size, row = size - 1
-                    if row < 0, row = 0
-                    changed_tab = tab + { lines = fresh.value, row = row, col = 0, want = 0 }
-                    held = groups[at.group]
-                    tabs = held.tabs[0, at.tab) + [changed_tab] + held.tabs (at.tab, length)
-                    groups = groups[0, at.group) + [held + { tabs = tabs }] + groups (at.group, length)
-    emit Unstash to this
-    emit Length { value = kept_edits } to core get { value as unsaved }
-    if unsaved > 0
-        emit Join { value = kept_edits, separator = "," } to texts get names
-        chat = chat + { turns = chat.turns + [{ role = "error", text = "Not reloaded, they have unsaved edits here: " + names.value + " — the agent's version is on the disk" }] }
-    return Reloaded
-
-| View > Undo AI Changes after an agent: its changed files as they were
-| in the snapshot, its new files gone, and their tabs read again.
-UndoAgentChanges =>
-    emit AgentChanges to this get changes
-    all = changes.modified + changes.created
-    emit Length { value = all } to core get { value as count }
-    if count = 0
-        message = "The AI has changed nothing since the last question"
-        return Nothing
-    emit Length { value = changes.modified } to core get { value as modified_count }
-    if modified_count > 0
-        emit InFolder { command = "git", args = ["restore", "--source=" + chat.snapshot.commit, "--worktree", "--"] + changes.modified } to this get restored
-        if not restored.ok
-            message = "Error: git could not put the files back"
-            return Failed
-    loop path over changes.created
-        emit DeleteFile { path = path } to files
-    emit ReloadFiles { paths = changes.modified } to this
-    emit Stash to this
-    loop path over changes.created
-        emit FindView { groups = groups, path = path, store = "workspace" } to this get at
-        if at.group ≥ 0
-            emit CloseAt { groups = groups, current = current, group = at.group, tab = at.tab } to this get closed
-            groups = closed.groups
-            current = closed.current
-    emit Unstash to this
-    chat = chat + { snapshot = null, changed = null, turns = chat.turns + [{ role = "tool", text = "undid the AI's changes to " + count + " file(s)" }] }
-    message = "The AI's changes are undone"
-    return Undone
-
-| View > Show AI Changes: each file the agent changed, as a diff against
-| the snapshot, in a tab of its own (Escape closes it).
-ShowAiChanges =>
-    if chat.snapshot = null
-        message = "No AI changes to show (they are kept for the last question, in edit mode, in a git folder)"
-        return Nothing
-    emit AgentChanges to this get changes
-    emit EditorSlot to this get into
-    loop path over changes.modified + changes.created
-        old = []
-        created = true
-        emit InFolder { command = "git", args = ["show", chat.snapshot.commit + ":./" + path] } to this get before
-        if before.ok
-            emit Split { value = before.text, separator = "\n" } to texts get old_lines
-            old = old_lines.value
-            created = false
-        new = []
-        emit Exists { path = path } to files get there
-        if there ∉ Exception and there.is_file
-            emit ReadFile { path = path } to files get read
-            emit Split { value = read.content, separator = "\n" } to texts get new_lines
-            new = new_lines.value
-            emit Length { value = new } to core get { value as size }
-            if size > 0 and new[size - 1] = "", new = new[0, size - 1)
-        emit DiffLines { old = old, new = new, around = 3 } to this get diff
-        view = { kind = "diff", path = path + " Δ", store = "ai-done", target = path, created = created, lines = new, diff = diff.lines, removed = diff.removed, added = diff.added, top = 0, reviewed = true }
-        emit Show { buffer = view, slot = into.slot } to this
-    return Shown
-
-| Ctrl+Shift+A: ask → plan → edit → auto, and round, remembered in settings.
-ToggleAgentMode =>
-    emit NextMode { mode = settings["ai.agent.mode"] } to this get next_mode
-    emit SetAgentMode { mode = next_mode.text } to this
-    return Toggled
-
-| The AI's mode set (ai.mode.<mode>, or Ctrl+Shift+A), and said.
-SetAgentMode { mode } =>
-    emit StoreSetting { key = "ai.agent.mode", value = mode } to this
-    said = { ask = "Ask — it looks and answers", plan = "Plan — it looks and answers with a plan (Ctrl+Shift+G carries it out)", edit = "Edit — it changes files; commands only from ai.agent.allowCommands", auto = "Auto — it changes files and runs commands without asking" }
-    message = "AI mode: " + said[mode]
-    emit ChatNotice to this
-    return Moded
-
-| A plan-mode answer: the chat says how to carry it out.
-OfferPlan =>
-    if settings["ai.agent.mode"] ≠ "plan", return Nothing
-    followup = settings["ai.agent.planFollowup"]
-    chat = chat + { plan_ready = true, turns = chat.turns + [{ role = "tool", text = "Ctrl+Shift+G: go ahead — carry out this plan in " + followup + " mode" }] }
-    return Offered
-
-| Ctrl+Shift+G: the plan just made, carried out — the mode switched to
-| ai.agent.planFollowup (edit, unless it says auto), and the AI told to
-| go ahead, in the same conversation.
-GoAhead =>
-    if chat.plan_ready ≠ true
-        message = "There is no plan to carry out — ask in Plan mode first (Ctrl+Shift+A)"
-        return Nothing
-    chat = chat + { plan_ready = false }
-    emit SetAgentMode { mode = settings["ai.agent.planFollowup"] } to this
-    emit AskAbout { question = "Go ahead: carry out the plan above." } to this get asked
-    return asked
-
-| The providers to pick from: every `ai.providers` entry (the defaults
-| and the user's, see settings.gene.code).
-ProviderNames =>
-    names = []
-    all = settings["ai.providers"]
-    if all ∈ Object
-        loop key, value over all
-            names += key
-    return Names { names = names }
-
-| http_client speaks first on every request (`Log`); nothing to do here.
-Log { source, level, message as logged } =>
-    return Ignored
-
-| A public release registry answered one of CheckCliUpdates' requests.
-HttpResponse { status, body, _request_id } =>
-    check = cli_update_requests["$_request_id"]
-    if check = null or status ≠ 200, return Ignored
-    emit Parse { text = body } to jsons get package
-    if package ∈ Exception or package.value["version"] ∉ String, return Ignored
-    latest = package.value["version"]
-    emit VersionNewer { installed = check.installed, latest = latest } to this get newer
-    if newer ∉ Yes, return Ignored
-    notice = check.title + " update available: " + check.installed + " → " + latest
-    if cli_updates[check.name] = null, cli_update_count += 1
-    cli_updates = cli_updates + { "$check.name" = { title = check.title, installed = check.installed, latest = latest } }
-    if cli_update_count = 1, message = notice
-    if cli_update_count > 1, message = "CLI updates available — press Ctrl+Shift+M to review each CLI"
-    if running, emit Render to this
-    return Notified
-
-| Whether the provider `provider` (from ProviderFor) can be used now, the
-| models it offers — the ones settings list (`"models"`), else the ones it
-| says it has: a server's /v1/models, `codex debug models` — as ids, with
-| `names` (id → what to show: "Opus 5.5" for claude-opus-5-5) — and the
-| efforts each takes (`levels`: model → { efforts, default }; the model
-| "" for any), from Codex's catalogue or the entry's `"efforts"`.
-ProviderCheck { provider } =>
-    if provider.problem ≠ ""
-        return Check { ready = false, note = "not set up", models = [], names = {}, levels = {} }
-    found = []
-    names = {}
-    levels = {}
-    ready = true
-    note = "ready"
-    if provider.runner = "mike"
-        emit MikeBridgePath to this get bridge
-        emit Run { command = "/usr/bin/python3", args = ["-I", bridge.path, "--check", "--account-file", settings_dir + "/account.json"] } to procs get checked
-        if checked ∈ Exception, return Check { ready = false, note = "Mike transport unavailable (Python3)", models = [], names = {}, levels = {} }
-        emit Parse { text = checked.stdout } to jsons get state
-        if state ∈ Exception, return Check { ready = false, note = "Mike service unavailable", models = [], names = {}, levels = {} }
-        return Check { ready = state.value.ready, note = state.value.note, models = [], names = {}, levels = {} }
-    if provider.type = "claude-code"
-        emit Run { command = provider.command, args = ["auth", "status"], cwd = folder } to procs get auth
-        if auth ∈ Exception, return Check { ready = false, note = provider.command + " is not installed", models = [], names = {}, levels = {} }
-        emit Parse { text = auth.stdout } to jsons get status
-        signed_in = status ∉ Exception and status.value ∈ Object and status.value["loggedIn"] = true
-        if not signed_in
-            ready = false
-            note = "not signed in — run " + provider.command + " once"
-    if provider.type = "codex"
-        emit Run { command = provider.command, args = ["login", "status"], cwd = folder } to procs get login
-        if login ∈ Exception, return Check { ready = false, note = provider.command + " is not installed", models = [], names = {}, levels = {} }
-        if not login.success
-            ready = false
-            note = "not signed in — " + provider.command + " login"
-        emit Run { command = provider.command, args = ["debug", "models"], cwd = folder } to procs get catalog
-        if catalog ∉ Exception and catalog.success
-            emit Parse { text = catalog.stdout } to jsons get codex_listed
-            if codex_listed ∉ Exception and codex_listed.value ∈ Object and codex_listed.value["models"] ∈ Array
-                loop one over codex_listed.value["models"]
-                    if one["slug"] ∈ String
-                        found += one["slug"]
-                        if one["display_name"] ∈ String
-                            slug_name = one["slug"]
-                            shown_name = one["display_name"]
-                            if one["visibility"] = "hide", shown_name = shown_name + " (hidden)"
-                            names = names + { "$slug_name" = shown_name }
-                        takes = []
-                        if one["supported_reasoning_levels"] ∈ Array
-                            loop level over one["supported_reasoning_levels"]
-                                if level["effort"] ∈ String, takes += level["effort"]
-                        usual = ""
-                        if one["default_reasoning_level"] ∈ String, usual = one["default_reasoning_level"]
-                        slug = one["slug"]
-                        levels = levels + { "$slug" = { efforts = takes, default = usual } }
-                        if levels[""] = null, levels = levels + { "" = { efforts = takes, default = usual } }
-    if provider.runner = "api"
-        root_url = provider.endpoint
-        emit Length { value = root_url } to core get { value as size }
-        if size > 0 and root_url[size - 1] = "/", root_url = root_url[0, size - 1)
-        emit Length { value = root_url } to core get { value as trimmed_size }
-        url = root_url + "/v1/models"
-        if trimmed_size ≥ 3 and root_url[trimmed_size - 3, trimmed_size) = "/v1", url = root_url + "/models"
-        headers = {}
-        if provider.api_key_env ≠ ""
-            emit Get { name = provider.api_key_env, default = "" } to vars get key
-            if key.value ≠ "", headers = { Authorization = "Bearer " + key.value }
-        emit Get { url = url, headers = headers, timeout_seconds = 3 } to web get answer
-        if answer ∈ Exception or not answer.ok
-            ready = false
-            note = "not reachable at " + provider.endpoint
-        if answer ∉ Exception and answer.ok and answer.status = 401
-            ready = false
-            note = "the key was refused (" + provider.api_key_env + ")"
-        if answer ∉ Exception and answer.ok and answer.status = 200
-            emit Parse { text = answer.body } to jsons get api_listed
-            if api_listed ∉ Exception and api_listed.value ∈ Object and api_listed.value["data"] ∈ Array
-                loop one over api_listed.value["data"]
-                    if one["id"] ∈ String, found += one["id"]
-    if provider.models ≠ null
-        found = []
-        names = {}
-        loop one over provider.models
-            if one ∈ String, found += one
-            | { "id": "claude-opus-5-5", "name": "Opus 5.5" }: shown by its name.
-            if one ∈ Object and one["id"] ∈ String
-                found += one["id"]
-                listed_id = one["id"]
-                if one["name"] ∈ String, names = names + { "$listed_id" = one["name"] }
-    if provider.efforts ≠ null
-        takes = []
-        loop one over provider.efforts
-            if one ∈ String, takes += one
-        levels = { "" = { efforts = takes, default = "" } }
-    return Check { ready = ready, note = note, models = found, names = names, levels = levels }
-
-| Ctrl+Shift+M (or Settings > AI: Switch Model…): three lists side by side —
-| every AI, its models, its efforts — all their choices in sight. ←/→ (or
-| Tab) move between the lists, ↑/↓ within one, Enter picks; ● is what is
-| in use. Moving in the AI list shows that AI's models and efforts; picking
-| one of them makes that AI the one in use too. Every AI is checked as the
-| lists open (ProviderCheck).
-OpenModelPicker =>
-    emit ProviderNames to this get names
-    found = []
-    at = 0
-    loop i, name over names.names
-        emit ProviderFor { settings = settings + { "ai.provider" = name } } to this get provider
-        emit ProviderCheck { provider = provider } to this get check
-        title = name
-        if provider.title ≠ null, title = provider.title
-        note = check.note
-        update = cli_updates[name]
-        if update ≠ null, note = note + " · update available: " + update.installed + " → " + update.latest
-        found += { name = name, title = title, ready = check.ready, note = note, models = check.models, names = check.names, levels = check.levels, api = provider.runner = "api" }
-        if name = settings["ai.provider"], at = i
-    picker = { providers = found, col = 1, cursors = [at, 0, 0] }
-    emit PickerAim to this
-    return Opened
-
-| The model and effort lists' cursors put on what the AI under the first
-| list's cursor has chosen.
-PickerAim =>
-    emit PickerRows to this get aimed
-    cursors = picker.cursors
-    model_at = 0
-    loop i, one over aimed.choices[1]
-        if one = aimed.chosen[1], model_at = i
-    effort_at = 0
-    loop i, one over aimed.choices[2]
-        if one = aimed.chosen[2], effort_at = i
-    picker = picker + { cursors = [cursors[0], model_at, effort_at] }
-    return Aimed
-
-| What the lists hold, for the AI under the first list's cursor:
-| `choices` per list (a model or effort "" is the tool's own default),
-| what that AI has chosen, and which AI is in use.
-PickerRows =>
-    held = picker.providers[picker.cursors[0]]
-    entry = settings["ai.providers"][held.name]
-    model = entry["model"]
-    if model ∉ String, model = ""
-    effort = entry["effort"]
-    if effort ∉ String, effort = ""
-    ai_names = []
-    loop one over picker.providers
-        ai_names += one.name
-    level = held.levels[model]
-    if level = null, level = held.levels[""]
-    efforts = []
-    usual = ""
-    if level ≠ null
-        efforts = level.efforts
-        usual = level.default
-    known = level ≠ null and not held.api
-    effort_choices = [""] + efforts
-    if not known, effort_choices = []
-    return Rows {
-        held = held
-        choices = [ai_names, [""] + held.models, effort_choices]
-        chosen = [settings["ai.provider"], model, effort]
-        usual_effort = usual
-        effort_known = known
-    }
-
-| A key in the model picker.
-PickerKey { name } =>
-    if name = "escape" or name = "q"
-        picker = null
-        return Handled
-    col = picker.col
-    if (name = "right" or name = "tab") and col < 2, col += 1
-    if (name = "left" or name = "shift+tab") and col > 0, col = col - 1
-    picker = picker + { col = col }
-    emit PickerRows to this get shown_rows
-    options = shown_rows.choices[col]
-    emit Length { value = options } to core get { value as count }
-    cursors = picker.cursors
-    at = cursors[col]
-    if name = "down" and at < count - 1, at += 1
-    if name = "up" and at > 0, at = at - 1
-    if name = "home", at = 0
-    if name = "end" and count > 0, at = count - 1
-    if name = "pagedown"
-        at = at + 10
-        if at > count - 1, at = count - 1
-    if name = "pageup"
-        at = at - 10
-        if at < 0, at = 0
-    if at ≠ cursors[col]
-        picker = picker + { cursors = cursors[0, col) + [at] + cursors (col, length) }
-        | Another AI under the cursor: its own choices in the other lists.
-        if col = 0, emit PickerAim to this
-    if (name = "enter" or name = "space") and count > 0
-        emit PickerSet { col = col, value = options[picker.cursors[col]] } to this
-    return Handled
-
-| A pick: the AI (ai.provider), or a model or effort of the AI under the
-| first list's cursor (in its ai.providers entry) — which then is the AI in
-| use. An effort the new model does not take goes back to the default.
-PickerSet { col, value } =>
-    held = picker.providers[picker.cursors[0]]
-    if col > 0
-        all = settings["ai.providers"]
-        entry = all[held.name]
-        if col = 1
-            entry = entry + { model = value }
-            level = held.levels[value]
-            if level = null, level = held.levels[""]
-            effort = entry["effort"]
-            if level ≠ null and effort ∈ String and effort ≠ ""
-                takes = false
-                loop one over level.efforts
-                    if one = effort, takes = true
-                if not takes, entry = entry + { effort = "" }
-        if col = 2, entry = entry + { effort = value }
-        emit StoreSetting { key = "ai.providers", value = all + { "$held.name" = entry } } to this
-    if held.name ≠ settings["ai.provider"], emit CloseMikeChats to this
-    emit StoreSetting { key = "ai.provider", value = held.name } to this
-    emit PickerAim to this
-    emit ChatNotice to this
-    message = "AI: " + ai_status
-    if not held.ready, message = "Error: AI: " + held.name + " is " + held.note
-    return Set
-
 | ── Go Back / Go Forward ───────────────────────────────────────────────
 
 | Where the cursor is now, kept (see `spots`): a new spot when it is in
@@ -3049,11 +1546,11 @@ GoSpot { step } =>
 
 | ── Pane keys ──────────────────────────────────────────────────────────
 |
-| Ctrl+B the explorer, Ctrl+J the terminal, Ctrl+L the AI chat, Ctrl+E
+| Ctrl+B the explorer, Ctrl+J the terminal, Ctrl+E
 | the files: shown and given the keys if they are not; given the keys if
 | they are shown; put away if they have the keys.
 
-| The pane of `kind` ("explorer", "terminal", "chat", "file") toggled.
+| The pane of `kind` ("explorer", "terminal", "file") toggled.
 TogglePane { kind } =>
     emit Active { groups = groups, current = current } to this get shown
     if shown.buffer ≠ null and shown.buffer.kind = kind
@@ -3076,13 +1573,12 @@ TogglePane { kind } =>
             emit RestorePane { kind = kind } to this
             return Restored
     if kind = "explorer", emit ShowExplorer { focused = true } to this
-    if kind = "chat", emit ShowChat to this
-    if kind = "terminal", emit NewTerminal { slot = "b" } to this
+    if kind = "terminal", emit NewTerminal { slot = "" } to this
     if kind = "file", message = "No file is open — Ctrl+N makes one, the Explorer opens one"
     return Shown
 
-| The pane of `kind` put away: the explorer and the chat closed (they come
-| back as they were), terminals and files kept in `hidden_panes`.
+| The pane of `kind` put away: the explorer closed (it comes back as it
+| was), terminals and files kept in `hidden_panes`.
 HidePane { kind } =>
     if kind = "explorer"
         emit HideExplorer to this
@@ -3095,7 +1591,7 @@ HidePane { kind } =>
         tabs = []
         active = 0
         loop ti, tab over group.tabs
-            if tab.kind = kind and kind ≠ "chat"
+            if tab.kind = kind
                 kept += { slot = group.slot, view = tab, active = gi = current and ti = group.active }
             if tab.kind ≠ kind
                 if ti = group.active
@@ -3105,7 +1601,7 @@ HidePane { kind } =>
         emit Length { value = tabs } to core get { value as count }
         if count > 0, left += group + { tabs = tabs, active = active }
     groups = left
-    if kind ≠ "chat", hidden_panes = hidden_panes + { "$kind" = kept }
+    hidden_panes = hidden_panes + { "$kind" = kept }
     emit Refocus { groups = groups } to this get next
     current = next.index
     emit Unstash to this
@@ -3143,559 +1639,3 @@ WithHidden =>
     loop item over away
         views += item.view
     return All { groups = groups + [{ slot = "hidden", tabs = views, active = 0 }] }
-
-| ── Mike: structured transport to the shared service, editor tools only ──
-
-mike_serial = 0
-mike_reads = []
-
-MikeBridgePath =>
-    configured_bridge = settings["ai.providers"]["mike"]["bridge"]
-    if configured_bridge ∈ String and configured_bridge ≠ "", return Bridge { path = configured_bridge }
-    emit Get { name = "IDE_MIKE_BRIDGE", default = "" } to vars get configured
-    if configured.value ≠ "", return Bridge { path = configured.value }
-    emit Run { command = "pwd", args = [] } to procs get here
-    emit Trim { value = here.stdout } to texts get clean
-    emit Run { command = "test", args = ["-f", clean.value + "/mike_bridge.py"] } to procs get bundled
-    if bundled ∉ Exception and bundled.success, return Bridge { path = clean.value + "/mike_bridge.py" }
-    return Bridge { path = clean.value + "/tools/mike_bridge.py" }
-
-AskMike { question, shown } =>
-    emit MikeBridgePath to this get bridge
-    emit Ambient { file = shown, focus = focus, tabs = [], recent = [], terminal = "", git = "" } to this get ambient
-    emit Clip { text = ambient.text, chars = 16000 } to this get bounded
-    path = null
-    if shown ≠ null, path = shown.path
-    emit InstructionPaths { path = path } to this get instructions
-    guidance = ""
-    loop candidate over instructions.paths
-        emit ReadFile { path = candidate } to files get read
-        if read ∉ Exception
-            emit Clip { text = read.content, chars = 1000 } to this get piece
-            guidance = guidance + "\n" + candidate + ":\n" + piece.text
-    emit Clip { text = guidance, chars = 4000 } to this get short_guidance
-    emit ModeNote { mode = settings["ai.agent.mode"] } to this get mode_note
-    request = { text = question, workspace = folder, editor = { mode = settings["ai.agent.mode"], context = bounded.text + "\nProject instructions:\n" + short_guidance.text + "\n" + mode_note.text } }
-    emit Stringify { value = request } to jsons get encoded
-    runs = settings_dir + "/runs"
-    emit CreateDir { path = "runs" } to prefs
-    emit Run { command = "chmod", args = ["700", runs] } to procs get secured
-    if secured ∈ Exception or not secured.success
-        emit ChatFailed { text = "Mike requires a private IDE runs directory" } to this
-        return Failed
-    prefix = "runs/" + chat_id + "-mike"
-    emit WriteFile { path = prefix + "-request.json", content = encoded.value } to prefs get wrote
-    if wrote ∈ Exception, return Failed
-    emit WriteFile { path = prefix + "-events.jsonl", content = "" } to prefs
-    emit WriteFile { path = prefix + "-reply.json", content = "{}" } to prefs
-    emit Open { cols = 80, rows = 10, cwd = folder, command = "/usr/bin/python3", args = ["-I", bridge.path, "--request", settings_dir + "/" + prefix + "-request.json", "--events", settings_dir + "/" + prefix + "-events.jsonl", "--reply", settings_dir + "/" + prefix + "-reply.json", "--account-file", settings_dir + "/account.json"] } to shells get opened
-    if opened ∈ Exception
-        emit ChatFailed { text = "Mike transport could not start: " + opened.message } to this
-        return Failed
-    chat = chat + { busy = true, request = -1, pending = null, agent = { pty = opened.id, type = "mike", title = "Mike", seen = 0, done = false, folder = folder, mode = settings["ai.agent.mode"], provider = settings["ai.provider"], turn = "", last_request = "", handled = [], error = "", steps = 0 } }
-    return Asked
-
-MikeProgress =>
-    agent = chat.agent
-    if agent = null, return Nothing
-    if agent.folder ≠ folder or agent.provider ≠ settings["ai.provider"] or agent.mode ≠ settings["ai.agent.mode"]
-        emit DropProposal to this
-        emit Close { id = agent.pty } to shells
-        chat = chat + { agent = agent + { done = true }, busy = false, pending = null, turns = chat.turns + [{ role = "error", text = "Mike context changed; old editor capabilities were detached." }] }
-        return Stopped
-    emit ReadFile { path = "runs/" + chat_id + "-mike-events.jsonl" } to prefs get events
-    if events ∈ Exception, return Nothing
-    emit Split { value = events.content, separator = "\n" } to texts get lines
-    emit Length { value = lines.value } to core get count
-    complete = count.value - 1
-    if complete ≤ agent.seen, return Nothing
-    | Advance before dispatch so redraw/result events cannot replay an edit.
-    chat = chat + { agent = agent + { seen = complete } }
-    loop line over lines.value[agent.seen, complete)
-        emit Parse { text = line } to jsons get parsed
-        if parsed ∈ Exception, continue
-        event = parsed.value
-        if event.kind = "started", chat = chat + { agent = chat.agent + { turn = event.turn_id }, session = event.turn_id }
-        if event.kind = "error"
-            if event.reset = true
-                chat = chat + { turns = [], messages = [], input = "", caret = null, queue = [], checkpoints = [], pending = null, mike_question = null, session = "" }
-                mike_reads = []
-            if prompt ≠ null and prompt.kind = "mike_question" and prompt.chat_id = chat_id, prompt = null
-            emit ChatFailed { text = event.text } to this
-            emit Close { id = chat.agent.pty } to shells
-            chat = chat + { agent = chat.agent + { done = true, error = event.text } }
-            return Failed
-        if event.kind = "progress"
-            view = event.view
-            if view.turn_id ≠ chat.agent.turn, continue
-            loop at, step over view.steps
-                if at ≥ chat.agent.steps
-                    chat = chat + { turns = chat.turns + [{ role = "tool", text = step.say + " [" + step.app + "/" + step.class + "]" }] }
-            emit Length { value = view.steps } to core get steps_count
-            chat = chat + { agent = chat.agent + { steps = steps_count.value } }
-            if view.stage = "confirm" and view.confirmation_id ≠ chat.agent.last_request
-                chat = chat + { agent = chat.agent + { last_request = view.confirmation_id } }
-                chat = chat + { turns = chat.turns + [{ role = "tool", text = view.say }] }
-                chat = chat + { mike_question = { kind = "mike_question", chat_id = chat_id, label = "Mike: y to approve, n to refuse: ", text = "", id = view.confirmation_id, local = false } }
-            if view.editor_request ∈ Object
-                seen_request = false
-                loop handled over chat.agent.handled
-                    if handled = view.editor_request.id, seen_request = true
-                if not seen_request
-                    chat = chat + { agent = chat.agent + { last_request = view.editor_request.id, handled = chat.agent.handled + [view.editor_request.id] } }
-                    emit MikeOperation { request = view.editor_request } to this
-            if view.stage = "done" or view.stage = "failed"
-                chat = chat + { mike_question = null }
-                if prompt ≠ null and prompt.kind = "mike_question" and prompt.chat_id = chat_id, prompt = null
-                role = "assistant"
-                error = ""
-                if view.stage = "failed"
-                    role = "error"
-                    error = view.reply
-                chat = chat + { busy = false, agent = chat.agent + { done = true, error = error }, turns = chat.turns + [{ role = role, text = view.reply }] }
-                emit RefreshMikeBuffers to this
-        if event.kind = "local" and event.work.approval_id ≠ chat.agent.last_request
-            chat = chat + { agent = chat.agent + { last_request = event.work.approval_id } }
-            emit Stringify { value = event.work.argv } to jsons get command
-            chat = chat + { turns = chat.turns + [{ role = "tool", text = "Local command in " + event.work.cwd + ": " + command.value }] }
-            chat = chat + { mike_question = { kind = "mike_question", chat_id = chat_id, label = "Mike local command: y to approve, n to refuse: ", text = "", id = event.work.approval_id, local = true } }
-    return Progressed
-
-MikeAnswer { id, yes, local } =>
-    if chat.agent = null or chat.agent.last_request ≠ id, return Ignored
-    chat = chat + { mike_question = null }
-    kind = "confirm"
-    if local, kind = "local"
-    emit MikeSend { value = { kind = kind, id = id, yes = yes, turn_id = chat.agent.turn } } to this
-    return Answered
-
-MikeSend { value } =>
-    emit Stringify { value = value } to jsons get encoded
-    emit WriteFile { path = "runs/" + chat_id + "-mike-reply.json", content = encoded.value } to prefs
-    return Sent
-
-MikeResult { result } =>
-    if chat.agent = null, return Unavailable
-    emit MikeSend { value = { kind = "editor", turn_id = chat.agent.turn, id = chat.agent.last_request, result = result } } to this
-    return Sent
-
-MikeOperation { request } =>
-    if chat.agent = null or folder ≠ chat.agent.folder, return Unavailable
-    if request.class = "ReadBuffer"
-        emit MikeRead { path = request.fields.path } to this get result
-        emit MikeResult { result = result } to this
-        return Read
-    if request.class = "SearchProject"
-        emit RunTool { tool = "grep", args = { pattern = request.fields.pattern } } to this get found
-        emit MikeResult { result = { state = "read", text = found.text } } to this
-        return Searched
-    if request.class = "EditBuffer"
-        emit MikeEdit { args = request.fields } to this get result
-        if result ∉ Waiting, emit MikeResult { result = result } to this
-        return result
-    emit MikeResult { result = { state = "unavailable", text = "No such editor tool is exposed." } } to this
-    return Unavailable
-
-MikeRead { path } =>
-    emit SafePath { path = path } to this get safe
-    if not safe.ok, return EditorResult { state = "refused", text = "Use a project-relative file path." }
-    emit FileLines { path = safe.path } to this get held
-    if held ∈ Text, return EditorResult { state = "unavailable", text = held.text }
-    emit Join { value = held.lines, separator = "\n" } to texts get text
-    emit Length { value = text.value } to core get size
-    if size.value > 16000, return EditorResult { state = "too_large", text = "File exceeds the bounded editor tool size (16000 characters). Narrow the request." }
-    emit ReadFile { path = safe.path } to files get disk
-    if disk ∈ Exception, return EditorResult { state = "unavailable", text = disk.message }
-    mike_serial += 1
-    revision = "editor-" + mike_serial
-    emit MikeBuffer { path = safe.path } to this get buffered
-    baseline = disk.content
-    if buffered.buffer ≠ null and buffered.buffer.disk_base ∈ String, baseline = buffered.buffer.disk_base
-    if baseline ≠ disk.content and buffered.buffer ≠ null and not buffered.buffer.dirty
-        emit RefreshMikeBuffers to this
-        return EditorResult { state = "conflict", text = "Disk changed; the clean buffer was refreshed. ReadBuffer again before editing." }
-    mike_reads += [{ id = revision, path = safe.path, folder = folder, turn = chat.agent.turn, chat = chat_id, lines = held.lines, disk = disk.content, baseline = baseline }]
-    emit Length { value = mike_reads } to core get cached
-    if cached.value > 64, mike_reads = mike_reads[cached.value - 64, length)
-    return EditorResult { state = "read", path = safe.path, revision = revision, content = text.value, unsaved = disk.content ≠ text.value, disk_changed_since_open = baseline ≠ disk.content, selection = "The current IDE supports a cursor, not a selection range." }
-
-MikeEdit { args } =>
-    if chat.agent = null or chat.agent.done = true or chat.agent.folder ≠ folder or chat.agent.provider ≠ settings["ai.provider"] or chat.agent.mode ≠ settings["ai.agent.mode"] or (chat.agent.mode ≠ "edit" and chat.agent.mode ≠ "auto"), return EditorResult { state = "refused", text = "Ask/Plan has no edit capability." }
-    before = null
-    loop read over mike_reads
-        if read.id = args.revision and read.path = args.path and read.folder = folder and read.turn = chat.agent.turn and read.chat = chat_id, before = read
-    if before = null, return EditorResult { state = "conflict", text = "ReadBuffer must supply the current file revision before editing." }
-    emit Length { value = args.content } to core get size
-    if size.value > 16000, return EditorResult { state = "refused", text = "Replacement exceeds 16000 characters." }
-    emit FileLines { path = args.path } to this get current_lines
-    if current_lines ∈ Text or current_lines.lines ≠ before.lines, return EditorResult { state = "conflict", text = "Buffer changed; re-read it and replan. Nothing applied." }
-    emit Split { value = args.content, separator = "\n" } to texts get split
-    emit DiffLines { old = before.lines, new = split.value, around = 3 } to this get diff
-    view = { kind = "diff", path = args.path + " ±", store = "ai", chat_id = chat_id, target = args.path, created = false, mike = true, expected = before, save = args.save = true, lines = split.value, diff = diff.lines, removed = diff.removed, added = diff.added, top = 0 }
-    if chat.agent.mode = "auto"
-        emit ApplyMikeChange { view = view } to this get applied
-        if applied ∈ Text
-            state = "conflict"
-            if applied.applied = true, state = "buffer_only"
-            return EditorResult { state = state, text = applied.text }
-        state = "buffer_only"
-        if view.save, state = "saved"
-        return EditorResult { state = state, text = "Applied " + args.path + "; " + state + ". Ctrl+Z undoes the buffer edit." }
-    emit EditorSlot to this get slot
-    emit Show { buffer = view, slot = slot.slot } to this
-    chat = chat + { pending = { tool = "mike_edit", path = args.path } }
-    message = "Mike proposes a change: a accepts, r rejects; revision checked again on acceptance"
-    return Waiting
-
-ApplyMikeChange { view } =>
-    if chat.agent = null or chat.agent.folder ≠ folder or chat.agent.mode ≠ settings["ai.agent.mode"] or chat.agent.provider ≠ settings["ai.provider"], return Text { text = "Editor scope changed; nothing applied." }
-    emit FileLines { path = view.target } to this get current_lines
-    if current_lines ∈ Text or current_lines.lines ≠ view.expected.lines, return Text { text = "Conflict: buffer changed while the diff waited. Re-read before editing." }
-    emit ReadFile { path = view.target } to files get disk
-    if disk ∈ Exception, return Text { text = "Could not check the current disk version." }
-    if view.save and view.expected.baseline ≠ view.expected.disk, return Text { text = "Conflict: disk changed since this buffer was opened. Reconcile the unsaved buffer with disk before saving." }
-    if view.save and disk.content ≠ view.expected.disk, return Text { text = "Conflict: disk changed. Buffer and disk were left untouched." }
-    loop hidden over hidden_panes.file
-        if hidden.view.path = view.target, emit RestorePane { kind = "file" } to this
-    emit OpenFile { path = view.target } to this
-    if file = null or file.path ≠ view.target, return Text { text = "File could not be opened; nothing applied." }
-    undo += { lines = file.lines, row = file.row, col = file.col }
-    file = file + { lines = view.lines, row = 0, col = 0, want = 0, dirty = true }
-    last_edit = ""
-    if view.save
-        emit SaveFile to this get saved
-        if saved ∉ Saved, return Text { text = "Buffer changed but save failed: " + message, applied = true }
-    return Applied
-
-RefreshMikeBuffers =>
-    | Disk changes never replace dirty buffers. Clean buffers refresh as the
-    | normal agent path does; dirty ones are re-read explicitly by ReadBuffer.
-    emit Stash to this
-    rebuilt = []
-    loop group over groups
-        tabs = []
-        loop tab over group.tabs
-            if tab.kind = "file" and tab.store = "workspace" and not tab.dirty
-                emit ReadFile { path = tab.path } to files get disk
-                if disk ∉ Exception
-                    emit Split { value = disk.content, separator = "\n" } to texts get read
-                    tab = tab + { lines = read.value, disk_base = disk.content }
-            tabs += tab
-        rebuilt += group + { tabs = tabs }
-    groups = rebuilt
-    emit Unstash to this
-    return Refreshed
-
-MikeBuffer { path } =>
-    if file ≠ null and file.store = "workspace" and file.path = path, return Buffered { buffer = file }
-    emit FindView { groups = groups, path = path, store = "workspace" } to this get at
-    if at.group ≥ 0, return Buffered { buffer = groups[at.group].tabs[at.tab] }
-    loop hidden over hidden_panes.file
-        if hidden.view.path = path and hidden.view.store = "workspace", return Buffered { buffer = hidden.view }
-    return Buffered { buffer = null }
-
-| ── IDE account: codelovesme sign-in for Mike ──
-|
-| Sign-in runs the existing browser handoff in a hidden terminal; running it
-| again while it waits cancels it. `switch` is the explicit choice to move
-| the shared Mike service to this account (never done silently). Sign-out is
-| IDE-local: the service and other apps on this computer stay signed in.
-AccountSignIn { switch } =>
-    if login_pty ≠ null
-        emit Close { id = login_pty } to shells
-        login_pty = null
-        message = "Sign-in cancelled; nothing changed"
-        return Cancelled
-    emit MikeBridgePath to this get bridge
-    emit CreateDir { path = "runs" } to prefs
-    emit Run { command = "chmod", args = ["700", settings_dir + "/runs"] } to procs get secured
-    if secured ∈ Exception or not secured.success
-        message = "Sign-in needs a private IDE runs directory"
-        return Failed
-    emit DeleteFile { path = "runs/login.json" } to prefs
-    line = ["-I", bridge.path, "--login", "--account-file", settings_dir + "/account.json", "--result", settings_dir + "/runs/login.json"]
-    if switch, line += "--switch"
-    emit Open { cols = 80, rows = 10, cwd = settings_dir, command = "/usr/bin/python3", args = line } to shells get opened
-    if opened ∈ Exception
-        message = "Sign-in could not start: " + opened.message
-        return Failed
-    login_pty = opened.id
-    message = "Finish signing in to codelovesme in your browser (Account: Sign In again cancels)"
-    return Started
-
-AccountSignedIn =>
-    login_pty = null
-    emit ReadFile { path = "runs/login.json" } to prefs get read
-    emit DeleteFile { path = "runs/login.json" } to prefs
-    if read ∈ Exception
-        message = "Sign-in ended without an answer; nothing changed"
-        return Failed
-    emit Parse { text = read.content } to jsons get outcome
-    if outcome ∈ Exception or outcome.value ∉ Object or outcome.value["note"] ∉ String
-        message = "Sign-in ended without an answer; nothing changed"
-        return Failed
-    message = outcome.value["note"]
-    | A new account (or a refreshed one) starts Mike afresh: old-account
-    | editor connections end here, as well as in the transport.
-    if outcome.value["signed_in"] = true, emit CloseMikeChats to this
-    return Done
-
-AccountSignOut =>
-    if login_pty ≠ null
-        emit Close { id = login_pty } to shells
-        login_pty = null
-    emit CloseMikeChats to this
-    emit DeleteFile { path = "account.json" } to prefs
-    message = "Signed out of IDE. The shared Mike service and other apps stay signed in."
-    return Done
-
-CloseMikeChats =>
-    ids = []
-    if chat.agent ≠ null and chat.agent.type = "mike", ids += chat_id
-    loop id, other over chats
-        if id ≠ chat_id and other.agent ≠ null and other.agent.type = "mike", ids += id
-    loop id over ids
-        emit InChat { id = id, particle = CloseMikeChat } to this
-    return Closed
-
-CloseMikeChat =>
-    if chat.agent = null or chat.agent.type ≠ "mike", return Nothing
-    emit DropProposal to this
-    emit Close { id = chat.agent.pty } to shells
-    if prompt ≠ null and prompt.kind = "mike_question" and prompt.chat_id = chat_id, prompt = null
-    chat = chat + { busy = false, agent = null, pending = null, mike_question = null, queue = [], turns = chat.turns + [{ role = "tool", text = "Mike editor scope detached; accepted external effects may still finish." }] }
-    return Closed
-
-RestoreMikeQuestion =>
-    | Never replace a user's unrelated save/open prompt with an AI approval.
-    if prompt ≠ null, return Waiting
-    if chat.agent ≠ null and chat.agent.type = "mike" and chat.agent.done ≠ true and chat.mike_question ∈ Object
-        prompt = chat.mike_question
-    return Restored
-
-| ── Voice input (voice.gene.code) ─────────────────────────────────────
-
-| Ctrl+Shift+Space: start recording, or stop the recording under way. The
-| engine that will hear it is picked first, so a missing offline model is
-| offered before anything is recorded.
-VoiceToggle =>
-    if voice ≠ null and voice.stage = "recording"
-        emit Type { id = voice.pty, name = "ctrl+c", text = "" } to shells
-        message = "Stopping the recording…"
-        return Stopping
-    if voice ≠ null and voice.stage = "hearing"
-        message = "Still turning the last recording into words…"
-        return Busy
-    if voice ≠ null
-        message = "Still downloading the speech model…"
-        return Busy
-    emit ReadFile { path = "account.json" } to prefs get account
-    emit VoiceEngine { settings = settings, signed_in = account ∉ Exception } to this get engine
-    if engine.title = null
-        message = "Error: ai.voice.provider is \"auto\", \"offline\", \"openai-compatible\" or \"mike\""
-        return Failed
-    if engine.name = "offline"
-        emit OfflineModel to this get model
-        if not model.present and model.ours
-            prompt = { kind = "voice_download", label = "Offline voice needs the speech model " + model.file + " (" + model.size + ", once) — download it now? (y / n) ", text = "" }
-            return Asking
-        if not model.present
-            message = "Error: Voice: no speech model at " + model.path + " (ai.voice.offlineModel)"
-            return Failed
-        emit WhisperPath to this get whisper
-        if whisper.path = ""
-            message = "Error: Voice: whisper-cli is missing — reinstall the ide, or name it in ai.voice.whisperCommand"
-            return Failed
-    emit VoiceRuns to this get runs
-    if runs ∉ Runs
-        message = "Error: Voice needs a private IDE runs directory"
-        return Failed
-    emit DeleteFile { path = "runs/voice.wav" } to prefs
-    emit RecordLine { settings = settings, wav = runs.dir + "/voice.wav", err = runs.dir + "/voice-err.txt" } to this get line
-    emit Open { cols = 80, rows = 5, cwd = runs.dir, command = line.command, args = line.args } to shells get opened
-    if opened ∈ Exception
-        message = "Error: Voice: the recorder could not start: " + opened.message
-        return Failed
-    voice = { stage = "recording", pty = opened.id, engine = engine.name, title = engine.title }
-    emit VoiceKey to this get key
-    message = "● Recording — " + key.text + " stops, Escape throws it away"
-    return Recording
-
-| The key that runs ai.voice, as shown.
-VoiceKey =>
-    label = keytable.labels["ai.voice"]
-    if label = null, return Text { text = "View > Voice Input" }
-    return Text { text = label }
-
-| The recording thrown away, or the hearing or download given up.
-VoiceCancel =>
-    if voice = null, return Nothing
-    emit Close { id = voice.pty } to shells
-    voice = null
-    emit VoiceTidy to this
-    message = "Voice input cancelled"
-    return Cancelled
-
-| The runs folder, private, as a full path.
-VoiceRuns =>
-    emit CreateDir { path = "runs" } to prefs
-    emit Run { command = "pwd", args = [], cwd = settings_dir + "/runs" } to procs get here
-    if here ∈ Exception or not here.success, return Failed
-    emit Trim { value = here.stdout } to texts get dir
-    emit Run { command = "chmod", args = ["700", dir.value] } to procs get secured
-    if secured ∈ Exception or not secured.success, return Failed
-    return Runs { dir = dir.value }
-
-| The recording and what was heard, removed.
-VoiceTidy =>
-    emit DeleteFile { path = "runs/voice.wav" } to prefs
-    emit DeleteFile { path = "runs/voice.json" } to prefs
-    emit DeleteFile { path = "runs/voice-err.txt" } to prefs
-    return Tidied
-
-| The offline model settings name: where it is, whether it is there, and
-| whether it is one of ours (then it can be fetched).
-OfflineModel =>
-    dir = settings["ai.voice.modelDir"]
-    if dir = ""
-        emit Get { name = "XDG_CACHE_HOME", default = "" } to vars get cache
-        dir = cache.value
-        if dir = ""
-            emit Get { name = "HOME", default = "/" } to vars get home
-            dir = home.value + "/.cache"
-        dir = dir + "/codelovesme-ide/models"
-    emit OfflineModelAt { name = settings["ai.voice.offlineModel"], dir = dir } to this get model
-    emit Run { command = "test", args = ["-s", model.path] } to procs get there
-    return Model { path = model.path, file = model.file, size = model.size, sha256 = model.sha256, url = model.url, ours = model.ours, present = there ∉ Exception and there.success }
-
-| whisper-cli: as settings name it, else beside the ide (a release bundle),
-| else in organelles/ (a checkout, tools/whisper.sh), else on the PATH;
-| "" when there is none.
-WhisperPath =>
-    named = settings["ai.voice.whisperCommand"]
-    if named ≠ "", return Whisper { path = named }
-    emit Run { command = "pwd", args = [] } to procs get here
-    emit Trim { value = here.stdout } to texts get clean
-    loop candidate over [clean.value + "/whisper-cli", clean.value + "/organelles/whisper-cli"]
-        emit Run { command = "test", args = ["-x", candidate] } to procs get found
-        if found ∉ Exception and found.success, return Whisper { path = candidate }
-    emit Run { command = "sh", args = ["-c", "command -v whisper-cli"] } to procs get on_path
-    if on_path ∉ Exception and on_path.success
-        emit Trim { value = on_path.stdout } to texts get path
-        return Whisper { path = path.value }
-    return Whisper { path = "" }
-
-| The hidden terminal voice is waiting on ended: the next step.
-VoiceStepDone =>
-    stage = voice.stage
-    if stage = "recording", emit VoiceRecorded to this
-    if stage = "hearing", emit VoiceHeard to this
-    if stage = "downloading", emit VoiceModelFetched to this
-    return Stepped
-
-| What the step's program said on stderr, its last line.
-VoiceComplaint =>
-    emit ReadFile { path = "runs/voice-err.txt" } to prefs get err
-    if err ∈ Exception, return Text { text = "" }
-    emit Trim { value = err.content } to texts get trimmed
-    emit LastLines { text = trimmed.value, count = 1 } to this get last
-    emit Clip { text = last.text, chars = 160 } to this get short
-    return Text { text = short.text }
-
-| The recorder stopped: hand the WAV to the engine, unless nothing was
-| recorded (a tenth of a second is 3200 bytes).
-VoiceRecorded =>
-    engine = voice.engine
-    title = voice.title
-    voice = null
-    emit VoiceRuns to this get runs
-    if runs ∉ Runs
-        message = "Error: Voice needs a private IDE runs directory"
-        return Failed
-    wav = runs.dir + "/voice.wav"
-    emit Run { command = "sh", args = ["-c", "test \"\$(wc -c < \"\$1\")\" -gt 3244", "sh", wav] } to procs get long_enough
-    if long_enough ∈ Exception or not long_enough.success
-        emit VoiceComplaint to this get why
-        message = "Error: Voice: nothing was recorded"
-        if why.text ≠ "", message = message + " — " + why.text
-        emit VoiceTidy to this
-        return Failed
-    emit DeleteFile { path = "runs/voice.json" } to prefs
-    emit DeleteFile { path = "runs/voice-err.txt" } to prefs
-    model_path = ""
-    whisper_path = ""
-    if engine = "offline"
-        emit OfflineModel to this get model
-        model_path = model.path
-        emit WhisperPath to this get whisper
-        whisper_path = whisper.path
-    emit MikeBridgePath to this get bridge
-    emit TranscribeLine { engine = engine, settings = settings, wav = wav, out = runs.dir + "/voice.json", err = runs.dir + "/voice-err.txt", model = model_path, whisper = whisper_path, bridge = bridge.path, account_file = settings_dir + "/account.json" } to this get line
-    if line ∈ Problem
-        message = "Error: Voice: " + line.text
-        emit VoiceTidy to this
-        return Failed
-    emit Open { cols = 80, rows = 5, cwd = runs.dir, command = line.command, args = line.args } to shells get opened
-    if opened ∈ Exception
-        message = "Error: Voice: " + title + " could not start: " + opened.message
-        emit VoiceTidy to this
-        return Failed
-    voice = { stage = "hearing", pty = opened.id, engine = engine, title = title }
-    message = "… Turning the recording into words (" + title + ")"
-    return Hearing
-
-| The engine ended: its words into the chat's box, at the cursor, and the
-| chat shown — nothing is sent; Enter does that.
-VoiceHeard =>
-    engine = voice.engine
-    title = voice.title
-    voice = null
-    emit ReadFile { path = "runs/voice.json" } to prefs get out
-    if out ∈ Exception
-        emit VoiceComplaint to this get why
-        message = "Error: Voice: " + title + " gave no answer"
-        if why.text ≠ "", message = message + " — " + why.text
-        emit VoiceTidy to this
-        return Failed
-    emit VoiceReply { engine = engine, content = out.content } to this get reply
-    emit VoiceTidy to this
-    if reply ∈ NotHeard
-        message = "Error: Voice: " + reply.reason
-        return Failed
-    emit ShowChat to this
-    emit InsertSpoken { input = chat.input, caret = chat.caret, text = reply.text } to this get put
-    chat = chat + { input = put.input, caret = put.caret }
-    message = "Heard you — Enter sends it to the AI, or change it first"
-    return Heard
-
-| y to the offer: the model fetched in a hidden terminal, the ide working on.
-VoiceDownload =>
-    if voice ≠ null, return Busy
-    emit OfflineModel to this get model
-    emit VoiceRuns to this get runs
-    if runs ∉ Runs
-        message = "Error: Voice needs a private IDE runs directory"
-        return Failed
-    emit DownloadLine { model = model, err = runs.dir + "/voice-err.txt" } to this get line
-    emit Open { cols = 80, rows = 5, cwd = runs.dir, command = line.command, args = line.args } to shells get opened
-    if opened ∈ Exception
-        message = "Error: Voice: the download could not start: " + opened.message
-        return Failed
-    voice = { stage = "downloading", pty = opened.id, engine = "offline", title = "offline" }
-    message = "Downloading the speech model " + model.file + " (" + model.size + ") — the ide keeps working"
-    return Downloading
-
-| The download ended: the model there (its sha256 checked), or why not.
-VoiceModelFetched =>
-    voice = null
-    emit OfflineModel to this get model
-    emit VoiceKey to this get key
-    if model.present
-        message = "The speech model is ready — " + key.text + " and speak"
-        emit DeleteFile { path = "runs/voice-err.txt" } to prefs
-        return Fetched
-    emit VoiceComplaint to this get why
-    message = "Error: Voice: the speech model could not be downloaded"
-    if why.text ≠ "", message = message + " — " + why.text
-    emit DeleteFile { path = "runs/voice-err.txt" } to prefs
-    return Failed

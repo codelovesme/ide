@@ -29,12 +29,6 @@ menus = [
             { label = "Terminal", command = "terminal.toggle" }
             { label = "Editor", command = "editor.toggle" }
             { label = "New Terminal", command = "terminal.new" }
-            { label = "AI Chat", command = "ai.toggle" }
-            { label = "New AI Chat", command = "ai.newChat" }
-            { label = "New AI Chat Tab", command = "ai.newTab" }
-            { label = "Voice Input", command = "ai.voice" }
-            { label = "Show AI Changes", command = "ai.showChanges" }
-            { label = "Undo AI Changes", command = "ai.undoTurn" }
             { label = "Move Tab…", command = "view.moveTab" }
             { label = "Split Editor", command = "editor.split" }
             { label = "Word Wrap", command = "view.wordWrap" }
@@ -53,13 +47,6 @@ menus = [
             { label = "Settings (JSON)", command = "settings.open" }
             { label = "Keyboard Shortcuts (JSON)", command = "keybindings.open" }
             { label = "Keyboard Shortcuts", command = "help.keys" }
-            { label = "AI Model…", command = "ai.configure" }
-            { label = "AI: Switch Model…", command = "ai.switchModel" }
-            { label = "AI: Next Mode (Ask, Plan, Edit, Auto)", command = "ai.toggleMode" }
-            { label = "AI: Go Ahead with the Plan", command = "ai.goAhead" }
-            { label = "Account: Sign In (codelovesme)", command = "account.signIn" }
-            { label = "Account: Sign Out of IDE", command = "account.signOut" }
-            { label = "Account: Switch Shared Mike Service…", command = "account.switchService" }
         ]
     }
     {

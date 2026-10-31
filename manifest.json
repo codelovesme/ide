@@ -4,9 +4,7 @@
   "organelles": {
     "env": "env",
     "fs": "fs",
-    "http_client": "http_client",
     "json": "json",
-    "localai": "localai",
     "process": "process",
     "pty": "pty",
     "strings": "strings",

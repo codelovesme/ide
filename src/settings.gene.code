@@ -14,55 +14,11 @@ defaults = {
     "workbench.layout.top" = 10
     "workbench.layout.bottom" = 12
     "terminal.integrated.shell" = ""
+    | Where a new terminal opens (l r t b c tl tr bl br): the right, so the
+    | code keeps the full height.
+    "terminal.location" = "r"
     | "on": a long line goes on in the rows below (View > Word Wrap).
     "editor.wordWrap" = "off"
-    "ai.provider" = "local"
-    "ai.providers" = {
-        | LocalAI's own address, and the variable its key is in (unset: no
-        | key is sent); its model "" is the server's default, and Ctrl+Shift+M
-        | lists the rest from its /v1/models.
-        local = { type = "openai-compatible", endpoint = "http://localhost:8080", model = "", apiKeyEnv = "LOCALAI_API_KEY", contextTokens = 32768, maxTokens = 2048 }
-        | Claude Code cannot list its models or efforts: these are the names
-        | its --model and --effort take, a model by its full, versioned id
-        | (so two versions of one can sit side by side) and shown by `name`.
-        | Edit them here; "" is its own default. Codex reports both itself.
-        claude = {
-            type = "claude-code"
-            command = "claude"
-            model = ""
-            models = [
-                { id = "claude-opus-5-5", name = "Opus 5.5" }
-                { id = "claude-opus-5", name = "Opus 5" }
-                { id = "claude-sonnet-5", name = "Sonnet 5" }
-                { id = "claude-haiku-4-5-20251001", name = "Haiku 4.5" }
-                { id = "claude-fable-5-1", name = "Fable 5.1" }
-                { id = "claude-fable-5", name = "Fable 5" }
-            ]
-            effort = ""
-            efforts = ["low", "medium", "high", "xhigh", "max"]
-        }
-        codex = { type = "codex", command = "codex", model = "", effort = "" }
-        mike = { type = "mike" }
-    }
-    "ai.chat.location" = "r"
-    "ai.maxSteps" = 12
-    "ai.agent.mode" = "ask"
-    | What Ctrl+Shift+G carries a plan out in: "edit" or "auto".
-    "ai.agent.planFollowup" = "edit"
-    "ai.agent.allowCommands" = []
-    | Voice input (voice.gene.code): what turns speech into words — "auto"
-    | (Mike when signed in, else the endpoint when set, else offline),
-    | "offline", "openai-compatible" or "mike" — and each one's settings.
-    "ai.voice.provider" = "auto"
-    "ai.voice.language" = ""
-    "ai.voice.endpoint" = ""
-    "ai.voice.model" = "whisper-1"
-    "ai.voice.apiKeyEnv" = ""
-    "ai.voice.offlineModel" = "base"
-    "ai.voice.modelDir" = ""
-    "ai.voice.whisperCommand" = ""
-    "ai.voice.recordCommand" = ["pw-record", "--rate", "16000", "--channels", "1"]
-    "ai.voice.maxSeconds" = 60
     "terminal.integrated.commandsToSkipShell" = [
         "terminal.toggle"
         "focus.next"
@@ -77,9 +33,6 @@ defaults = {
     ]
 }
 
-| The local entry as the ide wrote it out before 0.17: no endpoint.
-old_local = { type = "openai-compatible", endpoint = "", model = "", apiKeyEnv = "", contextTokens = 32768 }
-
 slots = { tl = true, t = true, tr = true, l = true, c = true, r = true, bl = true, b = true, br = true }
 
 | The side track sizes, each at least `least`.
@@ -89,9 +42,6 @@ sizes = [
     { key = "workbench.layout.top", least = 3, old = "" }
     { key = "workbench.layout.bottom", least = 3, old = "workbench.panel.height" }
 ]
-
-| The voice settings that are any text.
-voice_texts = ["ai.voice.language", "ai.voice.endpoint", "ai.voice.model", "ai.voice.apiKeyEnv", "ai.voice.modelDir", "ai.voice.whisperCommand"]
 
 | The `json` organelle, handed over when the ide links it.
 parser = null
@@ -137,92 +87,12 @@ ReadSettings { text } =>
             if one ∉ String, good_skips = false
     if good_skips, values = values + { "terminal.integrated.commandsToSkipShell" = skips }
     if skips ≠ null and not good_skips, wrong += "terminal.integrated.commandsToSkipShell (a list of command ids)"
-    | The AI chat (see llm.gene.code).
-    provider = given["ai.provider"]
-    if provider ∈ String and provider ≠ "", values = values + { "ai.provider" = provider }
-    if provider ≠ null and (provider ∉ String or provider = ""), wrong += "ai.provider (a name from ai.providers)"
-    providers = given["ai.providers"]
-    good_providers = providers ∈ Object
-    if good_providers
-        loop key, one over providers
-            if one ∉ Object, good_providers = false
-    | The user's entries over the defaults, field by field: an entry they
-    | name keeps the default's fields they leave out (claude's lists of
-    | models and efforts), and the entries they do not name stay to pick.
-    | A claude entry still carrying the first default list (bare aliases,
-    | written out by 0.10) takes the versioned one.
-    if good_providers and providers["claude"] ∈ Object and providers["claude"]["models"] = ["fable", "opus", "sonnet"]
-        providers = providers + { claude = providers["claude"] + { models = defaults["ai.providers"]["claude"]["models"] } }
-    | A local entry still the empty one written out before 0.17 takes the
-    | new default.
-    if good_providers and providers["local"] = old_local
-        providers = providers + { local = defaults["ai.providers"]["local"] }
-    if good_providers
-        merged = defaults["ai.providers"]
-        loop key, entry over providers
-            if merged[key] ≠ null, merged = merged + { "$key" = merged[key] + entry }
-            if merged[key] = null, merged = merged + { "$key" = entry }
-        values = values + { "ai.providers" = merged }
-    if providers ≠ null and not good_providers, wrong += "ai.providers (an object of { \"type\", \"endpoint\", \"model\" … })"
-    chat_at = given["ai.chat.location"]
-    if chat_at ∈ String and slots[chat_at] = true, values = values + { "ai.chat.location" = chat_at }
-    if chat_at ≠ null and not (chat_at ∈ String and slots[chat_at] = true), wrong += "ai.chat.location (l r t b c tl tr bl br)"
-    steps = given["ai.maxSteps"]
-    good_steps = steps ∈ Number
-    if good_steps, good_steps = steps ≥ 1 and steps ≤ 50
-    if good_steps, values = values + { "ai.maxSteps" = steps }
-    if steps ≠ null and not good_steps, wrong += "ai.maxSteps (1 to 50)"
+    terminal_at = given["terminal.location"]
+    if terminal_at ∈ String and slots[terminal_at] = true, values = values + { "terminal.location" = terminal_at }
+    if terminal_at ≠ null and not (terminal_at ∈ String and slots[terminal_at] = true), wrong += "terminal.location (l r t b c tl tr bl br)"
     wrap = given["editor.wordWrap"]
     if wrap = "on" or wrap = "off", values = values + { "editor.wordWrap" = wrap }
     if wrap ≠ null and wrap ≠ "on" and wrap ≠ "off", wrong += "editor.wordWrap (\"on\" or \"off\")"
-    agent_mode = given["ai.agent.mode"]
-    known_modes = { ask = true, plan = true, edit = true, auto = true }
-    good_mode = agent_mode ∈ String
-    if good_mode, good_mode = known_modes[agent_mode] = true
-    if good_mode, values = values + { "ai.agent.mode" = agent_mode }
-    if agent_mode ≠ null and not good_mode, wrong += "ai.agent.mode (\"ask\", \"plan\", \"edit\" or \"auto\")"
-    followup = given["ai.agent.planFollowup"]
-    if followup = "edit" or followup = "auto", values = values + { "ai.agent.planFollowup" = followup }
-    if followup ≠ null and followup ≠ "edit" and followup ≠ "auto", wrong += "ai.agent.planFollowup (\"edit\" or \"auto\")"
-    allow = given["ai.agent.allowCommands"]
-    good_allow = allow ∈ Array
-    if good_allow
-        loop one over allow
-            if one ∉ String, good_allow = false
-    if good_allow, values = values + { "ai.agent.allowCommands" = allow }
-    if allow ≠ null and not good_allow, wrong += "ai.agent.allowCommands (a list, e.g. [\"Bash(cargo test:*)\"])"
-    | Voice input.
-    voice_provider = given["ai.voice.provider"]
-    known_voice = { auto = true, offline = true, "openai-compatible" = true, mike = true }
-    good_voice = voice_provider ∈ String
-    if good_voice, good_voice = known_voice[voice_provider] = true
-    if good_voice, values = values + { "ai.voice.provider" = voice_provider }
-    if voice_provider ≠ null and not good_voice, wrong += "ai.voice.provider (\"auto\", \"offline\", \"openai-compatible\" or \"mike\")"
-    loop key over voice_texts
-        one = given[key]
-        if one ∈ String, values = values + { "$key" = one }
-        if one ≠ null and one ∉ String, wrong += key + " (text)"
-    offline_model = given["ai.voice.offlineModel"]
-    good_model = offline_model = "base" or offline_model = "small"
-    if offline_model ∈ String and not good_model
-        emit Length { value = offline_model } to core get { value as model_size }
-        good_model = model_size > 4 and offline_model[0, 1) = "/" and offline_model[model_size - 4, model_size) = ".bin"
-    if good_model, values = values + { "ai.voice.offlineModel" = offline_model }
-    if offline_model ≠ null and not good_model, wrong += "ai.voice.offlineModel (\"base\", \"small\", or a model file's full path)"
-    recorder = given["ai.voice.recordCommand"]
-    good_recorder = recorder ∈ Array
-    if good_recorder
-        emit Length { value = recorder } to core get { value as recorder_size }
-        good_recorder = recorder_size > 0
-        loop one over recorder
-            if one ∉ String, good_recorder = false
-    if good_recorder, values = values + { "ai.voice.recordCommand" = recorder }
-    if recorder ≠ null and not good_recorder, wrong += "ai.voice.recordCommand (the recorder and its arguments, e.g. [\"pw-record\", \"--rate\", \"16000\", \"--channels\", \"1\"])"
-    seconds = given["ai.voice.maxSeconds"]
-    good_seconds = seconds ∈ Number
-    if good_seconds, good_seconds = seconds ≥ 1 and seconds ≤ 600
-    if good_seconds, values = values + { "ai.voice.maxSeconds" = seconds }
-    if seconds ≠ null and not good_seconds, wrong += "ai.voice.maxSeconds (1 to 600)"
     problem = ""
     loop i, what over wrong
         if i = 0, problem = "settings.json: using the default for " + what

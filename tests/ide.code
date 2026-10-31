@@ -3,19 +3,15 @@
 | opened in tabs, edited, undone, saved; tabs moved anywhere; a terminal;
 | the menu, the prompts, settings and keybindings; frames drawn from it all.
 
-link "../src/chatbox.gene.code"
-link "../src/context.gene.code"
 link "../src/editor.gene.code"
 link "../src/ide.gene.code"
 link "../src/keys.gene.code"
 link "../src/layout.gene.code"
-link "../src/llm.gene.code"
 link "../src/menu.gene.code"
 link "../src/render.gene.code"
 link "../src/settings.gene.code"
 link "../src/tabs.gene.code"
 link "../src/tree.gene.code"
-link "../src/voice.gene.code"
 
 | A frame, the way Render makes one.
 Framed {} =>
@@ -109,6 +105,7 @@ emit SettingsAt { dir = ".test-config" } to this get first_settings
 assert first_settings.values["workbench.layout.left"] = 30
 assert first_settings.values["workbench.layout.bottom"] = 12
 assert first_settings.values["workbench.sideBar.visible"]
+assert first_settings.values["terminal.location"] = "r"
 
 | A folder to open: a code file, a folder with a file in it, and .git.
 emit Config { base_path = ".test-folder" } to files get made
@@ -257,6 +254,19 @@ assert stored_values.value["workbench.sideBar.visible"] = false
 emit HandleKey { name = "ctrl+b", text = "" } to this
 emit WhereNow to this get shown_again
 assert shown_again.groups = ["c:file", "r:file", "l:explorer"]
+
+| A new terminal goes on the right by default (terminal.location), where
+| the AI chat used to be — here beside the file already there.
+assert shown_again.groups[1] = "r:file"
+emit Run { command = "terminal.new" } to this
+emit WhereNow to this get on_the_right
+assert on_the_right.groups = ["c:file", "r:terminal", "l:explorer"]
+emit RequestClose to this
+emit WhereNow to this get first_terminal_closed
+assert first_terminal_closed.groups = ["c:file", "r:file", "l:explorer"]
+
+| terminal.location puts it elsewhere: at the bottom, for the rest.
+emit StoreSetting { key = "terminal.location", value = "b" } to this
 
 | A terminal: Ctrl+` opens one at the bottom, with the keys. Keys go to
 | the shell — except the few commands that skip it (F6 here).
@@ -412,280 +422,6 @@ emit HandleKey { name = "f9", text = "" } to this
 emit State to this get after_g
 assert after_g.focus = "tree"
 
-| The AI chat: Ctrl+L opens it on the right, with the keys.
-emit HandleKey { name = "f9", text = "" } to this
-emit OpenFile { path = "hello.code" } to this
-emit HandleKey { name = "down", text = "" } to this
-emit HandleKey { name = "ctrl+l", text = "" } to this
-emit WhereNow to this get with_chat
-emit State to this get chatting
-assert chatting.focus = "chat"
-assert with_chat.groups[chatting.current] = "r:chat"
-| With no model set up (its address taken out), asking says how to set
-| one up.
-emit StoreSetting { key = "ai.providers", value = { local = { endpoint = "" } } } to this
-emit HandleKey { name = "h", text = "h" } to this
-emit HandleKey { name = "i", text = "i" } to this
-emit State to this get typed_hi
-assert typed_hi.chat.input = "hi"
-emit HandleKey { name = "enter", text = "" } to this
-emit State to this get unset
-assert unset.chat.turns[0].text = "hi"
-assert unset.chat.turns[1].role = "error"
-assert unset.chat.input = ""
-emit Framed to this get unset_frame
-assert unset_frame ∈ Screen
-| ↑ brings back the last question over what is being written, ↓ goes
-| back to that.
-emit HandleKey { name = "y", text = "y" } to this
-emit HandleKey { name = "up", text = "" } to this
-emit HandleKey { name = "up", text = "" } to this
-emit State to this get chat_recalled
-assert chat_recalled.chat.input = "hi"
-emit HandleKey { name = "down", text = "" } to this
-emit State to this get chat_draft_again
-assert chat_draft_again.chat.input = "y"
-emit HandleKey { name = "ctrl+u", text = "" } to this
-
-| A model set up (settings.json), and the project's own instructions.
-emit WriteFile { path = "AGENTS.md", content = "Indent with four spaces." } to files
-| The model: a port that takes the request and never answers, so the
-| replies below are the only ones that come.
-emit Spawn { id = "silent-model", command = "python3", args = ["-c", "import socket, time\ns = socket.socket()\ns.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\ns.bind(('127.0.0.1', 47811))\ns.listen(8)\ntime.sleep(120)"] } to procs_lib
-emit Run { command = "sleep", args = ["0.5"] } to procs_lib
-emit StoreSetting { key = "ai.providers", value = { local = { endpoint = "http://127.0.0.1:47811", model = "test-model" } } } to this
-emit Run { command = "ai.newChat" } to this
-emit State to this get new_chat
-assert new_chat.chat.turns = []
-emit AskAbout { question = "what does this do? see @hello.code" } to this
-emit State to this get question_state
-assert question_state.chat.busy
-first_request = question_state.chat.request
-first_content = question_state.chat.messages[0].content
-assert question_state.chat.system ≠ ""
-| The system message has the instructions and the map; the question what
-| was on screen, and the file it mentions.
-emit Contains { text = question_state.chat.system, part = "Indent with four spaces." } to this get by_instructions
-assert by_instructions.yes
-emit Contains { text = question_state.chat.system, part = "Greet { who } =>" } to this get by_map
-assert by_map.yes
-emit Contains { text = first_content, part = "Open file: hello.code" } to this get by_file
-assert by_file.yes
-emit Contains { text = first_content, part = "# Attached: @hello.code" } to this get by_mention
-assert by_mention.yes
-
-| The model asks to search; the search runs and goes back to it.
-emit ChatResult { content = "{\"tool\": \"grep\", \"args\": {\"pattern\": \"Greet\"}}", _request_id = first_request } to this
-emit State to this get stepped
-assert stepped.chat.turns[1].role = "tool"
-assert stepped.chat.turns[1].text = "searched for \"Greet\""
-assert stepped.chat.busy and stepped.chat.request ≠ first_request
-emit Length { value = stepped.chat.messages } to core get { value as sent_count }
-result_note = stepped.chat.messages[sent_count - 1].content
-emit Contains { text = result_note, part = "hello.code:2:Greet" } to this get by_match
-assert by_match.yes
-| A reply to an old question is ignored; the answer ends the turn.
-emit ChatResult { content = "{\"answer\": \"stale\"}", _request_id = first_request } to this
-emit ChatResult { content = "{\"answer\": \"It greets.\"}", _request_id = stepped.chat.request } to this
-emit State to this get answered
-assert not answered.chat.busy
-assert answered.chat.turns[2].text = "It greets."
-emit Length { value = answered.chat.turns } to core get { value as shown_turns }
-assert shown_turns = 3
-emit Framed to this get answered_frame
-assert answered_frame ∈ Screen
-
-| Enter while the AI works queues the question, ten at most: the
-| eleventh stays in the box. Ctrl+C stops it and puts them back there.
-emit AskAbout { question = "busy one" } to this
-queue_i = 0
-loop
-    if queue_i = 10, break
-    emit AskAbout { question = "waiting " + queue_i } to this
-    queue_i += 1
-emit State to this get q_full
-assert q_full.focus = "chat"
-emit Length { value = q_full.chat.queue } to core get { value as q_full_count }
-assert q_full_count = 10
-emit HandleKey { name = "x", text = "x" } to this
-emit HandleKey { name = "enter", text = "" } to this
-emit State to this get q_kept
-assert q_kept.chat.input = "x"
-emit Framed to this get q_frame
-assert q_frame ∈ Screen
-emit HandleKey { name = "ctrl+c", text = "" } to this
-emit State to this get q_stopped
-assert not q_stopped.chat.busy and q_stopped.chat.queue = []
-emit Contains { text = q_stopped.chat.input, part = "x\nwaiting 0\nwaiting 1" } to this get q_back
-assert q_back.yes
-emit HandleKey { name = "ctrl+u", text = "" } to this
-| The answer sends the next one waiting.
-emit AskAbout { question = "first" } to this
-emit AskAbout { question = "second" } to this
-emit State to this get q_two
-emit ChatResult { content = "{\"answer\": \"one\"}", _request_id = q_two.chat.request } to this
-emit State to this get q_next
-assert q_next.chat.busy and q_next.chat.queue = []
-emit Length { value = q_next.chat.turns } to core get { value as q_turns }
-assert q_next.chat.turns[q_turns - 1].text = "second"
-emit ChatResult { content = "{\"answer\": \"two\"}", _request_id = q_next.chat.request } to this
-
-| Ctrl+T in the chat: another conversation in a tab of its own. A reply
-| to it lands there, whichever tab has the keys.
-emit HandleKey { name = "ctrl+t", text = "" } to this
-emit State to this get tab_two
-assert tab_two.chat_id = "2" and tab_two.chat.turns = [] and tab_two.focus = "chat"
-emit AskAbout { question = "in two" } to this
-emit State to this get two_asking
-emit HandleKey { name = "shift+tab", text = "" } to this
-emit State to this get tab_one
-assert tab_one.chat_id = "1" and not tab_one.chat.busy
-emit ChatResult { content = "{\"answer\": \"two done\"}", _request_id = two_asking.chat.request } to this
-emit State to this get after_two
-assert after_two.chat_id = "1"
-assert after_two.chats["2"].turns[1].text = "two done" and not after_two.chats["2"].busy
-emit Framed to this get two_frame
-assert two_frame ∈ Screen
-| Its tab closed; the first conversation keeps the keys.
-emit HandleKey { name = "shift+tab", text = "" } to this
-emit HandleKey { name = "ctrl+w", text = "" } to this
-emit State to this get two_closed
-assert two_closed.chat_id = "1" and two_closed.focus = "chat"
-
-| Tools stay inside the folder.
-emit RunTool { tool = "read_file", args = { path = "../etc/passwd" } } to this get outside
-assert outside.text = "Not allowed: paths stay inside the project folder."
-emit RunTool { tool = "read_file", args = { path = "hello.code", from = 2, "to" = 2 } } to this get one_line
-assert one_line.text = "hello.code (4 lines), lines 2–2:\n2| Greet { who } =>"
-
-| Ask (the default): a change the model asks for is refused, and it is
-| told so; nothing waits on the user.
-emit AskAbout { question = "change it" } to this
-emit State to this get ask_asked
-emit ChatResult { content = "{\"tool\": \"edit_file\", \"args\": {\"path\": \"hello.code\", \"find\": \"return Hi\", \"replace\": \"return Hello\"}}", _request_id = ask_asked.chat.request } to this
-emit State to this get ask_refused
-assert ask_refused.chat.pending = null
-emit Length { value = ask_refused.chat.messages } to core get { value as ask_count }
-emit Contains { text = ask_refused.chat.messages[ask_count - 1].content, part = "Not in ask mode" } to this get told_ask
-assert told_ask.yes
-| Plan: the answer offers Ctrl+Shift+G, which switches to edit and goes ahead in
-| the same conversation.
-emit SetAgentMode { mode = "plan" } to this
-emit ChatResult { content = "{\"answer\": \"1. In hello.code, return Hello.\"}", _request_id = ask_refused.chat.request } to this
-emit State to this get planned
-assert planned.chat.plan_ready
-emit Run { command = "ai.goAhead" } to this
-emit State to this get going
-assert going.settings["ai.agent.mode"] = "edit"
-assert going.chat.busy and not going.chat.plan_ready
-emit Length { value = going.chat.turns } to core get { value as going_turns }
-emit Contains { text = going.chat.turns[going_turns - 1].text, part = "Go ahead" } to this get went
-assert went.yes
-emit ChatResult { content = "{\"answer\": \"ok\"}", _request_id = going.chat.request } to this
-emit Run { command = "ai.goAhead" } to this
-emit State to this get no_plan
-assert no_plan.message = "There is no plan to carry out — ask in Plan mode first (Ctrl+Shift+A)"
-
-| Edit — changes: the model proposes, the user decides.
-emit AskAbout { question = "say Hello instead" } to this
-emit State to this get edit_asked
-edit_find = "{\"tool\": \"edit_file\", \"args\": {\"path\": \"hello.code\", \"find\": \"return Hi\", \"replace\": \"return Hello\"}}"
-emit ChatResult { content = edit_find, _request_id = edit_asked.chat.request } to this
-emit State to this get proposing
-assert proposing.focus = "diff"
-assert proposing.chat.pending.path = "hello.code"
-assert proposing.chat.request = -1 and proposing.chat.busy
-emit Active { groups = proposing.groups, current = proposing.current } to this get proposal
-assert proposal.buffer.removed = 1 and proposal.buffer.added = 1
-emit Framed to this get diff_frame
-assert diff_frame ∈ Screen
-| Rejected: the tab goes, the file stays, the model is told and asked again.
-emit HandleKey { name = "r", text = "r" } to this
-emit State to this get rejected
-assert rejected.chat.pending = null and rejected.chat.request ≠ -1
-emit Length { value = rejected.chat.messages } to core get { value as rejected_count }
-emit Contains { text = rejected.chat.messages[rejected_count - 1].content, part = "The user rejected" } to this get told_no
-assert told_no.yes
-emit ReadFile { path = "hello.code" } to files get still_hi
-emit Contains { text = still_hi.content, part = "return Hi\n" } to this get kept_hi
-assert kept_hi.yes
-| Accepted: the file changes and is saved, and shows.
-emit ChatResult { content = edit_find, _request_id = rejected.chat.request } to this
-emit HandleKey { name = "a", text = "a" } to this
-emit State to this get accepted
-assert accepted.focus = "editor" and accepted.file.path = "hello.code" and not accepted.file.dirty
-emit ReadFile { path = "hello.code" } to files get now_hello
-emit Contains { text = now_hello.content, part = "return Hello" } to this get changed_hello
-assert changed_hello.yes
-| Not found: the model is told why, and no tab opens.
-emit ChatResult { content = "{\"tool\": \"edit_file\", \"args\": {\"path\": \"hello.code\", \"find\": \"nowhere\", \"replace\": \"x\"}}", _request_id = accepted.chat.request } to this
-emit State to this get not_found
-assert not_found.focus = "editor" and not_found.chat.pending = null
-| A new file, accepted.
-emit ChatResult { content = "{\"tool\": \"create_file\", \"args\": {\"path\": \"docs/new.md\", \"content\": \"# New\"}}", _request_id = not_found.chat.request } to this
-emit HandleKey { name = "enter", text = "" } to this
-emit ReadFile { path = "docs/new.md" } to files get made_new
-assert made_new.content = "# New"
-emit State to this get created
-| A command: asked in the status bar, run on y, its output sent back.
-emit ChatResult { content = "{\"tool\": \"run_command\", \"args\": {\"command\": \"echo ran-\$((20 + 22))\"}}", _request_id = created.chat.request } to this
-emit State to this get asking_run
-assert asking_run.prompt.kind = "ai_run"
-emit HandleKey { name = "y", text = "y" } to this
-emit State to this get ran_it
-emit Length { value = ran_it.chat.messages } to core get { value as ran_count }
-emit Contains { text = ran_it.chat.messages[ran_count - 1].content, part = "ran-42" } to this get output_back
-assert output_back.yes
-| Undo AI Changes: both files as they were before the question.
-emit ChatResult { content = "{\"answer\": \"Done.\"}", _request_id = ran_it.chat.request } to this
-emit Run { command = "ai.undoTurn" } to this
-emit ReadFile { path = "hello.code" } to files get undone_hi
-emit Contains { text = undone_hi.content, part = "return Hi\n" } to this get back_to_hi
-assert back_to_hi.yes
-emit Exists { path = "docs/new.md" } to files get gone_new
-assert not gone_new.is_file
-emit State to this get after_undo
-assert after_undo.file.lines[2] = "    return Hi"
-emit RemoveDir { path = "docs" } to files
-
-| Auto: a change made at once, a command run at once, each said; Undo AI
-| Changes still puts them back.
-emit SetAgentMode { mode = "auto" } to this
-emit AskAbout { question = "say Hey" } to this
-emit State to this get auto_asked
-emit ChatResult { content = "{\"tool\": \"edit_file\", \"args\": {\"path\": \"hello.code\", \"find\": \"return Hi\", \"replace\": \"return Hey\"}}", _request_id = auto_asked.chat.request } to this
-emit ReadFile { path = "hello.code" } to files get auto_changed
-emit Contains { text = auto_changed.content, part = "return Hey" } to this get made_at_once
-assert made_at_once.yes
-emit State to this get auto_edited
-assert auto_edited.chat.pending = null and auto_edited.chat.busy
-emit ChatResult { content = "{\"tool\": \"run_command\", \"args\": {\"command\": \"echo auto-\$((40 + 2))\"}}", _request_id = auto_edited.chat.request } to this
-emit State to this get auto_ran
-assert auto_ran.prompt = null
-emit Length { value = auto_ran.chat.messages } to core get { value as auto_count }
-emit Contains { text = auto_ran.chat.messages[auto_count - 1].content, part = "auto-42" } to this get auto_output
-assert auto_output.yes
-emit ChatResult { content = "{\"answer\": \"Done.\"}", _request_id = auto_ran.chat.request } to this
-emit Run { command = "ai.undoTurn" } to this
-emit ReadFile { path = "hello.code" } to files get auto_undone
-emit Contains { text = auto_undone.content, part = "return Hi\n" } to this get auto_back
-assert auto_back.yes
-emit SetAgentMode { mode = "ask" } to this
-emit Run { command = "ai.toggle" } to this
-
-| Moved, the chat remembers where; Escape gives the keys back.
-emit HandleKey { name = "ctrl+k", text = "" } to this
-emit HandleKey { name = "m", text = "m" } to this
-emit HandleKey { name = "b", text = "b" } to this
-emit HandleKey { name = "enter", text = "" } to this
-emit State to this get chat_settings
-assert chat_settings.settings["ai.chat.location"] = "b"
-emit HandleKey { name = "escape", text = "" } to this
-emit State to this get back_to_files
-assert back_to_files.focus ≠ "chat"
-emit DeleteFile { path = "AGENTS.md" } to files
-emit Kill { id = "silent-model" } to procs_lib
-
 | New File (Ctrl+N): nothing picked in the explorer yet — at the root.
 emit OpenFolder { path = root } to this
 emit ShowExplorer { focused = true } to this
@@ -836,11 +572,11 @@ emit HandleKey { name = "escape", text = "" } to this
 emit State to this get found_left
 assert found_left.prompt = null and found_left.file.row = 1 and found_left.file.anchor = { row = 1, col = 0 }
 | Ctrl+F with no file open says so.
-emit HandleKey { name = "ctrl+l", text = "" } to this
+emit ShowExplorer { focused = true } to this
 emit HandleKey { name = "ctrl+f", text = "" } to this
 emit State to this get find_nowhere
 assert find_nowhere.prompt = null and find_nowhere.message = "Find works in a file — open one first"
-emit HandleKey { name = "escape", text = "" } to this
+emit FocusSlot { slot = "c" } to this
 
 | The clipboard: the ide's own here, so the desktop's is never touched.
 | Ctrl+C copies the selection, Ctrl+X cuts it, Ctrl+V pastes — each
@@ -885,14 +621,6 @@ emit HandleKey { name = "ctrl+v", text = "" } to this
 emit State to this get two_pasted
 assert two_pasted.file.lines = ["alpha beta", "Beta gamma", "alpha", "alpha beta", "Beta gamma"] and two_pasted.file.row = 4
 emit HandleKey { name = "ctrl+z", text = "" } to this
-| In the AI chat's box Ctrl+V pastes too.
-emit HandleKey { name = "ctrl+l", text = "" } to this
-emit HandleKey { name = "ctrl+u", text = "" } to this
-emit HandleKey { name = "ctrl+v", text = "" } to this
-emit State to this get chat_pasted
-assert chat_pasted.focus = "chat" and chat_pasted.chat.input = "alpha beta\nBeta gamma"
-emit HandleKey { name = "ctrl+u", text = "" } to this
-emit HandleKey { name = "escape", text = "" } to this
 emit DeleteFile { path = "find.code" } to files
 emit DeleteFile { path = "src/hello_test.code" } to files
 

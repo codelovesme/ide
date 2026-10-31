@@ -1,5 +1,8 @@
 # 005 — Talk with Codex: its realtime voice through `codex app-server`
 
+Dropped (2026-10-31): the ide has no AI integration any more (009);
+Codex's own voice works in a terminal tab.
+
 Voice input (004) turns speech into text and leaves the sending to Enter.
 Codex offers more, with the user's own Codex/ChatGPT sign-in and no
 codelovesme account: `codex app-server` (the JSON-RPC protocol its VS Code,
