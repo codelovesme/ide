@@ -335,3 +335,7 @@ This explicitly uses the v2.14.5 code-native/runtime snapshot for ABI 1 and
 current source window/pty/tty implementations. The outer console needs the
 updated modules too. Keep these modules when laying out a development package;
 the public pinned release alone does not provide this support.
+
+Ticket 189 also forwards Ctrl+Shift+Space to the terminal for spoken conversation.
+The most recent voice shortcut's terminal receives the focus-cancellation
+Escape release even after a pane change, so a latched capture can close.

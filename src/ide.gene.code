@@ -230,12 +230,13 @@ Key { name, text, event } =>
 | A held shortcut belongs to the terminal that received its press, even if
 | another pane has the focus by the time the key is released.
 KeyReleased { name } =>
-    target = voice_terminal
+    target = null
+    if name = "space" or name = "ctrl+space" or name = "left_control" or name = "ctrl+left_control" or name = "right_control" or name = "ctrl+right_control" or name = "escape", target = voice_terminal
     if target = null and focus = "terminal"
         emit Active { groups = groups, current = current } to this get shown
         target = shown.buffer.id
     if target ≠ null, emit Type { id = target, name = name, text = "", event = "release" } to shells
-    if name = "space" or name = "ctrl+space" or name = "left_control" or name = "ctrl+left_control" or name = "right_control" or name = "ctrl+right_control", voice_terminal = null
+    if name = "escape", voice_terminal = null
     return Noted
 
 | The mouse (pushed by tty, which asks the terminal for it at Start).
@@ -394,7 +395,7 @@ HandleKey { name, text, event } =>
                 if allowed = for_shell.command, runs = true
         | Ctrl+Space is push-to-talk inside a terminal; pane keys remain
         | Ctrl+J and Ctrl+backtick.
-        if name = "ctrl+space", runs = false
+        if name = "ctrl+space" or name = "ctrl+shift+space", runs = false
         if runs
             emit Run { command = for_shell.command } to this
             return Handled
@@ -402,7 +403,7 @@ HandleKey { name, text, event } =>
         | A key typed brings the terminal back to its live screen.
         live_id = shown.buffer.id
         terminal_scrolls = terminal_scrolls + { "$live_id" = 0 }
-        if name = "ctrl+space", voice_terminal = shown.buffer.id
+        if name = "ctrl+space" or name = "ctrl+shift+space", voice_terminal = shown.buffer.id
         emit Type { id = shown.buffer.id, name = name, text = text, event = event } to shells
         return Typed
     emit Keymap { name = name, pending = chord, table = keytable } to this get bound
