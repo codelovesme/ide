@@ -58,6 +58,9 @@ jobs:
           HOME="$RUNNER_TEMP/bare-home" PATH=/usr/bin:/bin \
             python3 tools/smoke.py "dist/ide-${{ steps.version.outputs.version }}-x86_64-linux/ide"
 
+      - name: Verify local IDE control and MCP in a real terminal
+        run: python3 tools/control_smoke.py "dist/ide-${{ steps.version.outputs.version }}-x86_64-linux/ide"
+
       - uses: actions/upload-artifact@v4
         with:
           name: ide-bundle

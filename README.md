@@ -81,6 +81,47 @@ new ide. (0.22 and before had an AI chat built in; 0.23 took it out, with
 its settings, keys and Settings > Account. An old settings.json or
 keybindings.json that still names them opens without a complaint.)
 
+### Assistants know and control their IDE
+
+In an IDE terminal, ordinary `claude` and `codex` commands receive a local MCP
+connection for this IDE instance. Ask “move my terminal to the left” or “make
+my terminal a little bigger”. `ide_state`, `ide_move_terminal` and
+`ide_resize_terminal` act on the terminal where the assistant was launched,
+even if another tab has since taken focus. User instructions and other MCP
+servers stay configured as before. Shell aliases/functions or an absolute CLI
+path can bypass the launch adapter; use the executable on the IDE terminal's
+PATH for automatic integration.
+
+Mike CLI with IDE context support receives the same session context on every
+message. Its existing local terminal tool runs the control client through
+Mike's normal confirmation/approval flow; Mike does not need a separate MCP
+client. Older Mike clients continue to chat but do not receive this context.
+
+You can also inspect or change the layout yourself in that terminal:
+
+```sh
+ide-control state
+ide-control move --slot left
+ide-control move --slot bottom
+ide-control resize --delta 2     # grow; -2 shrinks
+```
+
+This uses Python 3 (standard library only) and a loopback-only HTTP endpoint
+with a random per-instance credential stored in a private temporary directory.
+Session and terminal identifiers select the target; they are not credentials.
+No control key is included in model context or command-line arguments. Normal
+exit removes the descriptor; a crash can leave an inert descriptor, which
+cannot authorize a different IDE session. Connections are Linux-local, and
+clients reject listeners belonging to another OS user.
+
+Moves support all nine slots. Resizing changes the shared side track in
+columns (left/right and corners) or rows (top/bottom), within the screen's
+limits; other panes on that track resize too. The center fills remaining space
+and cannot resize independently. Replies report the actual pane dimensions.
+A hidden or closed terminal returns an explicit error for movement/resizing.
+
+See [the control protocol](docs/ide-control.md) for adapters and session lifecycle.
+
 ### Tabs and editor groups
 
 Every open file has a tab; the active tab's file is shown, and opening a

@@ -102,6 +102,12 @@ keytable = null
 
 procs = null
 
+control = null
+control_server = null
+control_json = null
+control_helper = "tools/ide_control.py"
+control_search_path = ""
+
 | Terminals: the pty organelle, how many have been opened (for their
 | names), the size each was last told, and which commands still run while
 | one has the keys (settings: terminal.integrated.commandsToSkipShell).
@@ -122,7 +128,8 @@ Organelles { from } =>
     link from + "/fs.so" as prefs_at
     link from + "/pty.so" as pty_at
     link from + "/process.so" as process_at
-    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at, pty = pty_at, process = process_at }
+    link from + "/http_server.so" as control_at
+    return Linked { env = env_at, fs = fs_at, strings = strings_at, syntax = syntax_at, tty = tty_at, json = json_at, prefs = prefs_at, pty = pty_at, process = process_at, control = control_at }
 
 | Links them, and hands each gene the ones it uses.
 UseOrganelles { from } =>
@@ -135,6 +142,8 @@ UseOrganelles { from } =>
     prefs = linked.prefs
     shells = linked.pty
     procs = linked.process
+    control_server = linked.control
+    control_json = linked.json
     emit ContextUses { strings = linked.strings } to this
     emit SettingsUses { json = linked.json } to this
     emit KeysUses { json = linked.json, strings = linked.strings } to this
@@ -196,6 +205,8 @@ EuglenaHasBeenBorn { cell_name } =>
     cols = started.cols
     rows = started.rows
     running = true
+    emit StartControl to this get connected
+    if connected ∈ Failed, message = "IDE control unavailable: " + connected.reason
     emit CheckCliUpdates to this
     emit Render to this
     return Alive { cell_name = cell_name }
@@ -629,15 +640,31 @@ NewTerminal { slot } =>
     if target = ""
         target = settings["terminal.location"]
         if focus = "terminal", target = groups[current].slot
+    origin = "terminal-" + (terminals_opened + 1)
     open_request = Open { cols = 80, rows = 12, cwd = folder }
+    if control ≠ null
+        open_request = open_request + { env = {
+                TERM_PROGRAM = "codelovesme-ide"
+                CODELOVESME_IDE_SESSION = control.session
+                CODELOVESME_IDE_SESSION_FILE = control.descriptor
+                CODELOVESME_IDE_TERMINAL = origin
+                CODELOVESME_IDE_HELPER = control.helper
+                PATH = control_search_path
+            } }
     shell = settings["terminal.integrated.shell"]
+    if control ≠ null
+        if shell = ""
+            emit Get { name = "SHELL", default = "/bin/sh" } to vars get chosen_shell
+            shell = chosen_shell.value
+        emit Split { value = shell, separator = "/" } to texts get shell_parts
+        if shell_parts.value[length - 1] = "bash", open_request = open_request + { args = ["--rcfile", control.bashrc, "-i"] }
     if shell ≠ "", open_request = open_request + { command = shell }
     emit open_request to shells get opened
     if opened ∈ Exception
         message = "Error: a terminal could not be opened: " + opened.message
         return Failed
     terminals_opened += 1
-    view = { kind = "terminal", path = "Terminal " + terminals_opened, store = "terminal", id = opened.id }
+    view = { kind = "terminal", path = "Terminal " + terminals_opened, store = "terminal", id = opened.id, control_id = origin }
     emit Show { buffer = view, slot = target } to this
     return Opened
 
@@ -1210,6 +1237,10 @@ Quit =>
     emit Terminals { groups = everything.groups } to this get open_terminals
     loop id over open_terminals.ids
         emit Close { id = id } to shells
+    if control ≠ null
+        emit Stop to control_server
+        emit DropControl { descriptor = control.descriptor } to this
+        control = null
     emit Stop {} to term
     return Quitting
 
@@ -1639,3 +1670,113 @@ WithHidden =>
     loop item over away
         views += item.view
     return All { groups = groups + [{ slot = "hidden", tabs = views, active = 0 }] }
+
+| ── Session-local control for terminal assistants ──────────────────────
+| Requests and keys share the event queue. Replies contain layout only.
+
+StartControl =>
+    emit Run { command = "python3", args = [control_helper, "init"] } to procs get initialized
+    if initialized ∈ Exception or not initialized.success, return Failed { reason = "python3 is required for IDE control" }
+    emit Parse { text = initialized.stdout } to control_json get parsed
+    if parsed ∈ Exception, return Failed { reason = "invalid IDE control initialization" }
+    pending = parsed.value
+    emit Config { host = "127.0.0.1", port = 0 } to control_server get configured
+    if configured ∈ Exception
+        emit DropControl { descriptor = pending.descriptor } to this
+        return Failed { reason = configured.message }
+    emit Listen to control_server get listening
+    if listening ∈ Exception or not listening.ok
+        emit DropControl { descriptor = pending.descriptor } to this
+        return Failed { reason = "IDE control could not listen" }
+    ready = pending + { port = listening.port }
+    emit Run { command = "python3", args = [control_helper, "publish"], stdin = "$ready" } to procs get published
+    if published ∈ Exception or not published.success
+        emit Stop to control_server
+        emit DropControl { descriptor = pending.descriptor } to this
+        return Failed { reason = "IDE control descriptor could not be published" }
+    control = ready
+    emit Get { name = "PATH", default = "/usr/local/bin:/usr/bin:/bin" } to vars get inherited_path
+    control_search_path = ready.bin + ":" + inherited_path.value
+    return Connected
+
+DropControl { descriptor } =>
+    emit Run { command = "python3", args = [control_helper, "--session-file", descriptor, "cleanup"] } to procs
+    return Dropped
+
+Request { method, path, body, headers } =>
+    if control = null, return Response { status = 503, body = "{\"error\":\"IDE control is not running\"}", content_type = "application/json" }
+    if headers.authorization ≠ "Bearer " + control.token, return Response { status = 401, body = "{\"error\":\"unauthorized\"}", content_type = "application/json" }
+    if method ≠ "POST" or path ≠ "/v1/control", return Response { status = 404, body = "{\"error\":\"unknown control route\"}", content_type = "application/json" }
+    emit Parse { text = body } to control_json get parsed
+    if parsed ∈ Exception, return Response { status = 400, body = "{\"error\":\"invalid JSON\"}", content_type = "application/json" }
+    emit ControlAction { request = parsed.value } to this get result
+    status = 200
+    if result.ok = false, status = 400
+    return Response { status = status, body = "$result", content_type = "application/json" }
+
+ControlState =>
+    emit State to this get snapshot
+    emit Placement { state = snapshot } to this get placement
+    panes = []
+    loop gi, group over groups
+        bounds = null
+        loop rectangle over placement.placed
+            if rectangle.id = gi, bounds = rectangle
+        loop ti, view over group.tabs
+            if view.kind = "terminal", panes += { terminal = view.control_id, slot = group.slot, active = ti = group.active, bounds = bounds }
+    loop item over hidden_panes.terminal
+        panes += { terminal = item.view.control_id, slot = item.slot, active = false, hidden = true, bounds = null }
+    return ControlResult { ok = true, version = 1, session = control.session, project = folder, terminals = panes, sizes = sizes, cols = cols, rows = rows }
+
+ControlAction { request } =>
+    if request ∉ Object, return ControlError { ok = false, error = "request must be an object" }
+    if request.version ≠ 1, return ControlError { ok = false, error = "unsupported control version" }
+    if control = null or request.session ≠ control.session, return ControlError { ok = false, error = "IDE session is closed or does not match" }
+    if request.action = "state"
+        emit ControlState to this get state
+        return state
+    if request.action ≠ "move" and request.action ≠ "resize", return ControlError { ok = false, error = "unknown action" }
+    if request.terminal ∉ String or request.terminal = "", return ControlError { ok = false, error = "a terminal identifier is required" }
+    where = null
+    loop gi, group over groups
+        loop ti, view over group.tabs
+            if view.kind = "terminal" and view.control_id = request.terminal, where = { group = gi, tab = ti }
+    if where = null, return ControlError { ok = false, error = "terminal is closed, hidden or does not exist" }
+    if request.action = "move" and request.slot ∉ String, return ControlError { ok = false, error = "slot must be a string" }
+    if request.action = "move" and slot_known[request.slot] ≠ true, return ControlError { ok = false, error = "unknown slot" }
+    delta = request.delta
+    key = ""
+    size = 0
+    if request.action = "resize"
+        if delta ∉ Number, return ControlError { ok = false, error = "delta must be an integer between -20 and 20" }
+        whole = false
+        candidate = -20
+        loop
+            if candidate > 20, break
+            if delta = candidate, whole = true
+            candidate += 1
+        if not whole, return ControlError { ok = false, error = "delta must be an integer between -20 and 20" }
+        if groups[where.group].slot = "c", return ControlError { ok = false, error = "move the terminal to a side before resizing it" }
+    if request.action = "resize"
+        slot = groups[where.group].slot
+        key = "right"
+        if slot = "l" or slot = "tl" or slot = "bl", key = "left"
+        if slot = "t", key = "top"
+        if slot = "b", key = "bottom"
+        least = 10
+        limit = cols - 20
+        if key = "top" or key = "bottom"
+            least = 3
+            limit = rows - 7
+        if limit < least, return ControlError { ok = false, error = "screen is too small to resize this track" }
+        size = sizes[key] + delta
+        if size < least, size = least
+        if size > limit, size = limit
+    | Validate before changing focus. Reveal the exact originating tab even
+    | when the person has since focused something else.
+    emit Reveal { group = where.group, tab = where.tab } to this
+    if request.action = "move", emit MoveCurrent { into = request.slot } to this
+    if request.action = "resize", emit StoreSetting { key = "workbench.layout." + key, value = size } to this
+    emit Render to this
+    emit ControlState to this get state
+    return state

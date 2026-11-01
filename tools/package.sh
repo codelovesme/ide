@@ -22,11 +22,17 @@ stage="$out/$name"
 rm -rf "$stage"
 mkdir -p "$stage"
 grep -v '^link ".*\.so"' "$root/main.code" | grep -v '^| ' > "$root/standalone.code"
-(cd "$root" && cdlvsm code build standalone.code -r -o "$stage/ide-bin")
+if [ -n "${CODE_BIN:-}" ]; then
+  (cd "$root" && "$CODE_BIN" build standalone.code -r -o "$stage/ide-bin")
+else
+  (cd "$root" && cdlvsm code build standalone.code -r -o "$stage/ide-bin")
+fi
 rm -f "$root/standalone.code"
 cp "$root/bin/ide" "$stage/ide"
 cp "$root/README.md" "$stage/"
-printf 'format=1\n' > "$stage/cdlvsm-package.info"
+mkdir -p "$stage/tools"
+cp "$root/tools/ide_control.py" "$stage/tools/"
+printf 'format=1\nsystem=python3\n' > "$stage/cdlvsm-package.info"
 "$root/tools/organelles.sh" "$stage"
 echo "$version" > "$stage/VERSION"
 tar -C "$out" -czf "$out/$name.tar.gz" "$name"

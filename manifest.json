@@ -4,6 +4,7 @@
   "organelles": {
     "env": "env",
     "fs": "fs",
+    "http_server": "http_server",
     "json": "json",
     "process": "process",
     "pty": "pty",
