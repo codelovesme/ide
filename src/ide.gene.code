@@ -46,6 +46,7 @@ last_edit = ""
 
 | What has the keys: the focused tab's kind — "tree" (the explorer),
 | "editor" (a file), "terminal", or "none" when nothing is open.
+voice_terminal = null
 focus = "none"
 menu = null
 prompt = null
@@ -217,14 +218,25 @@ Resize { cols as width, rows as height } =>
     emit Render to this
     return Resized
 
-Key { name, text } =>
+Key { name, text, event } =>
     if not running, return Ignored
     message = ""
-    emit HandleKey { name = name, text = text } to this get handled
+    emit HandleKey { name = name, text = text, event = event } to this get handled
     if handled ∈ Exception, message = "Error: " + handled.message
     emit SendQueued to this
     emit Render to this
     return handled
+
+| A held shortcut belongs to the terminal that received its press, even if
+| another pane has the focus by the time the key is released.
+KeyReleased { name } =>
+    target = voice_terminal
+    if target = null and focus = "terminal"
+        emit Active { groups = groups, current = current } to this get shown
+        target = shown.buffer.id
+    if target ≠ null, emit Type { id = target, name = name, text = "", event = "release" } to shells
+    if name = "space" or name = "ctrl+space" or name = "left_control" or name = "ctrl+left_control" or name = "right_control" or name = "ctrl+right_control", voice_terminal = null
+    return Noted
 
 | The mouse (pushed by tty, which asks the terminal for it at Start).
 Mouse { kind, button, row, col, shift, alt, ctrl, clicks } =>
@@ -360,7 +372,7 @@ FindTerminal { id } =>
             if tab.kind = "terminal" and tab.id = id, return Place { group = gi, tab = ti }
     return Place { group = -1, tab = -1 }
 
-HandleKey { name, text } =>
+HandleKey { name, text, event } =>
     emit NoteSpot to this
     if prompt ≠ null
         emit PromptKey { name = name, text = text } to this
@@ -380,6 +392,9 @@ HandleKey { name, text } =>
         if for_shell.command ≠ null
             loop allowed over skip
                 if allowed = for_shell.command, runs = true
+        | Ctrl+Space is push-to-talk inside a terminal; pane keys remain
+        | Ctrl+J and Ctrl+backtick.
+        if name = "ctrl+space", runs = false
         if runs
             emit Run { command = for_shell.command } to this
             return Handled
@@ -387,7 +402,8 @@ HandleKey { name, text } =>
         | A key typed brings the terminal back to its live screen.
         live_id = shown.buffer.id
         terminal_scrolls = terminal_scrolls + { "$live_id" = 0 }
-        emit Type { id = shown.buffer.id, name = name, text = text } to shells
+        if name = "ctrl+space", voice_terminal = shown.buffer.id
+        emit Type { id = shown.buffer.id, name = name, text = text, event = event } to shells
         return Typed
     emit Keymap { name = name, pending = chord, table = keytable } to this get bound
     chord = bound.pending

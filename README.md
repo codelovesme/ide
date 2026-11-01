@@ -64,8 +64,8 @@ elsewhere; moving a terminal tab (Move Tab) sets it too. It is your shell (`$SHE
 on a real pseudo-terminal, with its colours. While it has the keys, every
 key goes to the shell — Ctrl+C, Ctrl+E, Ctrl+W are the shell's — except the
 commands listed in `terminal.integrated.commandsToSkipShell` (F6, Ctrl+Tab,
-the menus, Ctrl+Q, the pane keys …). `exit` closes its tab. Most terminals send
-Ctrl+\` as Ctrl+Space, which is bound too. Shift+PgUp / Shift+PgDn scroll
+the menus, Ctrl+Q, the pane keys …). `exit` closes its tab. Outside the terminal Ctrl+Space remains an alias for opening it; inside a
+terminal Ctrl+Space goes to the running program (for example Mike push-to-talk). Shift+PgUp / Shift+PgDn scroll
 back through what went off the top (typing returns to the live screen). A
 program that asks for them (an editor inside) gets Ctrl+Tab, Ctrl+J and the
 rest whole, as far as the terminal the ide runs in passes them on — see
@@ -316,3 +316,22 @@ sends (no tmux or pyte needed).
 
 Find across the project, diagnostics from the language server,
 extensions.
+
+### Development key-release support (ticket 188, unreleased)
+
+Key releases pass from the outer terminal through tty and the IDE to the
+integrated terminal. Ctrl+Space inside that terminal is reserved for its
+program; Ctrl+J and Ctrl+backtick still toggle the panel. A held voice shortcut
+keeps its original terminal target if focus moves before the key is released.
+
+The current IDE bundle still uses ABI 1. Build matching development modules
+without changing the installed compiler or public lockfile:
+
+```sh
+python3 ../code/scripts/build-key-event-modules.py --abi 1 --out organelles
+```
+
+This explicitly uses the v2.14.5 code-native/runtime snapshot for ABI 1 and
+current source window/pty/tty implementations. The outer console needs the
+updated modules too. Keep these modules when laying out a development package;
+the public pinned release alone does not provide this support.

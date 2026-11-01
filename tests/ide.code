@@ -275,6 +275,13 @@ emit WhereNow to this get with_terminal
 assert with_terminal.groups = ["c:file", "r:file", "l:explorer", "b:terminal"]
 emit State to this get in_terminal
 assert in_terminal.focus = "terminal"
+| Push-to-talk belongs to the terminal; it must not hide the pane.
+emit HandleKey { name = "ctrl+space", text = "" } to this get voice_press
+assert voice_press ∈ Typed
+emit State to this get after_voice_press
+assert after_voice_press.focus = "terminal"
+emit KeyReleased { name = "space" } to this
+
 terminal_id = in_terminal.groups[3].tabs[0].id
 emit HandleKey { name = "ctrl+w", text = "" } to this
 emit State to this get still_terminal
@@ -509,7 +516,6 @@ emit HandleKey { name = "alt+right", text = "" } to this
 emit State to this get nothing_ahead
 assert nothing_ahead.message = "Nowhere further to go" and nothing_ahead.file.row = 0
 emit DeleteFile { path = "long.code" } to files
-
 
 | Ctrl+P: the project's files by name, as it is typed — those whose own
 | name has it first, then those with its letters in order; ↑/↓ pick,
